@@ -1,0 +1,445 @@
+<!-- /home/neto/cnpj_interface/core/templates/core/detalhe.html -->
+{% extends 'core/base.html' %}
+
+{% block title %}{{ empresa.razao_social }} - Sistema CNPJ{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'core:lista' %}">Empresas</a></li>
+                <li class="breadcrumb-item active">{{ empresa.razao_social|truncatechars:40 }}</li>
+            </ol>
+        </nav>
+
+        <!-- ============================================================ -->
+        <!-- CABEÇALHO DA EMPRESA -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h2 class="mb-0">
+                    <i class="bi bi-building"></i> {{ empresa.razao_social }}
+                </h2>
+                <small>
+                    <code class="text-white">{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code>
+                </small>
+            </div>
+            <div class="card-body">
+                <!-- Situação + Simples + MEI -->
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <strong>Situação:</strong>
+                        {% if empresa.situacao_descricao == 'ATIVA' %}
+                            <span class="badge bg-success">Ativa</span>
+                        {% elif empresa.situacao_descricao == 'INAPTA' %}
+                            <span class="badge bg-danger">Inapta</span>
+                        {% elif empresa.situacao_descricao == 'SUSPENSA' %}
+                            <span class="badge bg-warning">Suspensa</span>
+                        {% elif empresa.situacao_descricao == 'BAIXADA' %}
+                            <span class="badge bg-secondary">Baixada</span>
+                        {% elif empresa.situacao_descricao == 'NULA' %}
+                            <span class="badge bg-dark">Nula</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ empresa.situacao_descricao }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Simples:</strong>
+                        {% if empresa.op_simples == 'S' %}
+                            <span class="badge bg-success">SIM</span>
+                        {% else %}
+                            <span class="badge bg-secondary">NÃO</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>MEI:</strong>
+                        {% if empresa.op_mei == 'S' %}
+                            <span class="badge bg-info">SIM</span>
+                        {% else %}
+                            <span class="badge bg-secondary">NÃO</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Tipo:</strong>
+                        <span class="badge bg-primary">MATRIZ</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- DADOS DA EMPRESA -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0"><i class="bi bi-info-circle"></i> Dados da Empresa</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th width="40%">Razão Social</th>
+                                <td>{{ empresa.razao_social|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Nome Fantasia</th>
+                                <td>{{ empresa.nm_fantasia|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Natureza Jurídica</th>
+                                <td>
+                                    {% if empresa.nat_juridica %}
+                                        {{ empresa.nat_juridica }} - {{ empresa.natureza_juridica_descricao|default:"-" }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Qualificação do Responsável</th>
+                                <td>{{ empresa.qual_resp|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Capital Social</th>
+                                <td>
+                                    {% if empresa.capital_social %}
+                                        R$ {{ empresa.capital_social|floatformat:2 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Porte da Empresa</th>
+                                <td>{{ empresa.porte_empresa_descricao|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Ente Federativo Responsável</th>
+                                <td>{{ empresa.ente_fed_resp|default:"-" }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th width="40%">Data de Abertura</th>
+                                <td>{{ empresa.dt_ini|date:"d/m/Y"|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Data da Situação</th>
+                                <td>{{ empresa.dt_sit_cadastro|date:"d/m/Y"|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Motivo da Situação</th>
+                                <td>{{ empresa.motivo_sit_cadastro_descricao|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>CNAE Principal</th>
+                                <td>
+                                    {% if empresa.cnae_principal %}
+                                        {{ empresa.cnae_principal }} - {{ empresa.cnae_principal_descricao|default:"-" }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>CNAE Secundário</th>
+                                <td>{{ empresa.cnae_secundario|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Site</th>
+                                <td>{{ empresa.site|default:"-" }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- SIMPLES E MEI (COM DATAS) -->
+        <!-- ============================================================ -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card {% if empresa.op_simples == 'S' %}border-success{% else %}border-secondary{% endif %}">
+                    <div class="card-header {% if empresa.op_simples == 'S' %}bg-success{% else %}bg-secondary{% endif %} text-white">
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Simples Nacional</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if empresa.op_simples == 'S' %}
+                            <p><strong>Status:</strong> <span class="badge bg-success">SIM</span></p>
+                            <p><strong>Data de Opção:</strong> {{ empresa.dt_op_simples|date:"d/m/Y"|default:"-" }}</p>
+                            <p><strong>Data de Exclusão:</strong> {{ empresa.dt_exc_simples|date:"d/m/Y"|default:"-" }}</p>
+                        {% else %}
+                            <p class="text-muted">Não optante pelo Simples Nacional</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card {% if empresa.op_mei == 'S' %}border-info{% else %}border-secondary{% endif %}">
+                    <div class="card-header {% if empresa.op_mei == 'S' %}bg-info{% else %}bg-secondary{% endif %} text-white">
+                        <h5 class="mb-0"><i class="bi bi-person-badge"></i> MEI</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if empresa.op_mei == 'S' %}
+                            <p><strong>Status:</strong> <span class="badge bg-info">SIM</span></p>
+                            <p><strong>Data de Opção:</strong> {{ empresa.dt_op_mei|date:"d/m/Y"|default:"-" }}</p>
+                            <p><strong>Data de Exclusão:</strong> {{ empresa.dt_exc_mei|date:"d/m/Y"|default:"-" }}</p>
+                        {% else %}
+                            <p class="text-muted">Não optante pelo MEI</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- ENDEREÇO E CONTATO -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-secondary text-white">
+                <h4 class="mb-0"><i class="bi bi-geo-alt"></i> Endereço e Contato</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th width="30%">Logradouro</th>
+                                <td>{{ empresa.tip_logradouro|default:"" }} {{ empresa.logradouro|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Número</th>
+                                <td>{{ empresa.numero|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Complemento</th>
+                                <td>{{ empresa.complemento|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Bairro</th>
+                                <td>{{ empresa.bairro|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>CEP</th>
+                                <td>{{ empresa.cep|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Município</th>
+                                <td>{{ empresa.municipio_descricao|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>UF</th>
+                                <td>{{ empresa.uf|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>País</th>
+                                <td>{{ empresa.pais_descricao|default:"Brasil" }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th width="30%">Telefone 1</th>
+                                <td>
+                                    {% if empresa.ddd_1 and empresa.tel_1 %}
+                                        ({{ empresa.ddd_1 }}) {{ empresa.tel_1 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Telefone 2</th>
+                                <td>
+                                    {% if empresa.ddd_2 and empresa.tel_2 %}
+                                        ({{ empresa.ddd_2 }}) {{ empresa.tel_2 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Fax</th>
+                                <td>
+                                    {% if empresa.ddd_fax and empresa.fax %}
+                                        ({{ empresa.ddd_fax }}) {{ empresa.fax }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Email</th>
+                                <td>
+                                    {% if empresa.email %}
+                                        <a href="mailto:{{ empresa.email }}">{{ empresa.email }}</a>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>Situação Especial</th>
+                                <td>{{ empresa.sit_esp|default:"-" }}</td>
+                            </tr>
+                            <tr>
+                                <th>Data Sit. Especial</th>
+                                <td>{{ empresa.dt_sit_esp|date:"d/m/Y"|default:"-" }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- ESTABELECIMENTOS (MATRIZ + FILIAIS) -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-shop"></i> Estabelecimentos 
+                    <span class="badge bg-light text-dark">{{ total_estabelecimentos }}</span>
+                    <small class="ms-2">({{ total_filiais }} filiais)</small>
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if estabelecimentos %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>CNPJ</th>
+                                <th>Tipo</th>
+                                <th>Nome Fantasia</th>
+                                <th>Situação</th>
+                                <th>Endereço</th>
+                                <th>UF</th>
+                                <th>Telefone</th>
+                                <th>Email</th>
+                                <th>Início</th>
+                                <th>CNAE Principal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for est in estabelecimentos %}
+                            <tr {% if est.cd_matriz_filial == 1 %}class="table-primary"{% endif %}>
+                                <td><code>{{ est.cnpj_completo|slice:"0:2" }}.{{ est.cnpj_completo|slice:"2:5" }}.{{ est.cnpj_completo|slice:"5:8" }}/{{ est.cnpj_completo|slice:"8:12" }}-{{ est.cnpj_completo|slice:"12:14" }}</code></td>
+                                <td>
+                                    {% if est.tipo == 'MATRIZ' %}
+                                        <span class="badge bg-primary">Matriz</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Filial</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ est.nm_fantasia|default:"-"|truncatechars:30 }}</td>
+                                <td>
+                                    {% if est.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
+                                    {% elif est.situacao_descricao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
+                                    {% elif est.situacao_descricao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
+                                    {% elif est.situacao_descricao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
+                                    {% else %}<span class="badge bg-dark">{{ est.situacao_descricao }}</span>{% endif %}
+                                </td>
+                                <td>{{ est.tip_logradouro|default:"" }} {{ est.logradouro|default:"-" }}, {{ est.numero|default:"-" }} - {{ est.bairro|default:"-" }}</td>
+                                <td>{{ est.uf|default:"-" }}</td>
+                                <td>
+                                    {% if est.ddd_1 and est.tel_1 %}
+                                        ({{ est.ddd_1 }}) {{ est.tel_1 }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{{ est.email|default:"-"|truncatechars:25 }}</td>
+                                <td>{{ est.data_abertura|date:"d/m/Y"|default:"-" }}</td>
+                                <td>{{ est.cnae_principal|default:"-" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">Nenhum estabelecimento encontrado</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- SÓCIOS -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-people"></i> Sócios 
+                    <span class="badge bg-light text-dark">{{ total_socios }}</span>
+                </h4>
+            </div>
+            <div class="card-body">
+                {% if socios %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Nome / Razão Social</th>
+                                <th>Tipo</th>
+                                <th>CPF/CNPJ</th>
+                                <th>Qualificação</th>
+                                <th>Data Entrada</th>
+                                <th>Faixa Etária</th>
+                                <th>País</th>
+                                <th>Representante Legal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for socio in socios %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td><strong>{{ socio.nome }}</strong></td>
+                                <td>
+                                    {% if socio.id_tipo_socio == 1 %}<span class="badge bg-success">PJ</span>
+                                    {% elif socio.id_tipo_socio == 2 %}<span class="badge bg-primary">PF</span>
+                                    {% elif socio.id_tipo_socio == 3 %}<span class="badge bg-warning">Estrangeiro</span>
+                                    {% else %}<span class="badge bg-secondary">Outro</span>{% endif %}
+                                </td>
+                                <td>{{ socio.cnpj_cpf|default:"-" }}</td>
+                                <td>{{ socio.qualificacao_descricao|default:"-" }}</td>
+                                <td>{{ socio.data_entrada|date:"d/m/Y"|default:"-" }}</td>
+                                <td>{{ socio.faixa_etaria_descricao|default:"-" }}</td>
+                                <td>{{ socio.pais_socio|default:"Brasil" }}</td>
+                                <td>
+                                    {% if socio.nome_representante %}
+                                        {{ socio.nome_representante }}
+                                        {% if socio.qualificacao_representante %}
+                                            <br><small class="text-muted">{{ socio.qualificacao_representante }}</small>
+                                        {% endif %}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">
+                    <i class="bi bi-info-circle"></i> Nenhum sócio cadastrado
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="mt-3">
+            <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Voltar
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

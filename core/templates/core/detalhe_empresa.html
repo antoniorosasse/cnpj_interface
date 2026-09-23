@@ -1,0 +1,90 @@
+<!-- core/templates/core/detalhe_empresa.html -->
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ empresa.razao_social }}</h1>
+    <p><strong>CNPJ:</strong> {{ empresa.cnpj_formatado }}</p>
+    <p><strong>Situação:</strong> {{ empresa.situacao_descricao }}</p>
+    
+    <!-- SÓCIOS -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Sócios ({{ empresa.total_socios }})</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <!-- Estatísticas -->
+                <div class="col-md-3">
+                    <div class="card bg-light">
+                        <div class="card-body text-center">
+                            <h3>{{ empresa.socios_pf }}</h3>
+                            <small>Pessoa Física</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-light">
+                        <div class="card-body text-center">
+                            <h3>{{ empresa.socios_pj }}</h3>
+                            <small>Pessoa Jurídica</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-light">
+                        <div class="card-body text-center">
+                            <h3>{{ empresa.socios_estrangeiros }}</h3>
+                            <small>Estrangeiros</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-light">
+                        <div class="card-body text-center">
+                            <h3>{{ empresa.get_administradores|length }}</h3>
+                            <small>Administradores</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Lista de sócios -->
+            <div class="table-responsive mt-3">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Tipo</th>
+                            <th>CPF/CNPJ</th>
+                            <th>Qualificação</th>
+                            <th>Data Entrada</th>
+                            <th>Faixa Etária</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for socio in empresa.socios %}
+                        <tr>
+                            <td>{{ socio.nome }}</td>
+                            <td>
+                                <span class="badge {% if socio.tipo_socio == 1 %}bg-primary{% elif socio.tipo_socio == 2 %}bg-success{% else %}bg-warning{% endif %}">
+                                    {{ socio.tipo_socio_descricao }}
+                                </span>
+                            </td>
+                            <td>{{ socio.cnpj_cpf|default:"-" }}</td>
+                            <td>{{ socio.qualificacao|default:"-" }}</td>
+                            <td>{{ socio.data_entrada|default:"-" }}</td>
+                            <td>{{ socio.faixa_etaria_descricao|default:"-" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center">Nenhum sócio cadastrado</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

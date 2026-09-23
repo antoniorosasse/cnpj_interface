@@ -1,0 +1,187 @@
+<!-- /home/neto/cnpj_interface/core/templates/core/lista.html -->
+{% extends 'core/base.html' %}
+{% load num_filters %}
+
+{% block content %}
+<div class="row">
+    <div class="col">
+        <h1><i class="bi bi-building"></i> Empresas</h1>
+        <p class="text-muted">
+            <i class="bi bi-info-circle"></i> 
+            {{ total|format_number }} empresas encontradas
+        </p>
+        
+        {% if aviso %}
+        <div class="alert alert-info alert-dismissible fade show">
+            <i class="bi bi-info-circle"></i> {{ aviso }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+        
+        <!-- Busca -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Razão Social</label>
+                        <input type="text" name="razao_social" class="form-control text-uppercase" 
+                               placeholder="Ex: MORAIS" value="{{ razao_social }}" style="text-transform: uppercase;">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Nome Fantasia</label>
+                        <input type="text" name="nome_fantasia" class="form-control text-uppercase" 
+                               placeholder="Ex: MERCADO" value="{{ nome_fantasia }}" style="text-transform: uppercase;">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">CNPJ</label>
+                        <input type="text" name="cnpj" class="form-control" 
+                               placeholder="Ex: 12345678000199" value="{{ cnpj }}" maxlength="18">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">UF</label>
+                        <input type="text" name="uf" class="form-control text-uppercase" 
+                               placeholder="SP" value="{{ uf }}" maxlength="2" style="text-transform: uppercase;">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Situação</label>
+                        <select name="situacao" class="form-select">
+                            <option value="">Todas</option>
+                            <option value="NULA" {% if situacao == 'NULA' %}selected{% endif %}>Nula</option>
+                            <option value="ATIVA" {% if situacao == 'ATIVA' %}selected{% endif %}>Ativa</option>
+                            <option value="SUSPENSA" {% if situacao == 'SUSPENSA' %}selected{% endif %}>Suspensa</option>
+                            <option value="INAPTA" {% if situacao == 'INAPTA' %}selected{% endif %}>Inapta</option>
+                            <option value="BAIXADA" {% if situacao == 'BAIXADA' %}selected{% endif %}>Baixada</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Simples</label>
+                        <select name="simples" class="form-select">
+                            <option value="">Todos</option>
+                            <option value="S" {% if simples == 'S' %}selected{% endif %}>Sim</option>
+                            <option value="N" {% if simples == 'N' %}selected{% endif %}>Não</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">MEI</label>
+                        <select name="mei" class="form-select">
+                            <option value="">Todos</option>
+                            <option value="S" {% if mei == 'S' %}selected{% endif %}>Sim</option>
+                            <option value="N" {% if mei == 'N' %}selected{% endif %}>Não</option>
+                        </select>
+                    </div>
+                    
+                    <!-- ✅ NOVO: CAMPO "A PARTIR DE" -->
+                    <div class="col-md-2">
+                        <label class="form-label">
+                            <i class="bi bi-arrow-right-circle"></i> A partir de
+                            <small class="text-muted">(início da busca)</small>
+                        </label>
+                        <input type="text" name="a_partir_de" class="form-control text-uppercase" 
+                               placeholder="Ex: K" value="{{ a_partir_de }}" 
+                               style="text-transform: uppercase;">
+                        <small class="text-muted">Para ordenação por Razão Social/Nome Fantasia/CNPJ</small>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label class="form-label">Ordenar por</label>
+                        <select name="ordem" class="form-select">
+                            <option value="cnpj" {% if ordem == 'cnpj' %}selected{% endif %}>CNPJ</option>
+                            <option value="razao_social" {% if ordem == 'razao_social' %}selected{% endif %}>Razão Social</option>
+                            <option value="nome_fantasia" {% if ordem == 'nome_fantasia' %}selected{% endif %}>Nome Fantasia</option>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search"></i> Buscar
+                        </button>
+                        <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle"></i> Limpar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Tabela -->
+        <div class="table-responsive">
+            <table class="table table-hover table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>CNPJ</th>
+                        <th>Razão Social</th>
+                        <th>Nome Fantasia</th>
+                        <th>UF</th>
+                        <th>Situação</th>
+                        <th>Simples</th>
+                        <th>MEI</th>
+                        <th>Início Ativ.</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for empresa in empresas %}
+                    <tr>
+                        <td><code>{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code></td>
+                        <td><strong>{{ empresa.razao_social|truncatechars:40 }}</strong></td>
+                        <td>{{ empresa.nm_fantasia|default:"-"|truncatechars:25 }}</td>
+                        <td>{% if empresa.uf %}<span class="badge bg-secondary">{{ empresa.uf }}</span>{% else %}-{% endif %}</td>
+                        <td>
+                            {% if empresa.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
+                            {% elif empresa.situacao_descricao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
+                            {% elif empresa.situacao_descricao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
+                            {% elif empresa.situacao_descricao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
+                            {% elif empresa.situacao_descricao == 'NULA' %}<span class="badge bg-dark">Nula</span>
+                            {% else %}<span class="badge bg-secondary">{{ empresa.situacao_descricao }}</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if empresa.op_simples == 'S' %}<span class="badge bg-success">Sim</span>
+                            {% else %}<span class="badge bg-secondary">Não</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if empresa.op_mei == 'S' %}<span class="badge bg-info">Sim</span>
+                            {% else %}<span class="badge bg-secondary">Não</span>{% endif %}
+                        </td>
+                        <td>{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
+                        <td>
+                            <a href="{% url 'core:detalhe' empresa.cnpj_completo %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="9" class="text-center py-4"><i class="bi bi-search" style="font-size: 2rem;"></i><p class="mt-2">Nenhuma empresa encontrada</p></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Paginação -->
+        {% if total_paginas > 1 %}
+        <nav aria-label="Paginação">
+            <ul class="pagination justify-content-center">
+                {% if page > 1 %}
+                <li class="page-item"><a class="page-link" href="?page=1&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-double-left"></i></a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&last_fantasia={{ first_fantasia }}&dir=prev{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-left"></i></a></li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
+                {% endif %}
+                
+                <li class="page-item active"><span class="page-link">{{ page }} / {{ total_paginas|format_number }}</span></li>
+                
+                {% if has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&last_fantasia={{ last_fantasia }}&dir=next{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-right"></i></a></li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        
+        <p class="text-muted small">
+            <i class="bi bi-clock"></i> Mostrando {{ empresas|length }} de {{ total|format_number }} empresas
+            {% if a_partir_de %}<strong>(a partir de "{{ a_partir_de }}")</strong>{% endif %}
+        </p>
+    </div>
+</div>
+{% endblock %}

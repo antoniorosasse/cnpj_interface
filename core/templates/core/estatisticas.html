@@ -1,0 +1,389 @@
+<!-- /home/neto/cnpj_interface/core/templates/core/estatisticas.html -->
+{% extends 'core/base.html' %}
+{% load num_filters %}
+
+{% block title %}Estatísticas - Sistema CNPJ{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col">
+        <!-- ============================================================ -->
+        <!-- CABEÇALHO -->
+        <!-- ============================================================ -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1 class="mb-0">
+                    <i class="bi bi-bar-chart-fill"></i> Estatísticas
+                </h1>
+                {% if ultima_atualizacao %}
+                <small class="text-muted">
+                    <i class="bi bi-clock"></i> 
+                    Última atualização: {{ ultima_atualizacao }}
+                </small>
+                {% endif %}
+            </div>
+            <a href="?refresh=1" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-clockwise"></i> Atualizar
+            </a>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- TOTAIS GERAIS -->
+        <!-- ============================================================ -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_matrizes|format_number }}</h2>
+                        <small>Total de Matrizes</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_ativas|format_number }}</h2>
+                        <small>Empresas Ativas</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_inaptas|format_number }}</h2>
+                        <small>Empresas Inaptas</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-secondary text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_baixadas|format_number }}</h2>
+                        <small>Empresas Baixadas</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ simples_mei.total_simples|format_number }}</h2>
+                        <small>Optantes pelo Simples</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-dark">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ simples_mei.total_mei|format_number }}</h2>
+                        <small>Optantes pelo MEI</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-dark text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_suspensas|format_number }}</h2>
+                        <small>Empresas Suspensas</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body text-center">
+                        <h2 class="mb-0">{{ totais.total_ufs }}</h2>
+                        <small>Estados (UFs)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- TOP UFs e SITUAÇÕES -->
+        <!-- ============================================================ -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-geo-alt"></i> Top 10 UFs</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>UF</th>
+                                    <th class="text-end">Empresas</th>
+                                    <th class="text-end">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for uf in top_ufs %}
+                                <tr>
+                                    <td><span class="badge bg-secondary">{{ uf.uf|default:"N/A" }}</span></td>
+                                    <td class="text-end">{{ uf.total|format_number }}</td>
+                                    <td class="text-end">
+                                        {% widthratio uf.total totais.total_matrizes 100 %}%
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-circle"></i> Distribuição por Situação</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Situação</th>
+                                    <th class="text-end">Empresas</th>
+                                    <th class="text-end">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sit in situacoes %}
+                                <tr>
+                                    <td>
+                                        {% if sit.situacao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
+                                        {% elif sit.situacao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
+                                        {% elif sit.situacao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
+                                        {% elif sit.situacao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
+                                        {% elif sit.situacao == 'NULA' %}<span class="badge bg-dark">Nula</span>
+                                        {% else %}<span class="badge bg-secondary">{{ sit.situacao }}</span>{% endif %}
+                                    </td>
+                                    <td class="text-end">{{ sit.total|format_number }}</td>
+                                    <td class="text-end">
+                                        {% widthratio sit.total totais.total_matrizes 100 %}%
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- PORTE E NATUREZA JURÍDICA -->
+        <!-- ============================================================ -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-building"></i> Porte da Empresa</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Porte</th>
+                                    <th class="text-end">Empresas</th>
+                                    <th class="text-end">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in portes %}
+                                <tr>
+                                    <td>
+                                        {% if p.porte == 'MICRO EMPRESA' %}
+                                            <span class="badge bg-success">ME</span> {{ p.porte }}
+                                        {% elif p.porte == 'EMPRESA DE PEQUENO PORTE' %}
+                                            <span class="badge bg-primary">EPP</span> {{ p.porte }}
+                                        {% elif p.porte == 'DEMAIS' %}
+                                            <span class="badge bg-secondary">Demais</span> {{ p.porte }}
+                                        {% elif p.porte == 'NÃO INFORMADO' %}
+                                            <span class="badge bg-dark">N/I</span> {{ p.porte }}
+                                        {% else %}
+                                            <span class="badge bg-warning">{{ p.porte }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ p.total|format_number }}</td>
+                                    <td class="text-end">
+                                        {% widthratio p.total totais.total_matrizes 100 %}%
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="3">Nenhum dado</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="bi bi-list-ol"></i> Top 10 Naturezas Jurídicas</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Descrição</th>
+                                    <th class="text-end">Empresas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for n in top_naturezas %}
+                                <tr>
+                                    <td><strong>{{ n.codigo }}</strong></td>
+                                    <td>{{ n.descricao|default:"-"|truncatechars:50 }}</td>
+                                    <td class="text-end">{{ n.total|format_number }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="3">Nenhum dado</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- TOP CNAES E MUNICÍPIOS -->
+        <!-- ============================================================ -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="bi bi-briefcase"></i> Top 10 Atividades (CNAE)</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>CNAE</th>
+                                    <th class="text-end">Empresas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for c in top_cnaes %}
+                                <tr>
+                                    <td>
+                                        <small>
+                                            <strong>{{ c.cnae_principal }}</strong> - 
+                                            {{ c.nm_cnae|default:"-"|truncatechars:50 }}
+                                        </small>
+                                    </td>
+                                    <td class="text-end">{{ c.total|format_number }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2">Nenhum dado</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-geo"></i> Top 10 Municípios</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Município</th>
+                                    <th>UF</th>
+                                    <th class="text-end">Empresas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for m in top_municipios %}
+                                <tr>
+                                    <td><strong>{{ m.codigo }}</strong></td>
+                                    <td>{{ m.nome_municipio|default:"-" }}</td>
+                                    <td><span class="badge bg-secondary">{{ m.uf }}</span></td>
+                                    <td class="text-end">{{ m.total|format_number }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4">Nenhum dado</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- EMPRESAS POR ANO DE ABERTURA -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-calendar"></i> Empresas por Ano de Abertura</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-striped">
+                    <thead>
+                        <tr>
+                            <th>Ano</th>
+                            <th class="text-end">Empresas</th>
+                            <th>Gráfico</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in por_ano %}
+                        <tr>
+                            <td><strong>{{ a.ano }}</strong></td>
+                            <td class="text-end">{{ a.total|format_number }}</td>
+                            <td>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-info" role="progressbar" 
+                                         style="width: {% widthratio a.total por_ano.0.total 100 %}%">
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">Nenhum dado</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- SÓCIOS -->
+        <!-- ============================================================ -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-people"></i> Sócios</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-6">
+                        <h2>{{ socios.total_socios|format_number }}</h2>
+                        <p class="text-muted">Total de Sócios</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h2>{{ socios.total_empresas_com_socios|format_number }}</h2>
+                        <p class="text-muted">Empresas com Sócios</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- BOTÃO VOLTAR -->
+        <!-- ============================================================ -->
+        <div class="mt-3">
+            <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Voltar
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
