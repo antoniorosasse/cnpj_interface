@@ -74,40 +74,170 @@ que traduz perguntas em linguagem natural para SQL.
 
 Acessa em http://localhost:8002/
 
-## Endpoints
+---
 
-### Consulta de empresas
+# Consulta de CNPJ
 
-| Metodo | URL | O que faz |
+A parte principal do projeto: consulta de empresas da Receita Federal,
+com filtros avancados, paginacao rapida e detalhamento completo de cada
+empresa.
+
+## O que da pra buscar
+
+A pagina inicial (`/`) lista empresas (matrizes) com filtros combinaveis:
+
+| Filtro | O que aceita | Exemplo |
 |---|---|---|
-| GET | `/` | Lista de empresas (com filtros e paginacao) |
-| GET | `/busca-rapida/` | Busca rapida via AJAX |
-| GET | `/empresa/<cnpj>/` | Detalhe da empresa (socios, filiais, CNAE) |
-| GET | `/estatisticas/` | Estatisticas gerais (com cache de 1h) |
-| GET | `/health/` | Health check |
+| Razao social | Texto parcial (case-insensitive) | `MORAIS` |
+| Nome fantasia | Texto parcial (case-insensitive) | `MERCADO` |
+| CNPJ | 8 digitos (basico) ou 14 (completo) | `12345678` ou `12345678000199` |
+| UF | 2 letras | `SP` |
+| Situacao | Nula, Ativa, Suspensa, Inapta, Baixada | `ATIVA` |
+| Simples | S ou N | `S` |
+| MEI | S ou N | `S` |
+| A partir de | Letra ou CNPJ inicial (pula ate esse ponto) | `K` |
 
-### Chat IA
+### Ordenacao
 
-| Metodo | URL | O que faz |
-|---|---|---|
-| GET | `/chat/` | Pagina do chat (conversa atual) |
-| POST | `/chat/api/` | Endpoint AJAX (pergunta -> SQL -> resultado) |
-| GET | `/chat/historico/` | Lista as conversas do usuario |
-| GET | `/chat/conversa/<id>/` | Abre uma conversa especifica |
-| POST | `/chat/nova/` | Comeca conversa nova |
-| POST | `/chat/deletar/<id>/` | Deleta uma conversa |
+A lista pode ser ordenada por:
 
-### Autenticacao
+- **CNPJ** (padrao) - mais rapido
+- **Razao social** - usa CTE MATERIALIZED pra nao varrer a tabela inteira
+- **Nome fantasia** - mesmo esquema
 
-| Metodo | URL | O que faz |
-|---|---|---|
-| GET/POST | `/accounts/login/` | Login |
-| POST | `/accounts/logout/` | Logout |
-| GET/POST | `/admin/password_change/` | Trocar senha |
+### Paginacao
 
-## Pipeline do chat IA
+Usa **keyset pagination** (nao OFFSET). Isso significa que a pagina 5000
+carrega tao rapido quanto a pagina 1, mesmo com 38 milhoes de linhas.
 
-O chat tem 4 estagios:
+O botao "Proxima" passa o ultimo CNPJ/razao da pagina atual como ponto de
+partida. O botao "Anterior" faz o mesmo, ao contrario. Sem `COUNT(*)` no
+caminho critico (so na primeira pagina, com cache).
+
+## O que aparece no detalhe da empresa
+
+A pagina `/empresa/<cnpj>/` mostra **tudo** que a Receita publica sobre
+aquela empresa. Dividido em secoes:
+
+### Identificacao
+
+- CNPJ formatado (`00.000.000/0000-00`)
+- Razao social
+- Nome fantasia
+- Tipo: **MATRIZ** ou **FILIAL**
+
+### Dados cadastrais
+
+- **Natureza juridica** - codigo + descricao (ex: `206-2 - Sociedade Empresaria Limitada`)
+- **Porte** - ME (Micro Empresa), EPP (Empresa de Pequeno Porte), Demais, ou Nao informado
+- **Capital social** - em R$
+- **Data de abertura** (`dt_ini`)
+- **Qualificacao do responsavel** - codigo
+
+### Situacao cadastral
+
+- **Situacao** - Ativa, Suspensa, Inapta, Baixada, Nula
+- **Data da situacao** (`dt_sit_cadastro`)
+- **Motivo** - codigo + descricao (ex: `01 - Extincao por Encerramento de Liquidacao`)
+
+### Simples Nacional e MEI
+
+Dois cards lado a lado:
+
+- **Simples Nacional**: status (SIM/NAO), data de opcao, data de exclusao
+- **MEI**: status (SIM/NAO), data de opcao, data de exclusao
+
+### Atividade economica (CNAE)
+
+- **CNAE principal** - codigo + descricao
+- **CNAE secundarios** - lista de codigos separados por virgula
+
+### Endereco e contato
+
+- Logradouro (tipo + nome), numero, complemento, bairro
+- **CEP**
+- **Municipio** - codigo IBGE + nome
+- **UF**
+- **Pais** - codigo + nome (Brasil, na maioria)
+- **Telefone 1** e **Telefone 2** - formatados com DDD
+- **Fax**
+- **Email**
+- **Situacao especial** + data (se houver)
+
+### Estabelecimentos (matriz + filiais)
+
+Tabela com **todos** os estabelecimentos daquela empresa:
+
+- CNPJ completo de cada um
+- Tipo (Matriz / Filial)
+- Nome fantasia
+- Situacao cadastral
+- Endereco resumido
+- UF
+- Telefone
+- Email
+- Data de abertura
+- CNAE principal
+
+A matriz aparece destacada (linha azul). As filiais vem em seguida,
+ordenadas por `cnpj_ordem`.
+
+### Socios
+
+Tabela com todos os socios:
+
+- **Nome** (ou razao social, se for PJ)
+- **Tipo** - PF (Pessoa Fisica), PJ (Pessoa Juridica) ou Estrangeiro
+- **CPF/CNPJ** - descaracterizado pela RFB (so os 6 digitos do meio)
+- **Qualificacao** - codigo + descricao (ex: `49 - Socio-Administrador`)
+- **Data de entrada** na sociedade
+- **Faixa etaria** - 0-12, 13-20, ..., 81+ anos
+- **Pais** (se estrangeiro)
+- **Representante legal** (se houver) - nome + qualificacao
+
+## Estatisticas (`/estatisticas/`)
+
+Pagina com visao agregada da base inteira:
+
+- **Totais**: matrizes, ativas, inaptas, baixadas, suspensas, nulas, UFs
+- **Top 10 UFs** - com percentual
+- **Distribuicao por situacao** - com percentual
+- **Distribuicao por porte** - ME, EPP, Demais, Nao informado
+- **Top 10 naturezas juridicas** - codigo + descricao
+- **Top 10 CNAEs** - codigo + descricao
+- **Optantes Simples / MEI** - total
+- **Empresas por ano de abertura** - ultimos 15 anos (com barra de progresso)
+- **Top 10 municipios** - codigo IBGE + nome + UF
+- **Total de socios** + empresas com socios
+
+A pagina tem **cache de 1 hora** (`DatabaseCache`). O botao "Atualizar"
+limpa o cache manualmente (`?refresh=1`).
+
+## Performance
+
+A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
+
+- **Indices parciais** com `WHERE cd_matriz_filial = 1` (matrizes sao ~10% da tabela)
+- **Keyset pagination** em vez de OFFSET
+- **CTE MATERIALIZED** pra ordenacao por razao social / nome fantasia
+- **Cache de 1h** nas estatisticas
+- **Cache de 5min** na contagem total com filtros
+
+O tempo de resposta tipico e:
+
+- Primeira pagina sem filtro: ~1-2s
+- Paginas seguintes (keyset): ~200ms
+- Estatisticas (com cache quente): ~50ms
+- Estatisticas (cache frio): ~30-60s
+
+---
+
+# Chat IA
+
+Traduz perguntas em portugues pra SQL e executa no banco, em modo
+read-only. Tem historico de conversas e contexto.
+
+## Pipeline
 
     Pergunta (PT-BR)
       -> sql_generator    (DeepSeek gera o SQL)
@@ -120,7 +250,7 @@ O chat tem 4 estagios:
 - Monta prompt com o **schema real** do banco (tabelas, colunas, tamanhos, codigos)
 - Chama o DeepSeek via `llm_client.gerar_resposta()`
 - Retenta ate `max_tentativas` se o SQL vier invalido
-- Passa o historico da conversa como contexto
+- Passa o historico da conversa como contexto (ultimas 10 mensagens)
 
 ### 2. `sql_validator`
 
@@ -134,7 +264,7 @@ Aplica **4 camadas de seguranca**:
 ### 3. `sql_executor`
 
 - Conecta no Postgres como usuario read-only (`chat_ia`, so tem `GRANT SELECT`)
-- `SET LOCAL statement_timeout` por query (configuravel via `CHAT_SQL_TIMEOUT`)
+- `SET LOCAL statement_timeout` por query (`CHAT_SQL_TIMEOUT`, padrao 10s)
 - Limita linhas com `CHAT_SQL_MAX_ROWS` (padrao: 1000)
 - Fecha conexao sempre (`finally`)
 - Detecta truncamento (busca `max_rows + 1` linhas)
@@ -142,10 +272,48 @@ Aplica **4 camadas de seguranca**:
 ### 4. Persistencia
 
 - `Conversa` e `Mensagem` ficam no banco `default` (`django_internal`)
-- Cada mensagem do assistente guarda o SQL executado, total de linhas e tempo
+- Cada mensagem do assistente guarda o SQL, total de linhas e tempo
 - Retencao: comando `limpar_conversas_antigas` (padrao: 30 dias)
 
-## Bancos de dados
+### Retry automatico
+
+Se o Postgres rejeitar o SQL por coluna/tabela inexistente, o
+`chat_api_view` faz **1 retry** passando a mensagem de erro pro LLM
+corrigir. Isso resolve a maioria dos casos de nomes errados.
+
+## Endpoints do chat
+
+| Metodo | URL | O que faz |
+|---|---|---|
+| GET | `/chat/` | Pagina do chat |
+| POST | `/chat/api/` | Endpoint AJAX (pergunta -> SQL -> resultado) |
+| GET | `/chat/historico/` | Lista as conversas do usuario |
+| GET | `/chat/conversa/<id>/` | Abre uma conversa especifica |
+| POST | `/chat/nova/` | Comeca conversa nova |
+| POST | `/chat/deletar/<id>/` | Deleta uma conversa |
+
+---
+
+# Endpoints (todos)
+
+| Metodo | URL | O que faz |
+|---|---|---|
+| GET | `/` | Lista de empresas |
+| GET | `/busca-rapida/` | Busca rapida via AJAX (JSON) |
+| GET | `/empresa/<cnpj>/` | Detalhe da empresa |
+| GET | `/estatisticas/` | Estatisticas gerais |
+| GET | `/chat/` | Chat IA |
+| POST | `/chat/api/` | API do chat |
+| GET | `/chat/historico/` | Historico de conversas |
+| GET | `/chat/conversa/<id>/` | Abre conversa |
+| POST | `/chat/nova/` | Nova conversa |
+| POST | `/chat/deletar/<id>/` | Deleta conversa |
+| GET/POST | `/accounts/login/` | Login |
+| POST | `/accounts/logout/` | Logout |
+| GET/POST | `/admin/password_change/` | Trocar senha |
+| GET | `/health/` | Health check |
+
+# Bancos de dados
 
 O projeto usa **dois bancos PostgreSQL**:
 
@@ -159,7 +327,7 @@ O `CNPJRouter` (`core/routers.py`) decide qual usar:
 - Modelos do app `core` -> `postgres`
 - Todo o resto -> `default`
 
-## Testes
+# Testes
 
     python manage.py test chat
 
@@ -173,7 +341,7 @@ Roda **72 testes**:
 Os testes usam mock do DeepSeek e do `psycopg2.connect` - nao chamam
 a API real nem o banco real.
 
-## Variaveis de ambiente
+# Variaveis de ambiente
 
 Ver `.env.example` para a lista completa. As principais:
 
@@ -186,25 +354,25 @@ Ver `.env.example` para a lista completa. As principais:
 - `DEEPSEEK_API_KEY` - chave da API do chat
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrao: `deepseek-chat`)
 
-## Deploy
+# Deploy
 
 Na maquina NoteNeto:
 
     ./deploy.sh cnpj
 
-## Ambiente
+# Ambiente
 
 - **Local:** http://localhost:8002
 - **Producao:** https://cnpj.arosasse.tech
 - **Chat isolado:** https://chat.arosasse.tech
 
-## Scripts de manutencao
+# Scripts de manutencao
 
 Os scripts `cnpj_project/atualizar_dt_ini_*.py` atualizam a coluna `dt_ini`
 da tabela `c_estabelecimentos` a partir de arquivos Parquet. Sao
 executados pontualmente, nao fazem parte do runtime da aplicacao.
 
-## Repositorios relacionados
+# Repositorios relacionados
 
 - [ProjetoCargaDados](https://github.com/antoniorosasse/ProjetoCargaDados) - carrega os dados que este projeto consulta
 - [as400_interface](https://github.com/antoniorosasse/as400_interface)
