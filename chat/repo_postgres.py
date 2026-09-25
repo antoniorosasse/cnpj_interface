@@ -25,6 +25,14 @@ def buscar_conversa(conversa_id, user):
         return None
 
 
+def _buscar_conversa_interno(conversa_id):
+    """Uso interno: busca a conversa SEM filtro de usuario."""
+    try:
+        return Conversa.objects.get(pk=conversa_id)
+    except (Conversa.DoesNotExist, ValueError, TypeError):
+        return None
+
+
 def criar_conversa(user, titulo=''):
     """Cria uma conversa nova. Retorna o id (str)."""
     c = Conversa.objects.create(usuario=user, titulo=titulo or '')
@@ -53,7 +61,7 @@ def listar_conversas_vazias(user):
 
 def adicionar_mensagem(conversa_id, papel, conteudo, **extras):
     """Adiciona uma mensagem. Retorna True se conseguiu."""
-    conversa = buscar_conversa(conversa_id, user=None)  # sem checagem de user
+    conversa = _buscar_conversa_interno(conversa_id)
     if conversa is None:
         return False
 
@@ -69,7 +77,7 @@ def adicionar_mensagem(conversa_id, papel, conteudo, **extras):
 
 def atualizar_titulo(conversa_id, titulo):
     """Atualiza o titulo. Retorna True se conseguiu."""
-    conversa = buscar_conversa(conversa_id, user=None)
+    conversa = _buscar_conversa_interno(conversa_id)
     if conversa is None:
         return False
     conversa.titulo = titulo or ''

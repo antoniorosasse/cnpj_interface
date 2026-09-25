@@ -24,10 +24,11 @@ from django.http import JsonResponse, Http404
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.decorators.http import require_POST
 
-from .models import Conversa, Mensagem
+
 from .services.sql_generator import gerar_sql
 from .services.sql_executor import executar_sql
-from chat.models import Conversa, Mensagem
+#from chat.models import Conversa, Mensagem
+from . import repo
 
 
 logger = logging.getLogger(__name__)
@@ -45,12 +46,32 @@ def _conversa_atual(request):
     cid = request.session.get(SESSION_CONVERSA_ID)
     if not cid:
         return None
-    try:
-        return Conversa.objects.get(pk=cid, usuario=request.user)
-    except Conversa.DoesNotExist:
+
+    conversa = repo.buscar_conversa(cid, user=request.user)
+    if conversa is None:
         # Conversa foi apagada (ou pertence a outro user)
         request.session.pop(SESSION_CONVERSA_ID, None)
+    return conversa
+
+
+def _conversa_id(conversa):
+    """Extrai o id da conversa (str), independente do backend."""
+    if conversa is None:
         return None
+    if isinstance(conversa, dict):
+        # Mongo: dict com '_id'
+        return str(conversa['_id'])
+    # Postgres: instancia de Conversa com 'pk'
+    return str(conversa.pk)
+
+
+def _conversa_titulo(conversa):
+    """Extrai o titulo da conversa, independente do backend."""
+    if conversa is None:
+        return ''
+    if isinstance(conversa, dict):
+        return conversa.get('titulo', '')
+    return conversa.titulo
 
 
 def _historico_para_llm(conversa, limite=MAX_CONTEXTO):
@@ -61,17 +82,30 @@ def _historico_para_llm(conversa, limite=MAX_CONTEXTO):
     if conversa is None:
         return []
 
-    # Pega as ultimas (limite * 2) mensagens (user + assistant = 2 por turno)
-    qs = conversa.mensagens.order_by('-criado_em')[: limite * 2]
-    mensagens = list(reversed(qs))  # volta pra ordem cronologica
+    cid = _conversa_id(conversa)
+    if cid is None:
+        return []
+
+    # Pega as ultimas (limite) mensagens (ja em ordem cronologica)
+    mensagens = repo.ultimas_mensagens(cid, limite=limite * 2)
 
     historico = []
     for m in mensagens:
-        if m.papel == Mensagem.PAPEL_USER:
-            historico.append({'role': 'user', 'content': m.conteudo})
-        elif m.papel == Mensagem.PAPEL_ASSISTANT:
+        # 'm' pode ser instancia (Postgres) ou dict (Mongo)
+        if isinstance(m, dict):
+            papel = m.get('papel')
+            conteudo = m.get('conteudo', '')
+            sql = m.get('sql', '')
+        else:
+            papel = m.papel
+            conteudo = m.conteudo
+            sql = m.sql or ''
+
+        if papel == 'user':
+            historico.append({'role': 'user', 'content': conteudo})
+        elif papel == 'assistant':
             # Assistente: o conteudo e' o SQL gerado
-            historico.append({'role': 'assistant', 'content': m.sql or m.conteudo})
+            historico.append({'role': 'assistant', 'content': sql or conteudo})
     return historico
 
 
@@ -79,33 +113,59 @@ def _historico_para_llm(conversa, limite=MAX_CONTEXTO):
 def chat_view(request):
     """Renderiza a pagina do chat (com a conversa atual ou nova)."""
     # Limpa conversas vazias antigas deste usuario (housekeeping leve)
-    Conversa.objects.filter(
-        usuario=request.user,
-        mensagens__isnull=True,   # sem mensagens
-    ).exclude(
-        pk=request.session.get(SESSION_CONVERSA_ID),
-    ).delete()
+    cid_atual = request.session.get(SESSION_CONVERSA_ID)
+    for c in repo.listar_conversas_vazias(user=request.user):
+        if c['id'] != cid_atual:
+            repo.deletar_conversa(c['id'], user=request.user)
 
     conversa = _conversa_atual(request)
 
     # Se nao tem conversa, cria uma nova
     if conversa is None:
-        conversa = Conversa.objects.create(usuario=request.user)
-        request.session[SESSION_CONVERSA_ID] = conversa.pk
+        novo_id = repo.criar_conversa(user=request.user)
+        request.session[SESSION_CONVERSA_ID] = novo_id
+        conversa = repo.buscar_conversa(novo_id, user=request.user)
 
     # Lista de todas as conversas do usuario (pra sidebar)
-    conversas = Conversa.objects.filter(usuario=request.user)
+    conversas = repo.listar_conversas(user=request.user)
 
     # Mensagens da conversa atual, serializadas pro JS
-    mensagens_json = [
-    {'papel': m.papel, 'conteudo': m.conteudo}
-    for m in Mensagem.objects.filter(conversa=conversa)
-    ]       
+    cid = _conversa_id(conversa)
+    mensagens = repo.mensagens_da_conversa(cid) if cid else []
+
+    def _serializar_msg(m):
+        """Converte uma mensagem (dict do Mongo ou obj do Postgres) em dict."""
+        if isinstance(m, dict):
+            d = {
+                'papel': m.get('papel', ''),
+                'conteudo': m.get('conteudo', ''),
+            }
+            for chave in ('sql', 'colunas', 'rows', 'total_linhas',
+                          'truncado', 'tempo_ms', 'erro'):
+                if chave in m and m[chave] is not None:
+                    d[chave] = m[chave]
+            return d
+        else:
+            # Instancia do model Postgres
+            d = {
+                'papel': m.papel,
+                'conteudo': m.conteudo,
+            }
+            if m.sql:
+                d['sql'] = m.sql
+            if m.total_linhas is not None:
+                d['total_linhas'] = m.total_linhas
+            if m.tempo_ms is not None:
+                d['tempo_ms'] = m.tempo_ms
+            return d
+
+    mensagens_json = [_serializar_msg(m) for m in mensagens]
 
     return render(request, 'chat/chat.html', {
         'conversa': conversa,
+        'conversa_id_atual': _conversa_id(conversa),
         'conversas': conversas,
-        'mensagens_json': mensagens_json,
+        'mensagens_json': json.dumps(mensagens_json, default=str),
     })
 
 
@@ -137,13 +197,15 @@ def chat_api_view(request):
     # --- conversa atual (ou cria) ---
     conversa = _conversa_atual(request)
     if conversa is None:
-        conversa = Conversa.objects.create(usuario=request.user)
-        request.session[SESSION_CONVERSA_ID] = conversa.pk
+        novo_id = repo.criar_conversa(user=request.user)
+        request.session[SESSION_CONVERSA_ID] = novo_id
+        conversa = repo.buscar_conversa(novo_id, user=request.user)
+
+    cid = _conversa_id(conversa)
 
     # Se for a primeira pergunta, define o titulo
-    if not conversa.titulo:
-        conversa.titulo = pergunta[:200]
-        conversa.save(update_fields=['titulo', 'atualizado_em'])
+    if not _conversa_titulo(conversa):
+        repo.atualizar_titulo(cid, pergunta[:200])
 
     # --- historico para o LLM ---
     historico = _historico_para_llm(conversa)
@@ -153,11 +215,7 @@ def chat_api_view(request):
 
     if not geracao['ok']:
         # Salva a pergunta do usuario mesmo assim (pra ele ver no historico)
-        Mensagem.objects.create(
-            conversa=conversa,
-            papel=Mensagem.PAPEL_USER,
-            conteudo=pergunta,
-        )
+        repo.adicionar_mensagem(cid, 'user', pergunta)
         return JsonResponse({
             'ok': False,
             'etapa': 'geracao',
@@ -193,31 +251,28 @@ def chat_api_view(request):
             execucao = executar_sql(validation)
 
     # --- 3) salva as duas mensagens ---
-    Mensagem.objects.create(
-        conversa=conversa,
-        papel=Mensagem.PAPEL_USER,
-        conteudo=pergunta,
-    )
+    repo.adicionar_mensagem(cid, 'user', pergunta)
 
     if execucao['ok']:
-        Mensagem.objects.create(
-            conversa=conversa,
-            papel=Mensagem.PAPEL_ASSISTANT,
-            conteudo=validation.sql,
+        repo.adicionar_mensagem(
+            cid,
+            'assistant',
+            validation.sql,
             sql=validation.sql,
+            colunas=execucao['colunas'],
+            rows=execucao['rows'],
             total_linhas=execucao['total_linhas'],
+            truncado=execucao['truncado'],
             tempo_ms=execucao['tempo_ms'],
         )
     else:
-        Mensagem.objects.create(
-            conversa=conversa,
-            papel=Mensagem.PAPEL_ASSISTANT,
-            conteudo=f"[ERRO] {execucao['erro']}",
+        repo.adicionar_mensagem(
+            cid,
+            'assistant',
+            f"[ERRO] {execucao['erro']}",
             sql=validation.sql,
+            erro=execucao['erro'],
         )
-
-    # Toca o atualizado_em da conversa (ordena o historico)
-    conversa.save(update_fields=['atualizado_em'])
 
     resposta = {
         'ok': execucao['ok'],
@@ -238,19 +293,22 @@ def chat_api_view(request):
 
 
 @login_required
+@login_required
 def chat_historico_view(request):
     """Lista todas as conversas do usuario."""
-    conversas = Conversa.objects.filter(usuario=request.user)
+    conversas = repo.listar_conversas(user=request.user, limite=200)
     return render(request, 'chat/historico.html', {
         'conversas': conversas,
     })
 
 
 @login_required
-def chat_conversa_view(request, conversa_id: int):
+def chat_conversa_view(request, conversa_id):
     """Abre uma conversa especifica (troca a conversa atual)."""
-    conversa = get_object_or_404(Conversa, pk=conversa_id, usuario=request.user)
-    request.session[SESSION_CONVERSA_ID] = conversa.pk
+    conversa = repo.buscar_conversa(conversa_id, user=request.user)
+    if conversa is None:
+        raise Http404('Conversa nao encontrada')
+    request.session[SESSION_CONVERSA_ID] = _conversa_id(conversa)
     return redirect('chat:chat')
 
 
@@ -265,12 +323,14 @@ def chat_nova_view(request):
     """
     atual = _conversa_atual(request)
 
-    if atual is not None and not atual.mensagens.exists():  # type: ignore[attr-defined]
-        # Ja esta numa conversa vazia: nao cria outra
-        return redirect('chat:chat')
+    if atual is not None:
+        cid = _conversa_id(atual)
+        if cid and not repo.tem_mensagens(cid):
+            # Ja esta numa conversa vazia: nao cria outra
+            return redirect('chat:chat')
 
-    conversa = Conversa.objects.create(usuario=request.user)
-    request.session[SESSION_CONVERSA_ID] = conversa.pk
+    novo_id = repo.criar_conversa(user=request.user)
+    request.session[SESSION_CONVERSA_ID] = novo_id
     return redirect('chat:chat')
 
 
@@ -284,19 +344,21 @@ def chat_limpar_view(request):
 
 @login_required
 @require_POST
-def chat_deletar_view(request, conversa_id: int):
+def chat_deletar_view(request, conversa_id):
     """
     Deleta uma conversa do usuario.
     Se for a conversa atual, limpa a sessao e redireciona.
     """
-    conversa = get_object_or_404(Conversa, pk=conversa_id, usuario=request.user)
+    conversa = repo.buscar_conversa(conversa_id, user=request.user)
+    if conversa is None:
+        raise Http404('Conversa nao encontrada')
 
-    era_atual = (request.session.get(SESSION_CONVERSA_ID) == conversa.pk)
+    era_atual = (request.session.get(SESSION_CONVERSA_ID) == _conversa_id(conversa))
 
-    conversa.delete()
+    repo.deletar_conversa(conversa_id, user=request.user)
 
     if era_atual:
         request.session.pop(SESSION_CONVERSA_ID, None)
 
     return redirect('chat:chat')
-        
+    

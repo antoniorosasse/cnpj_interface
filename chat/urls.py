@@ -22,8 +22,8 @@ urlpatterns = [
     path('', views.chat_view, name='chat'),
     path('api/', views.chat_api_view, name='api'),
     path('historico/', views.chat_historico_view, name='historico'),
-    path('conversa/<int:conversa_id>/', views.chat_conversa_view, name='conversa'),
+    path('conversa/<str:conversa_id>/', views.chat_conversa_view, name='conversa'),
     path('nova/', views.chat_nova_view, name='nova'),
-    path('deletar/<int:conversa_id>/', views.chat_deletar_view, name='deletar'),
+    path('deletar/<str:conversa_id>/', views.chat_deletar_view, name='deletar'),
     path('limpar/', views.chat_limpar_view, name='limpar'),
 ]

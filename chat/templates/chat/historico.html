@@ -1,4 +1,3 @@
-<!-- /home/neto/cnpj_interface/chat/templates/chat/historico.html -->
 {% extends 'core/base.html' %}
 
 {% block title %}Histórico - Sistema CNPJ{% endblock %}
@@ -24,7 +23,7 @@
                     <ul class="list-group list-group-flush">
                         {% for c in conversas %}
                             <li class="list-group-item d-flex align-items-center gap-2">
-                                <a href="{% url 'chat:conversa' c.pk %}"
+                                <a href="{% url 'chat:conversa' c.id %}"
                                    class="flex-grow-1 text-decoration-none text-dark">
                                     <div class="d-flex justify-content-between align-items-center gap-3">
                                         <span class="fw-semibold text-truncate">
@@ -38,7 +37,7 @@
                                         </span>
                                     </div>
                                 </a>
-                                <form method="post" action="{% url 'chat:deletar' c.pk %}"
+                                <form method="post" action="{% url 'chat:deletar' c.id %}"
                                       onsubmit="return confirm('Deletar esta conversa?');">
                                     {% csrf_token %}
                                     <button type="submit"

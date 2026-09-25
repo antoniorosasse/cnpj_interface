@@ -198,6 +198,11 @@
         }
         .sidebar-conversas .form-deletar { display: block; }
     }
+    .resultado-historico {
+        clear: both;
+        margin-top: 8px;
+        margin-bottom: 16px;
+    }
 </style>
 {% endblock %}
 
@@ -228,14 +233,10 @@
             <ul>
                 {% for c in conversas %}
                     <li class="item-conversa">
-                        <a href="{% url 'chat:conversa' c.pk %}"
-                           class="{% if c.pk == conversa.pk %}atual{% endif %}"
-                           title="{{ c.titulo|default:'(sem titulo)' }}">
+                        <a href="{% url 'chat:conversa' c.id %}" class="{% if c.id == conversa_id_atual %}atual{% endif %}" title="{{ c.titulo|default:'(sem titulo)' }}">
                             {{ c.titulo|default:"(sem titulo)"|truncatechars:32 }}
                         </a>
-                        <form method="post" action="{% url 'chat:deletar' c.pk %}"
-                              class="form-deletar"
-                              onsubmit="return confirm('Deletar esta conversa?');">
+                        <form method="post" action="{% url 'chat:deletar' c.id %}" class="form-deletar" onsubmit="return confirm('Deletar esta conversa?');">
                             {% csrf_token %}
                             <button type="submit" title="Deletar">×</button>
                         </form>
@@ -265,9 +266,7 @@
 
         <div class="card">
             <div class="card-body">
-                <textarea id="pergunta" class="form-control mb-2"
-                          style="min-height: 70px;"
-                          placeholder="Ex: Quantas empresas ativas existem por porte?"></textarea>
+                <textarea id="pergunta" class="form-control mb-2" style="min-height: 70px;" placeholder="Ex: Quantas empresas ativas existem por porte?"></textarea>
                 <div class="d-flex gap-2 align-items-center">
                     <button id="enviar" type="button" class="btn btn-primary">
                         <i class="bi bi-search"></i> Consultar
@@ -290,7 +289,7 @@
         </div>  
     {% endif %}
 
-</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -306,7 +305,7 @@
     const threadEl   = document.getElementById('thread');
 
     const conversaId = {{ conversa.pk|default:"null" }};
-    const mensagensIniciais = {{ mensagens_json|safe|default:"[]" }};
+    const mensagensIniciais = {{ mensagens_json|default:"[]"|safe }};
 
     function getCookie(name) {
         const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
@@ -351,10 +350,54 @@
             threadEl.innerHTML = '';
             return;
         }
+
         let html = '';
-        for (const m of mensagensIniciais) {
-            html += renderTurno(m.papel, m.conteudo);
+
+        // Agrupa: cada par user/assistant vira um "turno" visual
+        let i = 0;
+        while (i < mensagensIniciais.length) {
+            const m = mensagensIniciais[i];
+
+            if (m.papel === 'user') {
+                // Renderiza a pergunta do usuário
+                html += renderTurno('user', m.conteudo);
+                i++;
+
+                // Se a próxima for assistant, renderiza com SQL + tabela
+                if (i < mensagensIniciais.length && mensagensIniciais[i].papel === 'assistant') {
+                    const a = mensagensIniciais[i];
+                    html += renderTurno('assistant', a.sql || a.conteudo);
+
+                    // Renderiza o "resultado" (SQL + tabela) se tiver dados
+                    if (a.sql || a.colunas || a.rows) {
+                        html += '<div class="resultado-historico">';
+                        if (a.sql) html += renderSql(a.sql);
+                        if (a.colunas && a.rows) {
+                            html += '<div class="card mt-3"><div class="card-body">';
+                            if (a.tempo_ms !== undefined || a.total_linhas !== undefined) {
+                                const info = `${a.total_linhas || 0} linha(s) · ${a.tempo_ms || 0}ms`;
+                                html += `<div class="text-muted small mb-2">${escaparHtml(info)}`;
+                                if (a.truncado) {
+                                    html += '<span class="badge-aviso">truncado</span>';
+                                } else {
+                                    html += '<span class="badge-ok">ok</span>';
+                                }
+                                html += '</div>';
+                            }
+                            html += renderTabela(a.colunas, a.rows);
+                            html += '</div></div>';
+                        }
+                        html += '</div>';
+                    }
+                    i++;
+                }
+            } else {
+                // Mensagem assistant solta (sem user antes)
+                html += renderTurno('assistant', m.sql || m.conteudo);
+                i++;
+            }
         }
+
         threadEl.innerHTML = html;
     }
 
