@@ -239,3 +239,14 @@ MONGO_PORT = os.getenv('MONGO_PORT')
 MONGO_DB = os.getenv('MONGO_DB')
 MONGO_USER = os.getenv('MONGO_USER')
 MONGO_PASSWORD = os.getenv('MONGO_PASSWORD')
+
+# ==================== MONGODB (CONFIG) ====================
+# Dict usado pela classe ConexaoMongoDB (core/conexoes.py)
+# As variaveis soltas MONGO_* continuam existindo (usadas por outros modulos)
+MONGO_CONFIG = {
+    'HOST': os.getenv('MONGO_HOST', 'localhost'),
+    'PORT': int(os.getenv('MONGO_PORT', '27017')),
+    'DATABASE': os.getenv('MONGO_DB', 'bancocnpj'),
+    'USER': os.getenv('MONGO_USER', ''),
+    'PASSWORD': os.getenv('MONGO_PASSWORD', ''),
+}
