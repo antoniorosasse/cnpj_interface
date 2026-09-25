@@ -94,3 +94,46 @@ def mensagens_da_conversa(conversa_id):
     if not doc:
         return []
     return doc.get('mensagens', [])
+
+def listar_conversas_antigas(dias=30):
+    """
+    Lista conversas mais antigas que N dias (todos os usuarios).
+
+    Retorna lista de dicts com 'id', 'titulo', 'usuario_id', 'atualizado_em'.
+    """
+    from datetime import timedelta, datetime
+
+    limite = datetime.utcnow() - timedelta(days=dias)
+    cursor = mm._get_collection().find(
+        {'atualizado_em': {'$lt': limite}},
+        {'_id': 1, 'titulo': 1, 'usuario_id': 1, 'atualizado_em': 1},
+    ).sort('atualizado_em', 1)
+
+    return [
+        {
+            'id': str(d['_id']),
+            'titulo': d.get('titulo', ''),
+            'usuario_id': d.get('usuario_id'),
+            'atualizado_em': d.get('atualizado_em'),
+        }
+        for d in cursor
+    ]
+
+def deletar_conversa_por_id(conversa_id):
+    """
+    Deleta uma conversa pelo id, SEM filtro de usuario.
+
+    Uso interno (housekeeping, admin). Retorna True se conseguiu.
+    """
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    try:
+        oid = ObjectId(str(conversa_id))
+    except (InvalidId, TypeError):
+        return False
+
+    resultado = mm._get_collection().delete_one({'_id': oid})
+    return resultado.deleted_count > 0
+
+    

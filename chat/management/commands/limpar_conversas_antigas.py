@@ -2,6 +2,9 @@
 """
 Remove conversas mais antigas que N dias.
 
+Funciona com os dois backends (Postgres e MongoDB), dependendo
+da flag CHAT_USE_MONGO no .env.
+
 Uso:
     python manage.py limpar_conversas_antigas          # padrao: 30 dias
     python manage.py limpar_conversas_antigas --dias 90
@@ -10,12 +13,9 @@ Uso:
 Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
-from chat.models import Conversa
+from chat import repo
 
 
 class Command(BaseCommand):
@@ -38,10 +38,10 @@ class Command(BaseCommand):
         dias = options['dias']
         dry_run = options['dry_run']
 
-        limite = timezone.now() - timedelta(days=dias)
+        self.stdout.write(f'Backend: {repo.backend_ativo()}')
 
-        alvo = Conversa.objects.filter(atualizado_em__lt=limite)
-        total = alvo.count()
+        alvo = repo.listar_conversas_antigas(dias=dias)
+        total = len(alvo)
 
         if total == 0:
             self.stdout.write(self.style.SUCCESS(
@@ -55,12 +55,22 @@ class Command(BaseCommand):
                 f'(mais antigas que {dias} dias).'
             ))
             for c in alvo[:10]:
-                self.stdout.write(f'  - #{c.pk} {c.titulo[:60]} ({c.atualizado_em:%Y-%m-%d})')
+                self.stdout.write(
+                    f'  - #{c["id"]} {c["titulo"][:60]} '
+                    f'(usuario {c["usuario_id"]})'
+                )
             if total > 10:
                 self.stdout.write(f'  ... e mais {total - 10}.')
             return
 
-        removidas, _ = alvo.delete()
+        # Deleta uma por uma (o repo.deletar_conversa exige user)
+        removidas = 0
+        for c in alvo:
+            # Precisamos do objeto user pra deletar; usamos usuario_id
+            # direto no Mongo. No Postgres, tambem da pra deletar por pk.
+            if repo.deletar_conversa_por_id(c['id']):
+                removidas += 1
+
         self.stdout.write(self.style.SUCCESS(
             f'Removidas {removidas} conversa(s) mais antigas que {dias} dias.'
         ))

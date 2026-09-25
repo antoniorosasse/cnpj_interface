@@ -117,3 +117,37 @@ def mensagens_da_conversa(conversa_id):
         return list(Mensagem.objects.filter(conversa_id=conversa_id).order_by('criado_em'))
     except (ValueError, TypeError):
         return []
+
+def listar_conversas_antigas(dias=30):
+    """
+    Lista conversas mais antigas que N dias (todos os usuarios).
+
+    Retorna lista de dicts com 'id', 'titulo', 'usuario_id', 'atualizado_em'.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+
+    limite = timezone.now() - timedelta(days=dias)
+    qs = Conversa.objects.filter(atualizado_em__lt=limite).order_by('atualizado_em')
+
+    return [
+        {
+            'id': str(c.pk),
+            'titulo': c.titulo or '',
+            'usuario_id': c.usuario_id,    # type: ignore[attr-defined]
+            'atualizado_em': c.atualizado_em,
+        }
+        for c in qs
+    ]
+
+def deletar_conversa_por_id(conversa_id):
+    """
+    Deleta uma conversa pelo id, SEM filtro de usuario.
+
+    Uso interno (housekeeping, admin). Retorna True se conseguiu.
+    """
+    try:
+        deletados, _ = Conversa.objects.filter(pk=conversa_id).delete()
+        return deletados > 0
+    except (ValueError, TypeError):
+        return False
