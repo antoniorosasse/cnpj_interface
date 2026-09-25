@@ -65,21 +65,28 @@ class CriarConversaTests(MongoModelsBaseTests):
         cid = mm.criar_conversa(usuario_id=1, titulo='Minha conversa')
         doc = mm.buscar_conversa(cid, usuario_id=1)
         self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['titulo'], 'Minha conversa')
 
     def test_cria_conversa_sem_titulo_vira_string_vazia(self):
         cid = mm.criar_conversa(usuario_id=1, titulo='')
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['titulo'], '')
 
     def test_conversa_nova_tem_lista_mensagens_vazia(self):
         cid = mm.criar_conversa(usuario_id=1)
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['mensagens'], [])
 
     def test_conversa_nova_tem_timestamps(self):
         cid = mm.criar_conversa(usuario_id=1)
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertIsInstance(doc['criado_em'], datetime)
         self.assertIsInstance(doc['atualizado_em'], datetime)
 
@@ -94,6 +101,7 @@ class BuscarConversaTests(MongoModelsBaseTests):
         cid = mm.criar_conversa(usuario_id=42)
         doc = mm.buscar_conversa(cid, usuario_id=42)
         self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['usuario_id'], 42)
 
     def test_busca_conversa_de_outro_usuario_retorna_none(self):
@@ -183,6 +191,8 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
         self.assertTrue(ok)
 
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(len(doc['mensagens']), 1)
         self.assertEqual(doc['mensagens'][0]['papel'], 'user')
         self.assertEqual(doc['mensagens'][0]['conteudo'], 'Quantas empresas?')
@@ -202,6 +212,8 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
         )
 
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         msg = doc['mensagens'][0]
         self.assertEqual(msg['papel'], 'assistant')
         self.assertEqual(msg['sql'], 'SELECT COUNT(*) FROM c_empresas')
@@ -216,6 +228,8 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
         mm.adicionar_mensagem(cid, 'assistant', 'ok', erro=None)
 
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         msg = doc['mensagens'][0]
         self.assertNotIn('erro', msg)
 
@@ -237,6 +251,10 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
         mm.adicionar_mensagem(cid, 'user', 'oi')
 
         doc_depois = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc_antes)
+        self.assertIsNotNone(doc_depois)
+        assert doc_antes is not None
+        assert doc_depois is not None
         self.assertGreater(doc_depois['atualizado_em'], doc_antes['atualizado_em'])
 
     def test_serializa_decimal(self):
@@ -249,6 +267,8 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
             rows=[{'capital': Decimal('8013289.50')}],
         )
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['mensagens'][0]['rows'][0]['capital'], 8013289.50)
 
     def test_serializa_date(self):
@@ -262,6 +282,8 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
             rows=[{'data': date(2020, 1, 15)}],
         )
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         valor = doc['mensagens'][0]['rows'][0]['data']
         self.assertIsInstance(valor, datetime)
         self.assertEqual(valor.year, 2020)
@@ -281,6 +303,8 @@ class AtualizarTituloTests(MongoModelsBaseTests):
         self.assertTrue(ok)
 
         doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
         self.assertEqual(doc['titulo'], 'novo')
 
     def test_conversa_inexistente_retorna_false(self):
