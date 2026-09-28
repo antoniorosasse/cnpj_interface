@@ -293,6 +293,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 (function () {
     'use strict';
@@ -306,6 +307,10 @@
 
     const conversaId = {{ conversa.pk|default:"null" }};
     const mensagensIniciais = {{ mensagens_json|default:"[]"|safe }};
+    // Contador global para gerar ids unicos por tabela renderizada
+    let tabelaIdx = 0;
+    // Mapa: idTabela -> {colunas, rows}. Populado por renderTabela().
+    const tabelaStore = {};
 
     function getCookie(name) {
         const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
@@ -419,7 +424,20 @@
         if (!rows || rows.length === 0) {
             return '<div class="text-muted small">Nenhuma linha retornada.</div>';
         }
-        let html = '<div class="tabela-wrapper"><table><thead><tr>';
+
+        // Gera um id unico para esta tabela e guarda colunas/rows
+        const idTabela = 'tabela-' + (++tabelaIdx);
+        tabelaStore[idTabela] = { colunas: colunas, rows: rows };
+
+        let html = '';
+        html += `<div class="d-flex justify-content-end mb-2">`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" `;
+        html += `onclick="window.__toggleGrafico('${idTabela}')">`;
+        html += `<i class="bi bi-bar-chart"></i> Ver como grafico</button>`;
+        html += `</div>`;
+        html += `<div id="${idTabela}-canvas" class="mb-3" style="display:none;"></div>`;
+
+        html += '<div class="tabela-wrapper"><table><thead><tr>';
         for (const c of colunas) html += `<th>${escaparHtml(c)}</th>`;
         html += '</tr></thead><tbody>';
         for (const row of rows) {
@@ -433,6 +451,143 @@
         html += '</tbody></table></div>';
         return html;
     }
+
+        // --------------------------------------------------------
+    // Graficos: heuristica simples + render com Chart.js
+    // --------------------------------------------------------
+    function decidirTipoGrafico(colunas, rows) {
+        if (!colunas || colunas.length < 2 || !rows || rows.length === 0) {
+            return null;
+        }
+
+        // Prefixos/sufixos que indicam identificador, nao medida.
+        // Se cair aqui, a coluna e ignorada como valor Y.
+        const PADROES_ID = ['id', '_id', 'cnpj', '_basico', 'cpf', '_codigo', 'codigo', 'cd_', 'cep'];
+        function pareceId(nomeColuna) {
+            const n = String(nomeColuna).toLowerCase();
+            return PADROES_ID.some(p => n === p || n.includes(p));
+        }
+
+        // Procura a primeira coluna numerica que NAO pareca ID
+        let colunaY = null;
+        for (let i = 1; i < colunas.length; i++) {
+            const nome = colunas[i];
+            if (pareceId(nome)) continue;
+            const valor = rows[0][nome];
+            if (typeof valor === 'number' || (!isNaN(parseFloat(valor)) && isFinite(valor))) {
+                colunaY = nome;
+                break;
+            }
+        }
+
+        // Se so tem coluna de ID como numerica, nao faz grafico
+        if (!colunaY) {
+            return null;
+        }
+
+        // Se a 1a coluna parece data (ISO ou YYYY-MM-DD), sugere linha
+        const primeira = String(rows[0][colunas[0]] || '');
+        const pareceData = /^\d{4}-\d{2}-\d{2}/.test(primeira) || /^\d{4}$/.test(primeira);
+        if (pareceData) return { tipo: 'line', colunaX: colunas[0], colunaY };
+
+        // Caso contrario, barra
+        return { tipo: 'bar', colunaX: colunas[0], colunaY };
+    }
+
+    // Guarda o tipo atual de cada grafico (pra permitir troca)
+    const graficoStore = {};
+
+    function mostrarGrafico(idTabela, tipoForcado) {
+        const dados = tabelaStore[idTabela];
+        if (!dados) return;
+
+        const container = document.getElementById(idTabela + '-canvas');
+        if (!container) return;
+
+        // Se ja esta visivel e nao foi pedido tipo novo, esconde (toggle)
+        if (container.style.display !== 'none' && !tipoForcado) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            delete graficoStore[idTabela];
+            return;
+        }
+
+        const { colunas, rows } = dados;
+
+        // Decide tipo/colunas na 1a vez; nas trocas, so muda o tipo
+        let decisao = graficoStore[idTabela];
+        if (!decisao) {
+            const decidido = decidirTipoGrafico(colunas, rows);
+            if (!decidido) {
+                container.style.display = 'block';
+                container.innerHTML = '<div class="alert alert-warning small mb-0">Nao ha dados suficientes para um grafico (nenhuma coluna numerica que nao seja ID).</div>';
+                return;
+            }
+            decisao = decidido;
+        }
+        if (tipoForcado) {
+            decisao.tipo = tipoForcado;
+        }
+        graficoStore[idTabela] = decisao;
+
+        // Limita a 30 pontos para nao virar uma bagunca
+        const dadosLimitados = rows.slice(0, 30);
+        const labels = dadosLimitados.map(r => formatarValor(r[decisao.colunaX]));
+        const valores = dadosLimitados.map(r => {
+            const v = r[decisao.colunaY];
+            return typeof v === 'number' ? v : parseFloat(v) || 0;
+        });
+
+        // Monta HTML: botoes de tipo + canvas
+        const tipos = ['bar', 'line', 'pie'];
+        const rotulos = { bar: 'Barra', line: 'Linha', pie: 'Pizza' };
+        let botoes = '<div class="d-flex gap-1 mb-2">';
+        for (const t of tipos) {
+            const ativo = (t === decisao.tipo) ? ' active' : '';
+            botoes += `<button type="button" class="btn btn-sm btn-outline-secondary${ativo}" `;
+            botoes += `onclick="window.__toggleGrafico('${idTabela}', '${t}')">`;
+            botoes += `${rotulos[t]}</button>`;
+        }
+        botoes += '</div>';
+
+        container.style.display = 'block';
+        container.innerHTML = botoes + '<canvas style="max-height:400px;"></canvas>';
+        const canvas = container.querySelector('canvas');
+
+        // Destroi instancia anterior se existir (evita sobreposicao)
+        if (graficoStore[idTabela]._instancia) {
+            graficoStore[idTabela]._instancia.destroy();
+        }
+
+        graficoStore[idTabela]._instancia = new Chart(canvas, {
+            type: decisao.tipo,
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: decisao.colunaY,
+                    data: valores,
+                    backgroundColor: decisao.tipo === 'pie'
+                        ? ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#0d9488']
+                        : 'rgba(37, 99, 235, 0.5)',
+                    borderColor: 'rgba(37, 99, 235, 1)',
+                    borderWidth: 1,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: decisao.tipo === 'pie' },
+                },
+                scales: (decisao.tipo === 'pie') ? {} : {
+                    y: { beginAtZero: true },
+                },
+            },
+        });
+    }
+
+    // Exposto globalmente porque o onclick do botao precisa acessar
+    window.__toggleGrafico = mostrarGrafico;
 
     async function consultar() {
         const pergunta = perguntaEl.value.trim();
