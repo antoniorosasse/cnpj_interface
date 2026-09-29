@@ -311,9 +311,34 @@ class FluxoCompletoTests(IntegracaoBaseTests):
         self.assertEqual(kwargs['total_linhas_exibidas'], 1000) 
 
 
+
 # ============================================================
 # chat_view: cria conversa, lista, limpa vazias
 # ============================================================
+    @patch(ALVO_GERAR_SQL)
+    def test_recusa_grava_assistente_no_historico(self, mock_gerar):
+        mock_gerar.return_value = {
+            'ok': False,
+            'sql': '',
+            'erro': 'o banco nao tem coluna X',
+            'tipo_erro': 'recusa',
+            'tentativas': 1,
+            'resposta_bruta': 'RECUSAR: ...',
+            'validation': None,
+        }
+        resp = self.client.post(
+            reverse('chat:api'),
+            data=json.dumps({'pergunta': 'Pergunta impossivel'}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        dados = resp.json()
+        self.assertEqual(dados['tipo_erro'], 'recusa')
+
+        # Confirma que gravou 2 mensagens: user + assistant
+        conversas = repo.listar_conversas(user=self.user)
+        self.assertEqual(conversas[0]['total_mensagens'], 2)
+
 
 class ChatViewTests(IntegracaoBaseTests):
 
@@ -415,3 +440,4 @@ class DeletarViewTests(IntegracaoBaseTests):
         self.client.post(reverse('chat:deletar', args=[cid]))
 
         self.assertNotIn('chat_conversa_id', self.client.session)
+

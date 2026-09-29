@@ -178,6 +178,22 @@ QUANDO MOSTRAR DESCRICOES:
       AND e.cd_matriz_filial = 1
     LIMIT 100  
 
+QUANDO RECUSAR:
+- Se a pergunta pedir uma informacao que NAO EXISTE no schema
+  (numero de funcionarios, faturamento, lucro, quantidade de
+  clientes, estoque, etc), NAO invente SQL nem tente substituir
+  por outra coluna. Responda APENAS com a string:
+    RECUSAR: <motivo curto em portugues>
+- Exemplos:
+    "Liste empresas com 0 funcionarios"
+    -> RECUSAR: o banco nao tem coluna de numero de funcionarios
+    "Qual o faturamento medio das empresas de SP?"
+    -> RECUSAR: o banco nao tem coluna de faturamento
+    "Quantas empresas existem por UF?"
+    -> (pergunta respondivel; gere o SQL normalmente, NAO recuse)
+- NUNCA use RECUSAR para perguntas dificeis. Use APENAS quando a
+  informacao pedida realmente nao existe no schema.
+
 SCHEMA:
 
 {schema}
@@ -239,16 +255,25 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
         'ok': bool,
         'sql': str,
         'erro': str | None,
+        'tipo_erro': 'recusa' | 'llm' | 'validacao' | 'vazio' | None,
         'tentativas': int,
         'resposta_bruta': str,
         'validation': ValidationResult | None,
       }
+
+    tipo_erro:
+      - 'vazio': pergunta em branco
+      - 'recusa': o LLM respondeu RECUSAR: <motivo> (schema nao tem o dado)
+      - 'llm': erro de comunicacao com o LLM
+      - 'validacao': SQL gerado mas rejeitado pelo validador
+      - None: sucesso
     """
     if not pergunta or not pergunta.strip():
         return {
             'ok': False,
             'sql': '',
             'erro': 'Pergunta vazia.',
+            'tipo_erro': 'vazio',
             'tentativas': 0,
             'resposta_bruta': '',
             'validation': None,
@@ -275,6 +300,7 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
                 'ok': False,
                 'sql': '',
                 'erro': f'Erro ao chamar o LLM: {exc}',
+                'tipo_erro': 'llm',
                 'tentativas': tentativa,
                 'resposta_bruta': '',
                 'validation': None,
@@ -282,6 +308,20 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
 
         ultima_bruta = bruto or ''
         sql = _limpar_sql(ultima_bruta)
+
+        # --- detecta RECUSAR ANTES de tentar validar como SQL ---
+        if sql.upper().startswith('RECUSAR'):
+            motivo = sql.split(':', 1)[1].strip() if ':' in sql else ''
+            motivo = motivo or 'a pergunta nao pode ser respondida com os dados disponiveis'
+            return {
+                'ok': False,
+                'sql': '',
+                'erro': motivo,
+                'tipo_erro': 'recusa',
+                'tentativas': tentativa,
+                'resposta_bruta': ultima_bruta,
+                'validation': None,
+            }
 
         if not sql:
             ultimo_erro = 'LLM retornou resposta vazia.'
@@ -311,6 +351,7 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
             'ok': True,
             'sql': validation.sql,
             'erro': None,
+            'tipo_erro': None,
             'tentativas': tentativa,
             'resposta_bruta': ultima_bruta,
             'validation': validation,
@@ -320,6 +361,7 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
         'ok': False,
         'sql': '',
         'erro': ultimo_erro or 'Nao foi possivel gerar SQL valido.',
+        'tipo_erro': 'validacao',
         'tentativas': max_tentativas,
         'resposta_bruta': ultima_bruta,
         'validation': None,

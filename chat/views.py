@@ -121,11 +121,26 @@ def chat_view(request):
 
     conversa = _conversa_atual(request)
 
-    # Se nao tem conversa, cria uma nova
+    # Se nao tem conversa valida, tenta reusar a mais recente que
+    # tenha mensagens. So cria uma nova vazia se nao existir nenhuma
+    # com conteudo. Isso evita que o usuario "perca" a conversa atual
+    # quando a sessao expira ou o cid aponta pra uma conversa que
+    # foi apagada.
     if conversa is None:
-        novo_id = repo.criar_conversa(user=request.user)
-        request.session[SESSION_CONVERSA_ID] = novo_id
-        conversa = repo.buscar_conversa(novo_id, user=request.user)
+        conversas_com_msg = [
+            c for c in repo.listar_conversas(user=request.user)
+            if c['total_mensagens'] > 0
+        ]
+        if conversas_com_msg:
+            cid_reuso = conversas_com_msg[0]['id']
+            request.session[SESSION_CONVERSA_ID] = cid_reuso
+            conversa = repo.buscar_conversa(cid_reuso, user=request.user)
+
+        # Fallback: nenhuma conversa com mensagens, cria nova
+        if conversa is None:
+            novo_id = repo.criar_conversa(user=request.user)
+            request.session[SESSION_CONVERSA_ID] = novo_id
+            conversa = repo.buscar_conversa(novo_id, user=request.user)
 
     # Lista de todas as conversas do usuario (pra sidebar)
     conversas = repo.listar_conversas(user=request.user)
@@ -219,11 +234,31 @@ def chat_api_view(request):
     if not geracao['ok']:
         # Salva a pergunta do usuario mesmo assim (pra ele ver no historico)
         repo.adicionar_mensagem(cid, 'user', pergunta)
+
+        tipo_erro = geracao.get('tipo_erro')
+
+        # Recusa: o LLM disse que a informacao nao existe no schema.
+        # Grava a resposta no historico ANTES de devolver, senao a
+        # pergunta do usuario fica orfa (sem par de assistente).
+        if tipo_erro == 'recusa':
+            motivo = geracao.get('erro') or 'Essa informacao nao esta disponivel na base.'
+            repo.adicionar_mensagem(cid, 'assistant', motivo)
+            return JsonResponse({
+                'ok': False,
+                'etapa': 'recusa',
+                'sql': '',
+                'erro': motivo,
+                'tipo_erro': 'recusa',
+                'tentativas': geracao.get('tentativas', 0),
+            })
+
+        # Outros erros de geracao (LLM caiu, SQL invalido, etc)
         return JsonResponse({
             'ok': False,
             'etapa': 'geracao',
             'sql': geracao.get('sql', ''),
             'erro': geracao.get('erro') or 'Nao foi possivel gerar SQL.',
+            'tipo_erro': tipo_erro,
             'tentativas': geracao.get('tentativas', 0),
         })
 

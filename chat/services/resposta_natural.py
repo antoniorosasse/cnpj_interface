@@ -61,10 +61,14 @@ SYSTEM_PROMPT = (
     "substituir por outra coisa.\n"
     "4. Seja claro, objetivo e profissional. Use 1 a 3 frases.\n"
     "5. Nao use markdown, nao use blocos de codigo, nao repita a pergunta.\n"
-    "6. Se o sistema te avisar que a consulta foi TRUNCADA, "
+    "6. Se o sistema te avisar EXPLICITAMENTE que a consulta foi TRUNCADA, "
     "mencione isso no final da resposta, de forma natural, por exemplo: "
     "'esta e uma lista parcial; use filtros para refinar'. "
-    "NAO invente o numero total se ele nao foi informado."
+    "NAO invente o numero total se ele nao foi informado.\n"
+    "7. Se o sistema NAO te avisar que a consulta foi TRUNCADA, "
+    "NAO mencione 'lista parcial', 'amostra', 'truncado' nem 'apenas X de Y'. "
+    "Apenas diga o total real e destaque os primeiros itens. "
+    "Nunca use as palavras 'parcial', 'amostra' ou 'truncado' por conta propria."
 )
 
 
@@ -81,14 +85,11 @@ def _montar_user_prompt(
 
     dados_json = json.dumps(linhas, ensure_ascii=False, indent=2, default=str)
 
-    aviso_total = ''
-    if total > LIMITE_LINHAS:
-        aviso_total = (
-            f"\n\nTotal de linhas: {total} "
-            f"(voce esta vendo as primeiras {len(linhas)})."
-        )
-    else:
-        aviso_total = f"\n\nTotal de linhas: {total} (voce esta vendo todas)."
+    # Sempre diz o total real. NAO menciona quantas linhas o LLM ve,
+    # exceto quando for truncado (aí o aviso_truncado cuida disso).
+    # Motivo: dizer "voce esta vendo as primeiras 20" faz o LLM
+    # alucinar que a lista esta truncada e inventar "lista parcial".
+    aviso_total = f"\n\nTotal de linhas: {total}."
 
     aviso_truncado = ''
     if truncado:

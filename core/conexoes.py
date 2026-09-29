@@ -1,7 +1,10 @@
 # core/conexoes.py
+import logging
 import os
 import sys
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 # ==================== IMPORTAÇÕES CONDICIONAIS ====================
 # JPype - para conexão com AS/400
@@ -80,7 +83,7 @@ class ConexaoAS400:
             
             # Verifica se a JVM já está rodando
             if jpype.isJVMStarted():
-                print("ℹ️  JVM já está rodando")
+                logger.debug("JVM ja esta rodando")
                 self._jvm_iniciada = True
                 return
             
@@ -92,7 +95,7 @@ class ConexaoAS400:
                 convertStrings=True
             )
             self._jvm_iniciada = True
-            print("✅ JVM iniciada com sucesso!")
+            logger.debug("JVM iniciada com sucesso")
         except Exception as e:
             raise Exception(f"Erro ao iniciar JVM: {str(e)}")
     
@@ -179,7 +182,7 @@ class ConexaoAS400:
             if self._jvm_iniciada and jpype.isJVMStarted():
                 jpype.shutdownJVM()
                 self._jvm_iniciada = False
-                print("✅ JVM finalizada com sucesso!")
+                logger.debug("JVM finalizada com sucesso")
         except:
             pass
 
@@ -280,12 +283,12 @@ class ConexaoMongoDB:
                 # Adiciona o database name
                 uri = uri + config['DATABASE']
                 
-                print(f"🔗 Conectando ao MongoDB: {config['HOST']}:{config['PORT']}/{config['DATABASE']}")
+                logger.debug("Conectando ao MongoDB: %s:%s/%s", config['HOST'], config['PORT'], config['DATABASE'])
                 
-                self._client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+                self._client = MongoClient(uri, tz_aware=True, serverSelectionTimeoutMS=5000)
                 # Testa a conexão
                 self._client.admin.command('ping')
-                print("✅ Conexão com MongoDB estabelecida!")
+                logger.debug("Conexao com MongoDB estabelecida")
             except Exception as e:
                 raise Exception(f"Erro ao conectar ao MongoDB: {str(e)}")
         return self._client
@@ -334,7 +337,7 @@ class ConexaoMongoDB:
         if self._client:
             self._client.close()
             self._client = None
-            print("✅ Conexão MongoDB fechada!")
+            logger.debug("Conexao MongoDB fechada")
 
 
 # ==================== FUNÇÕES AUXILIARES ====================

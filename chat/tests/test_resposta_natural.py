@@ -67,17 +67,20 @@ class MontarUserPromptTests(TestCase):
         self.assertNotIn(f'"n": {LIMITE_LINHAS},', out)
 
     def test_mostra_total_quando_truncou(self):
+        """Sempre diz o total real, mas NAO menciona quantas linhas ve."""
         rows = [{'n': i} for i in range(LIMITE_LINHAS + 5)]
         out = _montar_user_prompt('pergunta', ['n'], rows)
-        # Agora a mensagem diz "Total de linhas: 25 (voce esta vendo as primeiras 20)."
         self.assertIn(f'Total de linhas: {LIMITE_LINHAS + 5}', out)
-        self.assertIn(f'primeiras {LIMITE_LINHAS}', out)
+        # Nao deve mencionar "primeiras N" (isso e' papel do aviso_truncado)
+        self.assertNotIn('primeiras', out.lower())
 
     def test_mostra_total_quando_nao_truncou(self):
+        """Sempre diz o total real, sem 'voce esta vendo todas'."""
         rows = [{'n': i} for i in range(3)]
         out = _montar_user_prompt('pergunta', ['n'], rows)
         self.assertIn('Total de linhas: 3', out)
-        self.assertIn('voce esta vendo todas', out)
+        # Nao deve mencionar "voce esta vendo todas"
+        self.assertNotIn('voce esta vendo', out.lower())
 
     def test_nao_avisa_quando_nao_truncou(self):
         rows = [{'n': i} for i in range(3)]
@@ -195,4 +198,22 @@ class SystemPromptTests(TestCase):
         # O prompt deve instruir explicitamente a NAO dizer "apenas 20"
         self.assertIn('NUNCA diga', SYSTEM_PROMPT)
         
+class PromptNaoMencionaParcialTests(TestCase):
+    """Garante que _montar_user_prompt nao sugere 'parcial' quando nao truncado."""
+
+    def test_sem_truncado_nao_menciona_primeiras(self):
+        rows = [{'a': i} for i in range(30)]  # > LIMITE_LINHAS, mas nao truncado
+        out = _montar_user_prompt('p', ['a'], rows)
+        self.assertNotIn('primeiras', out.lower())
+        self.assertNotIn('TRUNCADA', out.upper())
+
+    def test_com_truncado_ainda_menciona(self):
+        rows = [{'a': i} for i in range(30)]
+        out = _montar_user_prompt(
+            'p', ['a'], rows,
+            truncado=True,
+            total_linhas_exibidas=30,
+        )
+        self.assertIn('TRUNCADA', out.upper())
+
                 

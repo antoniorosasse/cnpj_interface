@@ -526,14 +526,6 @@
             return null;
         }
 
-        // Se a coluna X tem muitos valores unicos, nao vale a pena plotar
-        // (o grafico mostra so os 30 primeiros; mais que isso engana).
-        const MAX_VALORES_X = 30;
-        const valoresX = new Set(rows.map(r => String(r[colunas[0]])));
-        if (valoresX.size > MAX_VALORES_X) {
-            return null;
-        }
-
         // Prefixos/sufixos que indicam identificador, nao medida.
         // Se cair aqui, a coluna e ignorada como valor Y.
         const PADROES_ID = ['id', '_id', 'cnpj', '_basico', 'cpf', '_codigo', 'codigo', 'cd_', 'cep'];
@@ -559,18 +551,28 @@
             return null;
         }
 
-        // Se a 1a coluna parece data (ISO ou YYYY-MM-DD), sugere linha
+        // Conta valores unicos no eixo X pra decidir se precisa cortar
+        const valoresX = new Set(rows.map(r => String(r[colunas[0]])));
+        const MAX_VALORES_X = 100;
+        const TOP_N_GRAFICO = 30;
+
+        // Se a coluna X parece data (ISO ou YYYY-MM-DD), sugere linha
         const primeira = String(rows[0][colunas[0]] || '');
         const pareceData = /^\d{4}-\d{2}-\d{2}/.test(primeira) || /^\d{4}$/.test(primeira);
-        if (pareceData) return { tipo: 'line', colunaX: colunas[0], colunaY };
+        const tipo = pareceData ? 'line' : 'bar';
 
-        // Caso contrario, barra
-        return { tipo: 'bar', colunaX: colunas[0], colunaY };
+        return {
+            tipo: tipo,
+            colunaX: colunas[0],
+            colunaY: colunaY,
+            totalValoresX: valoresX.size,
+            cortarNoTop: valoresX.size > MAX_VALORES_X,
+            topN: TOP_N_GRAFICO,
+        };
     }
-
     // Guarda o tipo atual de cada grafico (pra permitir troca)
     const graficoStore = {};
-
+    
     function mostrarGrafico(idTabela, tipoForcado) {
         const dados = tabelaStore[idTabela];
         if (!dados) return;
@@ -604,13 +606,23 @@
         }
         graficoStore[idTabela] = decisao;
 
-        // Limita a 30 pontos para nao virar uma bagunca
-        const dadosLimitados = rows.slice(0, 30);
+        // Corta no top N apenas se a coluna X tem muitos valores
+        const limitePontos = decisao.cortarNoTop ? decisao.topN : rows.length;
+        const dadosLimitados = rows.slice(0, limitePontos);
         const labels = dadosLimitados.map(r => formatarValor(r[decisao.colunaX]));
         const valores = dadosLimitados.map(r => {
             const v = r[decisao.colunaY];
             return typeof v === 'number' ? v : parseFloat(v) || 0;
         });
+
+        // Aviso quando o grafico mostra so uma parte
+        let avisoCorte = '';
+        if (decisao.cortarNoTop) {
+            avisoCorte = `<div class="text-muted small mb-2">` +
+                `Mostrando os ${decisao.topN} maiores de ${decisao.totalValoresX}. ` +
+                `Use filtros para ver mais.` +
+                `</div>`;
+        }
 
         // Monta HTML: botoes de tipo + canvas
         const tipos = ['bar', 'line', 'pie'];
@@ -625,7 +637,7 @@
         botoes += '</div>';
 
         container.style.display = 'block';
-        container.innerHTML = botoes + '<canvas style="max-height:400px;"></canvas>';
+        container.innerHTML = botoes + avisoCorte + '<canvas style="max-height:400px;"></canvas>';
         const canvas = container.querySelector('canvas');
 
         // Destroi instancia anterior se existir (evita sobreposicao)
