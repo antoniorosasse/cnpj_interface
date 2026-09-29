@@ -27,6 +27,7 @@ from django.views.decorators.http import require_POST
 
 from .services.sql_generator import gerar_sql
 from .services.sql_executor import executar_sql
+from .services.resposta_natural import gerar_texto_resposta
 #from chat.models import Conversa, Mensagem
 from . import repo
 
@@ -140,8 +141,8 @@ def chat_view(request):
                 'papel': m.get('papel', ''),
                 'conteudo': m.get('conteudo', ''),
             }
-            for chave in ('sql', 'colunas', 'rows', 'total_linhas',
-                          'truncado', 'tempo_ms', 'erro'):
+            for chave in ('sql', 'resposta_texto', 'colunas', 'rows',
+                          'total_linhas', 'truncado', 'tempo_ms', 'erro'):
                 if chave in m and m[chave] is not None:
                     d[chave] = m[chave]
             return d
@@ -153,6 +154,8 @@ def chat_view(request):
             }
             if m.sql:
                 d['sql'] = m.sql
+            if m.resposta_texto:
+                d['resposta_texto'] = m.resposta_texto
             if m.total_linhas is not None:
                 d['total_linhas'] = m.total_linhas
             if m.tempo_ms is not None:
@@ -250,7 +253,18 @@ def chat_api_view(request):
             validation = geracao2['validation']
             execucao = executar_sql(validation)
 
-    # --- 3) salva as duas mensagens ---
+    # --- 3) gera texto natural (so se houve dados) ---
+    resposta_texto = ''
+    if execucao['ok'] and execucao.get('rows'):
+        resposta_texto = gerar_texto_resposta(
+            pergunta=pergunta,
+            colunas=execucao['colunas'],
+            rows=execucao['rows'],
+            truncado=execucao['truncado'],
+            total_linhas_exibidas=execucao['total_linhas'],
+        )
+
+    # --- 4) salva as duas mensagens ---
     repo.adicionar_mensagem(cid, 'user', pergunta)
 
     if execucao['ok']:
@@ -259,6 +273,7 @@ def chat_api_view(request):
             'assistant',
             validation.sql,
             sql=validation.sql,
+            resposta_texto=resposta_texto,
             colunas=execucao['colunas'],
             rows=execucao['rows'],
             total_linhas=execucao['total_linhas'],
@@ -281,6 +296,7 @@ def chat_api_view(request):
         'sql_original': validation.original_sql,
         'teve_limit': validation.teve_limit,
         'limit_valor': validation.limit_valor,
+        'resposta_texto': resposta_texto,
         'colunas': execucao['colunas'],
         'rows': execucao['rows'],
         'total_linhas': execucao['total_linhas'],

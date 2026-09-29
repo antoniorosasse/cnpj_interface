@@ -40,7 +40,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f'Backend: {repo.backend_ativo()}')
 
-        alvo = repo.listar_conversas_antigas(dias=dias)
+        alvo = repo.listar_conversas_antigas_todos(dias=dias)
         total = len(alvo)
 
         if total == 0:

@@ -37,7 +37,7 @@ Estrutura de um documento:
 Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -109,8 +109,8 @@ def _serializar_rows(rows):
 
 
 def _agora() -> datetime:
-    """Retorna o datetime atual (timezone naive, UTC)."""
-    return datetime.utcnow()
+    """Retorna o datetime atual (aware, UTC)."""
+    return datetime.now(timezone.utc)
 
 
 # ============================================================
@@ -294,6 +294,34 @@ def listar_conversas_vazias(usuario_id: int) -> list[dict]:
         {'_id': 1, 'titulo': 1, 'atualizado_em': 1},
     )
     return list(cursor)
+
+
+def listar_conversas_antigas_todos(dias: int = 30) -> list[dict]:
+    """
+    Lista conversas mais antigas que N dias, de TODOS os usuarios.
+
+    Usado pelo comando de housekeeping (limpar_conversas_antigas).
+    Diferente de listar_conversas_antigas, que exige usuario_id.
+
+    Retorna lista de dicts com 'id', 'titulo', 'usuario_id', 'atualizado_em'.
+    """
+    from datetime import timedelta
+
+    limite = _agora() - timedelta(days=dias)
+    cursor = _get_collection().find(
+        {'atualizado_em': {'$lt': limite}},
+        {'_id': 1, 'titulo': 1, 'usuario_id': 1, 'atualizado_em': 1},
+    ).sort('atualizado_em', 1)
+
+    return [
+        {
+            'id': str(d['_id']),
+            'titulo': d.get('titulo', ''),
+            'usuario_id': d.get('usuario_id'),
+            'atualizado_em': d.get('atualizado_em'),
+        }
+        for d in cursor
+    ]
 
 
 def limpar_conversas_antigas(usuario_id: int, dias: int = 30) -> int:

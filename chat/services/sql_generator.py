@@ -95,8 +95,25 @@ REGRAS DE OURO:
    Escolha a tabela que tiver as colunas necessarias no WHERE.
 7. Para contar "empresas ativas", use:
      WHERE cd_matriz_filial = 1 AND cd_sit_cadastro = 2
-8. Use LIMIT somente em listagens. Agregacoes globais (COUNT, GROUP BY
-   sem WHERE) NAO precisam de LIMIT.
+8. NUNCA adicione LIMIT quando o SELECT tiver GROUP BY ou alguma
+   funcao de agregacao (COUNT, SUM, AVG, MIN, MAX) no SELECT.
+   O sistema cuida do limite depois; se voce limitar aqui, a resposta
+   sai truncada e o usuario ve o numero errado.
+
+   ERRADO (nunca faca):
+     SELECT uf, COUNT(*) AS total FROM c_estabelecimentos
+     WHERE cd_matriz_filial = 1
+     GROUP BY uf ORDER BY total DESC LIMIT 1000
+
+   CERTO:
+     SELECT uf, COUNT(*) AS total FROM c_estabelecimentos
+     WHERE cd_matriz_filial = 1
+     GROUP BY uf ORDER BY total DESC
+
+   LIMIT so faz sentido em LISTAGENS (SELECT sem GROUP BY nem
+   agregacao no SELECT). Ex: "liste empresas de Joinville"
+   -> LIMIT 100 e' ok. Ex: "quantas empresas por cidade"
+   -> NAO use LIMIT.
 
 ORDEM DOS JOINS (critico para performance):
 - Quando a pergunta filtrar por um valor MUITO SELETIVO em c_socios

@@ -1,0 +1,657 @@
+<!-- /home/neto/cnpj_interface/chat/templates/chat/chat.html -->
+{% extends 'core/base.html' %}
+
+{% block title %}Chat IA - Sistema CNPJ{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sidebar-conversas {
+        width: 260px;
+        flex-shrink: 0;
+        background: #fff;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        padding: 12px;
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+    }
+    .sidebar-conversas h6 {
+        font-size: .8rem;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin: 0 0 10px;
+    }
+    .sidebar-conversas ul {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 12px;
+    }
+    .sidebar-conversas li.item-conversa {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        border-radius: 4px;
+    }
+    .sidebar-conversas li.item-conversa a {
+        flex: 1;
+        min-width: 0;
+        display: block;
+        padding: 6px 8px;
+        border-radius: 4px;
+        text-decoration: none;
+        color: #374151;
+        font-size: .85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .sidebar-conversas li.item-conversa a:hover {
+        background: #f3f4f6;
+        color: #2563eb;
+    }
+    .sidebar-conversas li.item-conversa a.atual {
+        background: #eef2ff;
+        color: #3730a3;
+        font-weight: 600;
+    }
+    .sidebar-conversas .vazio {
+        color: #999;
+        font-size: .8rem;
+        font-style: italic;
+        padding: 4px 8px;
+    }
+    .sidebar-conversas .form-deletar {
+        margin: 0;
+        flex-shrink: 0;
+        display: none;
+    }
+    .sidebar-conversas li.item-conversa:hover .form-deletar {
+        display: block;
+    }
+    .sidebar-conversas .form-deletar button {
+        background: transparent;
+        color: #9ca3af;
+        border: 0;
+        padding: 4px 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        line-height: 1;
+        border-radius: 4px;
+    }
+    .sidebar-conversas .form-deletar button:hover {
+        color: #dc2626;
+        background: #fee2e2;
+    }
+    .link-historico {
+        display: block;
+        text-align: center;
+        margin-top: 10px;
+        font-size: .8rem;
+        color: #2563eb;
+        text-decoration: none;
+    }
+    .link-historico:hover {
+        text-decoration: underline;
+    }
+
+    .thread .turno {
+        background: #fff;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+    }
+    .thread .turno.user {
+        background: #eef2ff;
+        border-color: #c7d2fe;
+    }
+    .thread .papel {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #666;
+        margin-bottom: 4px;
+    }
+    .thread .turno.user .papel { color: #3730a3; }
+
+    .sql-box {
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 12px;
+        border-radius: 6px;
+        font-family: "SF Mono", Menlo, Consolas, monospace;
+        font-size: .82rem;
+        white-space: pre-wrap;
+        word-break: break-all;
+        margin-top: 12px;
+    }
+    .sql-box .label {
+        color: #94a3b8;
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        display: block;
+        margin-bottom: 6px;
+    }
+    .tabela-wrapper {
+        max-height: 500px;
+        overflow: auto;
+        border-radius: 6px;
+    }
+    .tabela-wrapper table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: .82rem;
+    }
+    .tabela-wrapper th, .tabela-wrapper td {
+        border: 1px solid #e5e7eb;
+        padding: 6px 10px;
+        text-align: left;
+        vertical-align: top;
+    }
+    .tabela-wrapper th {
+        background: #f3f4f6;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+    }
+    .tabela-wrapper tr:nth-child(even) td { background: #fafafa; }
+
+    .spinner {
+        display: none;
+        width: 18px;
+        height: 18px;
+        border: 3px solid #ddd;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+    }
+    .spinner.ativo { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .badge-ok {
+        display: inline-block;
+        background: #eef2ff;
+        color: #3730a3;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: .72rem;
+        margin-left: 6px;
+    }
+    .badge-aviso {
+        display: inline-block;
+        background: #fef3c7;
+        color: #92400e;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: .72rem;
+        margin-left: 6px;
+    }
+
+    @media (max-width: 768px) {
+        .layout-chat { flex-direction: column; }
+        .sidebar-conversas {
+            width: 100%;
+            max-height: 200px;
+        }
+        .sidebar-conversas .form-deletar { display: block; }
+    }
+    .resultado-historico {
+        clear: both;
+        margin-top: 8px;
+        margin-bottom: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="mb-0">
+            <i class="bi bi-chat-dots-fill"></i> Chat IA — Análise de CNPJ
+        </h1>
+        <small class="text-muted">
+            Pergunte em português. O sistema gera SQL, valida e executa em modo somente-leitura.
+        </small>
+    </div>
+</div>
+
+<div class="alert alert-info small mb-3">
+    <i class="bi bi-info-circle"></i>
+    <strong>Dica:</strong> seja específico sobre "matriz" (só a sede) ou "estabelecimentos"
+    (sede + filiais) — a diferença nos totais pode ser grande.
+</div>
+
+<div class="d-flex gap-3 align-items-start layout-chat">
+
+    <!-- SIDEBAR DE CONVERSAS -->
+    <aside class="sidebar-conversas">
+        <h6>Conversas</h6>
+        {% if conversas %}
+            <ul>
+                {% for c in conversas %}
+                    <li class="item-conversa">
+                        <a href="{% url 'chat:conversa' c.id %}" class="{% if c.id == conversa_id_atual %}atual{% endif %}" title="{{ c.titulo|default:'(sem titulo)' }}">
+                            {{ c.titulo|default:"(sem titulo)"|truncatechars:32 }}
+                        </a>
+                        <form method="post" action="{% url 'chat:deletar' c.id %}" class="form-deletar" onsubmit="return confirm('Deletar esta conversa?');">
+                            {% csrf_token %}
+                            <button type="submit" title="Deletar">×</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="vazio">Nenhuma conversa ainda.</div>
+        {% endif %}
+
+        <form method="post" action="{% url 'chat:nova' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+                <i class="bi bi-plus-lg"></i> Nova conversa
+            </button>
+        </form>
+
+        <a href="{% url 'chat:historico' %}" class="link-historico">
+            Ver histórico completo
+        </a>
+    </aside>
+
+    <!-- CONTEÚDO DO CHAT -->
+    <div class="flex-grow-1" style="min-width: 0;">
+
+        <div class="thread" id="thread"></div>
+
+        <div class="card">
+            <div class="card-body">
+                <textarea id="pergunta" class="form-control mb-2" style="min-height: 70px;" placeholder="Ex: Quantas empresas ativas existem por porte?"></textarea>
+                <div class="d-flex gap-2 align-items-center">
+                    <button id="enviar" type="button" class="btn btn-primary">
+                        <i class="bi bi-search"></i> Consultar
+                    </button>
+                    <div class="spinner" id="spinner"></div>
+                    <span class="text-muted small" id="info"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultado"></div>
+
+    </div>
+</div>
+    {% if 'chat.arosasse.tech' not in request.get_host %}
+        <div class="mt-4">
+            <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Voltar para Empresas
+            </a>
+        </div>  
+    {% endif %}
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    const perguntaEl = document.getElementById('pergunta');
+    const botaoEl    = document.getElementById('enviar');
+    const spinnerEl  = document.getElementById('spinner');
+    const infoEl     = document.getElementById('info');
+    const resultEl   = document.getElementById('resultado');
+    const threadEl   = document.getElementById('thread');
+
+    const conversaId = {{ conversa.pk|default:"null" }};
+    const mensagensIniciais = {{ mensagens_json|default:"[]"|safe }};
+    // Contador global para gerar ids unicos por tabela renderizada
+    let tabelaIdx = 0;
+    // Mapa: idTabela -> {colunas, rows}. Populado por renderTabela().
+    const tabelaStore = {};
+
+    function getCookie(name) {
+        const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return m ? decodeURIComponent(m.pop()) : '';
+    }
+
+    function setLoading(ativo) {
+        botaoEl.disabled = ativo;
+        spinnerEl.classList.toggle('ativo', ativo);
+        infoEl.textContent = ativo ? 'Consultando...' : '';
+    }
+
+    function escaparHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    const fmtNum = new Intl.NumberFormat('pt-BR');
+
+    function formatarValor(v) {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'number' && Number.isFinite(v)) {
+            return fmtNum.format(v);
+        }
+        return String(v);
+    }
+
+    function renderTurno(papel, conteudo) {
+        const cls = papel === 'user' ? 'user' : 'assistant';
+        const rotulo = papel === 'user' ? 'Você' : 'Assistente';
+        return `<div class="turno ${cls}">
+            <div class="papel">${rotulo}</div>
+            <div>${escaparHtml(conteudo)}</div>
+        </div>`;
+    }
+
+    function renderThreadInicial() {
+        if (!mensagensIniciais || mensagensIniciais.length === 0) {
+            threadEl.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        // Agrupa: cada par user/assistant vira um "turno" visual
+        let i = 0;
+        while (i < mensagensIniciais.length) {
+            const m = mensagensIniciais[i];
+
+            if (m.papel === 'user') {
+                // Renderiza a pergunta do usuário
+                html += renderTurno('user', m.conteudo);
+                i++;
+
+                // Se a próxima for assistant, renderiza com SQL + tabela
+                if (i < mensagensIniciais.length && mensagensIniciais[i].papel === 'assistant') {
+                    const a = mensagensIniciais[i];
+                    html += renderTurno('assistant', a.sql || a.conteudo);
+
+                    // Renderiza o "resultado" (SQL + tabela) se tiver dados
+                    if (a.sql || a.colunas || a.rows) {
+                        html += '<div class="resultado-historico">';
+                        if (a.sql) html += renderSql(a.sql);
+                        if (a.colunas && a.rows) {
+                            html += '<div class="card mt-3"><div class="card-body">';
+                            if (a.tempo_ms !== undefined || a.total_linhas !== undefined) {
+                                const info = `${a.total_linhas || 0} linha(s) · ${a.tempo_ms || 0}ms`;
+                                html += `<div class="text-muted small mb-2">${escaparHtml(info)}`;
+                                if (a.truncado) {
+                                    html += '<span class="badge-aviso">truncado</span>';
+                                } else {
+                                    html += '<span class="badge-ok">ok</span>';
+                                }
+                                html += '</div>';
+                            }
+                            html += renderTabela(a.colunas, a.rows);
+                            html += '</div></div>';
+                        }
+                        html += '</div>';
+                    }
+                    i++;
+                }
+            } else {
+                // Mensagem assistant solta (sem user antes)
+                html += renderTurno('assistant', m.sql || m.conteudo);
+                i++;
+            }
+        }
+
+        threadEl.innerHTML = html;
+    }
+
+    function renderSql(sql) {
+        return `<div class="sql-box"><span class="label">SQL executado</span>${escaparHtml(sql)}</div>`;
+    }
+
+    function renderErro(dados) {
+        const etapa = dados.etapa ? ` (etapa: ${escaparHtml(dados.etapa)})` : '';
+        let html = `<div class="alert alert-danger mt-3"><strong>Erro${etapa}:</strong><br>${escaparHtml(dados.erro || 'desconhecido')}</div>`;
+        if (dados.sql) html += renderSql(dados.sql);
+        return html;
+    }
+
+    function renderTabela(colunas, rows) {
+        if (!colunas || colunas.length === 0) {
+            return '<div class="text-muted small">Nenhuma coluna retornada.</div>';
+        }
+        if (!rows || rows.length === 0) {
+            return '<div class="text-muted small">Nenhuma linha retornada.</div>';
+        }
+
+        // Gera um id unico para esta tabela e guarda colunas/rows
+        const idTabela = 'tabela-' + (++tabelaIdx);
+        tabelaStore[idTabela] = { colunas: colunas, rows: rows };
+
+        let html = '';
+        html += `<div class="d-flex justify-content-end mb-2">`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" `;
+        html += `onclick="window.__toggleGrafico('${idTabela}')">`;
+        html += `<i class="bi bi-bar-chart"></i> Ver como grafico</button>`;
+        html += `</div>`;
+        html += `<div id="${idTabela}-canvas" class="mb-3" style="display:none;"></div>`;
+
+        html += '<div class="tabela-wrapper"><table><thead><tr>';
+        for (const c of colunas) html += `<th>${escaparHtml(c)}</th>`;
+        html += '</tr></thead><tbody>';
+        for (const row of rows) {
+            html += '<tr>';
+            for (const c of colunas) {
+                const vFmt = formatarValor(row[c]);
+                html += `<td>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+        // --------------------------------------------------------
+    // Graficos: heuristica simples + render com Chart.js
+    // --------------------------------------------------------
+    function decidirTipoGrafico(colunas, rows) {
+        if (!colunas || colunas.length < 2 || !rows || rows.length === 0) {
+            return null;
+        }
+
+        // Prefixos/sufixos que indicam identificador, nao medida.
+        // Se cair aqui, a coluna e ignorada como valor Y.
+        const PADROES_ID = ['id', '_id', 'cnpj', '_basico', 'cpf', '_codigo', 'codigo', 'cd_', 'cep'];
+        function pareceId(nomeColuna) {
+            const n = String(nomeColuna).toLowerCase();
+            return PADROES_ID.some(p => n === p || n.includes(p));
+        }
+
+        // Procura a primeira coluna numerica que NAO pareca ID
+        let colunaY = null;
+        for (let i = 1; i < colunas.length; i++) {
+            const nome = colunas[i];
+            if (pareceId(nome)) continue;
+            const valor = rows[0][nome];
+            if (typeof valor === 'number' || (!isNaN(parseFloat(valor)) && isFinite(valor))) {
+                colunaY = nome;
+                break;
+            }
+        }
+
+        // Se so tem coluna de ID como numerica, nao faz grafico
+        if (!colunaY) {
+            return null;
+        }
+
+        // Se a 1a coluna parece data (ISO ou YYYY-MM-DD), sugere linha
+        const primeira = String(rows[0][colunas[0]] || '');
+        const pareceData = /^\d{4}-\d{2}-\d{2}/.test(primeira) || /^\d{4}$/.test(primeira);
+        if (pareceData) return { tipo: 'line', colunaX: colunas[0], colunaY };
+
+        // Caso contrario, barra
+        return { tipo: 'bar', colunaX: colunas[0], colunaY };
+    }
+
+    // Guarda o tipo atual de cada grafico (pra permitir troca)
+    const graficoStore = {};
+
+    function mostrarGrafico(idTabela, tipoForcado) {
+        const dados = tabelaStore[idTabela];
+        if (!dados) return;
+
+        const container = document.getElementById(idTabela + '-canvas');
+        if (!container) return;
+
+        // Se ja esta visivel e nao foi pedido tipo novo, esconde (toggle)
+        if (container.style.display !== 'none' && !tipoForcado) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            delete graficoStore[idTabela];
+            return;
+        }
+
+        const { colunas, rows } = dados;
+
+        // Decide tipo/colunas na 1a vez; nas trocas, so muda o tipo
+        let decisao = graficoStore[idTabela];
+        if (!decisao) {
+            const decidido = decidirTipoGrafico(colunas, rows);
+            if (!decidido) {
+                container.style.display = 'block';
+                container.innerHTML = '<div class="alert alert-warning small mb-0">Nao ha dados suficientes para um grafico (nenhuma coluna numerica que nao seja ID).</div>';
+                return;
+            }
+            decisao = decidido;
+        }
+        if (tipoForcado) {
+            decisao.tipo = tipoForcado;
+        }
+        graficoStore[idTabela] = decisao;
+
+        // Limita a 30 pontos para nao virar uma bagunca
+        const dadosLimitados = rows.slice(0, 30);
+        const labels = dadosLimitados.map(r => formatarValor(r[decisao.colunaX]));
+        const valores = dadosLimitados.map(r => {
+            const v = r[decisao.colunaY];
+            return typeof v === 'number' ? v : parseFloat(v) || 0;
+        });
+
+        // Monta HTML: botoes de tipo + canvas
+        const tipos = ['bar', 'line', 'pie'];
+        const rotulos = { bar: 'Barra', line: 'Linha', pie: 'Pizza' };
+        let botoes = '<div class="d-flex gap-1 mb-2">';
+        for (const t of tipos) {
+            const ativo = (t === decisao.tipo) ? ' active' : '';
+            botoes += `<button type="button" class="btn btn-sm btn-outline-secondary${ativo}" `;
+            botoes += `onclick="window.__toggleGrafico('${idTabela}', '${t}')">`;
+            botoes += `${rotulos[t]}</button>`;
+        }
+        botoes += '</div>';
+
+        container.style.display = 'block';
+        container.innerHTML = botoes + '<canvas style="max-height:400px;"></canvas>';
+        const canvas = container.querySelector('canvas');
+
+        // Destroi instancia anterior se existir (evita sobreposicao)
+        if (graficoStore[idTabela]._instancia) {
+            graficoStore[idTabela]._instancia.destroy();
+        }
+
+        graficoStore[idTabela]._instancia = new Chart(canvas, {
+            type: decisao.tipo,
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: decisao.colunaY,
+                    data: valores,
+                    backgroundColor: decisao.tipo === 'pie'
+                        ? ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#0d9488']
+                        : 'rgba(37, 99, 235, 0.5)',
+                    borderColor: 'rgba(37, 99, 235, 1)',
+                    borderWidth: 1,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: decisao.tipo === 'pie' },
+                },
+                scales: (decisao.tipo === 'pie') ? {} : {
+                    y: { beginAtZero: true },
+                },
+            },
+        });
+    }
+
+    // Exposto globalmente porque o onclick do botao precisa acessar
+    window.__toggleGrafico = mostrarGrafico;
+
+    async function consultar() {
+        const pergunta = perguntaEl.value.trim();
+        if (!pergunta) { perguntaEl.focus(); return; }
+
+        resultEl.innerHTML = '';
+        setLoading(true);
+
+        threadEl.insertAdjacentHTML('beforeend', renderTurno('user', pergunta));
+
+        try {
+            const resp = await fetch('/chat/api/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken'),
+                },
+                body: JSON.stringify({ pergunta: pergunta }),
+            });
+
+            const dados = await resp.json();
+
+            if (!resp.ok || !dados.ok) {
+                threadEl.insertAdjacentHTML(
+                    'beforeend',
+                    renderTurno('assistant', dados.erro || 'Erro desconhecido')
+                );
+                resultEl.innerHTML = renderErro(dados);
+                return;
+            }
+
+            threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', dados.sql));
+
+            const infoTxt = `${dados.total_linhas} linha(s) · ${dados.tempo_ms}ms`;
+            const badgeOk = dados.truncado
+                ? `<span class="badge-aviso">truncado em ${dados.limit_valor}</span>`
+                : '<span class="badge-ok">ok</span>';
+
+            resultEl.innerHTML =
+                renderSql(dados.sql) +
+                `<div class="card mt-3"><div class="card-body">` +
+                    `<div class="text-muted small mb-2">${escaparHtml(infoTxt)}${badgeOk}</div>` +
+                    renderTabela(dados.colunas, dados.rows) +
+                `</div></div>`;
+
+            perguntaEl.value = '';
+
+        } catch (e) {
+            threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', String(e)));
+            resultEl.innerHTML = renderErro({ erro: String(e), etapa: 'rede' });
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    botaoEl.addEventListener('click', consultar);
+    perguntaEl.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+            ev.preventDefault();
+            consultar();
+        }
+    });
+
+    renderThreadInicial();
+})();
+</script>
+{% endblock %}

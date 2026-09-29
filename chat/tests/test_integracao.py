@@ -75,6 +75,19 @@ def _fake_execucao_ok():
     }
 
 
+def _fake_execucao_truncado():
+    """Retorno fake do executar_sql com truncado=True."""
+    return {
+        'ok': True,
+        'rows': [{'total': i} for i in range(5)],
+        'colunas': ['total'],
+        'erro': None,
+        'tempo_ms': 100,
+        'total_linhas': 1000,
+        'truncado': True,
+    }
+
+
 def _fake_geracao_erro():
     """Retorno fake do gerar_sql (falha)."""
     return {
@@ -248,6 +261,54 @@ class FluxoCompletoTests(IntegracaoBaseTests):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 400)
+
+    # ============================================================
+    # RESPOSTA_TEXTO NO JSON
+    # ============================================================
+
+    @patch('chat.views.gerar_texto_resposta')
+    @patch(ALVO_EXECUTAR_SQL)
+    @patch(ALVO_GERAR_SQL)
+    def test_json_tem_resposta_texto_quando_sucesso(
+        self, mock_gerar, mock_exec, mock_texto
+    ):
+        mock_gerar.return_value = _fake_geracao_ok()
+        mock_exec.return_value = _fake_execucao_ok()
+        mock_texto.return_value = 'texto gerado pelo LLM'
+
+        resp = self.client.post(
+            reverse('chat:api'),
+            data=json.dumps({'pergunta': 'Quantas empresas?'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        dados = resp.json()
+        self.assertTrue(dados['ok'])
+        self.assertEqual(dados['resposta_texto'], 'texto gerado pelo LLM')
+
+    @patch('chat.views.gerar_texto_resposta')
+    @patch(ALVO_EXECUTAR_SQL)
+    @patch(ALVO_GERAR_SQL)
+    def test_json_resposta_texto_quando_truncado(
+        self, mock_gerar, mock_exec, mock_texto
+    ):
+        mock_gerar.return_value = _fake_geracao_ok()
+        mock_exec.return_value = _fake_execucao_truncado()
+        mock_texto.return_value = 'lista parcial'
+
+        resp = self.client.post(
+            reverse('chat:api'),
+            data=json.dumps({'pergunta': 'Liste tudo'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        # Confirma que gerar_texto_resposta foi chamado com truncado=True
+        self.assertTrue(mock_texto.called)
+        kwargs = mock_texto.call_args.kwargs
+        self.assertTrue(kwargs['truncado'])
+        self.assertEqual(kwargs['total_linhas_exibidas'], 1000) 
 
 
 # ============================================================

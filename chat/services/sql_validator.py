@@ -110,12 +110,48 @@ def _validar_select_only(sql: str) -> None:
             )
 
 
+# Regex: GROUP BY ou funcao de agregacao no SELECT.
+# Usado por _aplicar_limit pra decidir se pode forcar LIMIT.
+#
+# Motivo: GROUP BY / COUNT / SUM / AVG / MIN / MAX sao "agregacoes",
+# e o usuario costuma querer o resultado COMPLETO (ex: "quantos
+# municipios tem empresa no Brasil?" -> 5570). Forcar LIMIT 1000
+# aqui trunca a resposta sem o usuario saber.
+REGEX_AGREGACAO = re.compile(
+    r'\bGROUP\s+BY\b'
+    r'|\bCOUNT\s*\('
+    r'|\bSUM\s*\('
+    r'|\bAVG\s*\('
+    r'|\bMIN\s*\('
+    r'|\bMAX\s*\(',
+    re.IGNORECASE,
+)
+
+
+def _tem_agregacao(sql: str) -> bool:
+    """
+    Retorna True se o SQL tem GROUP BY ou funcao de agregacao
+    no SELECT (COUNT, SUM, AVG, MIN, MAX).
+
+    Nesse caso, o validador NAO deve forcar LIMIT: a query ja
+    retorna poucas linhas por natureza (1 por grupo), e o usuario
+    quer o resultado completo.
+    """
+    return bool(REGEX_AGREGACAO.search(sql))
+
+
 def _aplicar_limit(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> tuple:
     """
     Camada 3: garante que a query tenha LIMIT <= max_rows.
 
+    EXCECAO: se o SQL for uma agregacao (GROUP BY ou COUNT/SUM/AVG/
+    MIN/MAX) e NAO tiver LIMIT explicito, NAO adiciona LIMIT. Isso
+    evita truncar respostas como "quantos municipios tem empresa no
+    Brasil?" (o usuario quer o total real, nao os 1000 primeiros).
+
     Retorna (sql_final, teve_limit, limit_valor).
     teve_limit = True significa que o validador PRECISOU adicionar/ajustar LIMIT.
+    limit_valor = 0 significa "nenhum LIMIT aplicado".
     """
     match = REGEX_LIMIT.search(sql)
 
@@ -129,7 +165,11 @@ def _aplicar_limit(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> tuple:
         sql_novo = REGEX_LIMIT.sub(f'LIMIT {max_rows}', sql, count=1)
         return sql_novo, True, max_rows
 
-    # nao tem LIMIT: adiciona
+    # Sem LIMIT no SQL. Se for agregacao, respeita (nao adiciona).
+    if _tem_agregacao(sql):
+        return sql, False, 0
+
+    # Listagem sem LIMIT: adiciona
     sql_novo = sql.rstrip().rstrip(';').rstrip() + f' LIMIT {max_rows}'
     return sql_novo, True, max_rows
 

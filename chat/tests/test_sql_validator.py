@@ -143,3 +143,41 @@ class SQLValidatorTestCase(TestCase):
         """'DROPSHIPPING' não deve ser bloqueado (não é palavra isolada)."""
         r = validar_sql("SELECT 'DROPSHIPPING' FROM c_empresas")
         self.assertTrue('LIMIT' in r.sql.upper())
+
+    # ============================================================
+    # AGREGACAO: NAO GANHA LIMIT AUTOMATICO
+    # ============================================================
+
+    def test_group_by_nao_ganha_limit(self):
+        """GROUP BY nao deve receber LIMIT automatico do validador."""
+        r = validar_sql(
+            'SELECT uf, COUNT(*) AS total FROM c_estabelecimentos '
+            'WHERE cd_matriz_filial = 1 GROUP BY uf ORDER BY total DESC'
+        )
+        self.assertNotIn('LIMIT', r.sql.upper())
+        self.assertFalse(r.teve_limit)
+        self.assertEqual(r.limit_valor, 0)
+
+    def test_count_simples_nao_ganha_limit(self):
+        """COUNT(*) sem GROUP BY tambem e agregacao: nao ganha LIMIT."""
+        r = validar_sql('SELECT COUNT(*) FROM c_empresas')
+        self.assertNotIn('LIMIT', r.sql.upper())
+        self.assertFalse(r.teve_limit)
+        self.assertEqual(r.limit_valor, 0)
+
+    def test_listagem_ainda_ganha_limit(self):
+        """SELECT sem agregacao (listagem) DEVE ganhar LIMIT."""
+        r = validar_sql('SELECT * FROM c_empresas WHERE uf = \'SP\'')
+        self.assertIn('LIMIT', r.sql.upper())
+        self.assertTrue(r.teve_limit)
+        self.assertEqual(r.limit_valor, DEFAULT_MAX_ROWS)
+
+    def test_group_by_com_limit_explicito_respeita(self):
+        """Se o SQL ja tem LIMIT explicito, o validador respeita (nao remove)."""
+        r = validar_sql(
+            'SELECT uf, COUNT(*) AS total FROM c_estabelecimentos '
+            'GROUP BY uf LIMIT 50'
+        )
+        self.assertIn('LIMIT 50', r.sql.upper())
+        self.assertFalse(r.teve_limit)
+        self.assertEqual(r.limit_valor, 50)

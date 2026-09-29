@@ -95,29 +95,14 @@ def mensagens_da_conversa(conversa_id):
         return []
     return doc.get('mensagens', [])
 
-def listar_conversas_antigas(dias=30):
+def listar_conversas_antigas_todos(dias=30):
     """
-    Lista conversas mais antigas que N dias (todos os usuarios).
+    Lista conversas mais antigas que N dias, de TODOS os usuarios.
 
-    Retorna lista de dicts com 'id', 'titulo', 'usuario_id', 'atualizado_em'.
+    Delegacao fina para mongo_models.listar_conversas_antigas_todos,
+    que contem a logica real (e usa _agora() aware em UTC).
     """
-    from datetime import timedelta, datetime
-
-    limite = datetime.utcnow() - timedelta(days=dias)
-    cursor = mm._get_collection().find(
-        {'atualizado_em': {'$lt': limite}},
-        {'_id': 1, 'titulo': 1, 'usuario_id': 1, 'atualizado_em': 1},
-    ).sort('atualizado_em', 1)
-
-    return [
-        {
-            'id': str(d['_id']),
-            'titulo': d.get('titulo', ''),
-            'usuario_id': d.get('usuario_id'),
-            'atualizado_em': d.get('atualizado_em'),
-        }
-        for d in cursor
-    ]
+    return mm.listar_conversas_antigas_todos(dias=dias)
 
 def deletar_conversa_por_id(conversa_id):
     """

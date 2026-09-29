@@ -450,3 +450,41 @@ class LimparConversasAntigasTests(MongoModelsBaseTests):
         removidas = mm.limpar_conversas_antigas(usuario_id=1, dias=30)
         self.assertEqual(removidas, 0)
         self.assertIsNotNone(mm.buscar_conversa(cid, usuario_id=2))
+
+class FusoHorarioTests(MongoModelsBaseTests):
+    """Verifica que os datetimes salvos sao aware (UTC)."""
+
+    def test_criar_conversa_salva_datetime_aware(self):
+        from datetime import timedelta
+        cid = mm.criar_conversa(usuario_id=1)
+        doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
+        # criado_em e atualizado_em devem ter tzinfo (aware)
+        self.assertIsNotNone(doc['criado_em'].tzinfo)
+        self.assertIsNotNone(doc['atualizado_em'].tzinfo)
+        # E devem estar em UTC (offset zero)
+        self.assertEqual(doc['criado_em'].utcoffset(), timedelta(0))
+        self.assertEqual(doc['atualizado_em'].utcoffset(), timedelta(0))
+
+    def test_adicionar_mensagem_salva_datetime_aware(self):
+        from datetime import timedelta
+        cid = mm.criar_conversa(usuario_id=1)
+        mm.adicionar_mensagem(cid, 'user', 'oi')
+        doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
+        msg = doc['mensagens'][0]
+        self.assertIsNotNone(msg['criado_em'].tzinfo)
+        self.assertEqual(msg['criado_em'].utcoffset(), timedelta(0))
+
+    def test_atualizar_titulo_atualiza_atualizado_em_aware(self):
+        from datetime import timedelta
+        cid = mm.criar_conversa(usuario_id=1)
+        mm.atualizar_titulo(cid, 'novo')
+        doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
+        self.assertIsNotNone(doc['atualizado_em'].tzinfo)
+        self.assertEqual(doc['atualizado_em'].utcoffset(), timedelta(0))
+

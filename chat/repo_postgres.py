@@ -66,7 +66,7 @@ def adicionar_mensagem(conversa_id, papel, conteudo, **extras):
         return False
 
     campos = {'conversa': conversa, 'papel': papel, 'conteudo': conteudo or ''}
-    for chave in ('sql', 'total_linhas', 'tempo_ms'):
+    for chave in ('sql', 'resposta_texto', 'total_linhas', 'tempo_ms'):
         if chave in extras and extras[chave] is not None:
             campos[chave] = extras[chave]
 
@@ -118,9 +118,12 @@ def mensagens_da_conversa(conversa_id):
     except (ValueError, TypeError):
         return []
 
-def listar_conversas_antigas(dias=30):
+def listar_conversas_antigas_todos(dias=30):
     """
-    Lista conversas mais antigas que N dias (todos os usuarios).
+    Lista conversas mais antigas que N dias, de TODOS os usuarios.
+
+    Versao Postgres do equivalente em mongo_models. Usa timezone.now()
+    (aware), entao nao tem o bug de naive vs aware do Mongo antigo.
 
     Retorna lista de dicts com 'id', 'titulo', 'usuario_id', 'atualizado_em'.
     """

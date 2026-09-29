@@ -37,7 +37,7 @@ deletar_conversa = _impl.deletar_conversa
 tem_mensagens = _impl.tem_mensagens
 ultimas_mensagens = _impl.ultimas_mensagens
 mensagens_da_conversa = _impl.mensagens_da_conversa
-listar_conversas_antigas = _impl.listar_conversas_antigas
+listar_conversas_antigas_todos = _impl.listar_conversas_antigas_todos
 deletar_conversa_por_id = _impl.deletar_conversa_por_id
 
 

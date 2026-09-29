@@ -59,6 +59,7 @@ class Mensagem(models.Model):
 
     # Campos preenchidos apenas para mensagens do assistente
     sql = models.TextField(blank=True, default='')
+    resposta_texto = models.TextField(blank=True, default='')
     total_linhas = models.IntegerField(null=True, blank=True)
     tempo_ms = models.IntegerField(null=True, blank=True)
 

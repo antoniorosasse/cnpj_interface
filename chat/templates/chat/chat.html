@@ -134,6 +134,41 @@
         display: block;
         margin-bottom: 6px;
     }
+
+    /* Texto natural que o LLM gera a partir dos dados */
+    .resposta-natural {
+        background: #f0f9ff;
+        border-left: 4px solid #2563eb;
+        padding: 12px 16px;
+        border-radius: 6px;
+        font-size: .95rem;
+        line-height: 1.55;
+        color: #0f172a;
+        margin-bottom: 12px;
+    }
+
+    /* <details> do SQL executado (fechado por padrao) */
+    details.sql-detalhe {
+        margin-top: 8px;
+        margin-bottom: 12px;
+    }
+    details.sql-detalhe summary {
+        cursor: pointer;
+        color: #64748b;
+        font-size: .82rem;
+        padding: 4px 0;
+        user-select: none;
+    }
+    details.sql-detalhe summary:hover {
+        color: #2563eb;
+    }
+    details.sql-detalhe[open] summary {
+        margin-bottom: 8px;
+    }
+    details.sql-detalhe .sql-box {
+        margin-top: 0;
+    }
+
     .tabela-wrapper {
         max-height: 500px;
         overflow: auto;
@@ -350,6 +385,23 @@
         </div>`;
     }
 
+    // Renderiza o texto natural gerado pelo LLM (1-3 frases).
+    // Se vazio, devolve string vazia (nada e renderizado).
+    function renderRespostaTexto(texto) {
+        if (!texto || !String(texto).trim()) return '';
+        return `<div class="resposta-natural">${escaparHtml(texto)}</div>`;
+    }
+
+    // Renderiza o SQL dentro de um <details> fechado por padrao.
+    // Se vazio, devolve string vazia.
+    function renderSqlColapsavel(sql) {
+        if (!sql) return '';
+        return `<details class="sql-detalhe">` +
+               `<summary>Ver SQL executado</summary>` +
+               `<div class="sql-box">${escaparHtml(sql)}</div>` +
+               `</details>`;
+    }
+
     function renderThreadInicial() {
         if (!mensagensIniciais || mensagensIniciais.length === 0) {
             threadEl.innerHTML = '';
@@ -368,15 +420,22 @@
                 html += renderTurno('user', m.conteudo);
                 i++;
 
-                // Se a próxima for assistant, renderiza com SQL + tabela
+                // Se a próxima for assistant, renderiza com texto natural + SQL + tabela
                 if (i < mensagensIniciais.length && mensagensIniciais[i].papel === 'assistant') {
                     const a = mensagensIniciais[i];
-                    html += renderTurno('assistant', a.sql || a.conteudo);
 
-                    // Renderiza o "resultado" (SQL + tabela) se tiver dados
+                    // 1) Texto natural (se houver), senao cai pro comportamento antigo
+                    const textoNatural = renderRespostaTexto(a.resposta_texto);
+                    if (textoNatural) {
+                        html += textoNatural;
+                    } else {
+                        html += renderTurno('assistant', a.sql || a.conteudo);
+                    }
+
+                    // 2) SQL colapsavel + tabela, se tiver dados
                     if (a.sql || a.colunas || a.rows) {
                         html += '<div class="resultado-historico">';
-                        if (a.sql) html += renderSql(a.sql);
+                        if (a.sql) html += renderSqlColapsavel(a.sql);
                         if (a.colunas && a.rows) {
                             html += '<div class="card mt-3"><div class="card-body">';
                             if (a.tempo_ms !== undefined || a.total_linhas !== undefined) {
@@ -398,7 +457,12 @@
                 }
             } else {
                 // Mensagem assistant solta (sem user antes)
-                html += renderTurno('assistant', m.sql || m.conteudo);
+                const textoNatural = renderRespostaTexto(m.resposta_texto);
+                if (textoNatural) {
+                    html += textoNatural;
+                } else {
+                    html += renderTurno('assistant', m.sql || m.conteudo);
+                }
                 i++;
             }
         }
@@ -406,6 +470,8 @@
         threadEl.innerHTML = html;
     }
 
+    // Versao simples do SQL (usada dentro de alertas de erro).
+    // A versao colapsavel e' renderSqlColapsavel().
     function renderSql(sql) {
         return `<div class="sql-box"><span class="label">SQL executado</span>${escaparHtml(sql)}</div>`;
     }
@@ -452,11 +518,19 @@
         return html;
     }
 
-        // --------------------------------------------------------
+    // --------------------------------------------------------
     // Graficos: heuristica simples + render com Chart.js
     // --------------------------------------------------------
     function decidirTipoGrafico(colunas, rows) {
         if (!colunas || colunas.length < 2 || !rows || rows.length === 0) {
+            return null;
+        }
+
+        // Se a coluna X tem muitos valores unicos, nao vale a pena plotar
+        // (o grafico mostra so os 30 primeiros; mais que isso engana).
+        const MAX_VALORES_X = 30;
+        const valoresX = new Set(rows.map(r => String(r[colunas[0]])));
+        if (valoresX.size > MAX_VALORES_X) {
             return null;
         }
 
@@ -619,7 +693,14 @@
                 return;
             }
 
-            threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', dados.sql));
+            // 1) Texto natural em cima (se houver)
+            const textoNatural = renderRespostaTexto(dados.resposta_texto);
+            if (textoNatural) {
+                threadEl.insertAdjacentHTML('beforeend', textoNatural);
+            } else {
+                // Fallback: mostra o SQL bruto (comportamento antigo)
+                threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', dados.sql));
+            }
 
             const infoTxt = `${dados.total_linhas} linha(s) · ${dados.tempo_ms}ms`;
             const badgeOk = dados.truncado
@@ -627,7 +708,7 @@
                 : '<span class="badge-ok">ok</span>';
 
             resultEl.innerHTML =
-                renderSql(dados.sql) +
+                renderSqlColapsavel(dados.sql) +
                 `<div class="card mt-3"><div class="card-body">` +
                     `<div class="text-muted small mb-2">${escaparHtml(infoTxt)}${badgeOk}</div>` +
                     renderTabela(dados.colunas, dados.rows) +

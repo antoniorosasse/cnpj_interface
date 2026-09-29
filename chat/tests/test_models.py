@@ -102,3 +102,4 @@ class MensagemTests(TestCase):
         lista = list(self.conversa.mensagens.all())   # type: ignore[attr-defined]
         self.assertEqual(lista[0].pk, m1.pk)
         self.assertEqual(lista[1].pk, m2.pk)
+
