@@ -524,19 +524,34 @@
             return PADROES_ID.some(p => n === p || n.includes(p));
         }
 
-        // Procura a primeira coluna numerica que NAO pareca ID
+        // Se a coluna X parece ID (cnpj, codigo, etc), nao faz grafico
+        // (ID no eixo X nunca faz sentido: cada barra seria uma entidade unica).
+        if (pareceId(colunas[0])) {
+            return null;
+        }
+
+        // Se a coluna X parece ID (cnpj, codigo, etc), nao faz grafico.
+        // ID no eixo X nunca faz sentido: cada barra seria uma entidade unica.
+        if (pareceId(colunas[0])) {
+            return null;
+        }
+
+        // Procura a primeira coluna numerica DE VERDADE (typeof number,
+        // nao string parseavel) que NAO pareca ID.
+        // Agregacoes (COUNT, SUM) vem como number; colunas de dado (numero
+        // de endereco, CEP, etc) vem como string.
         let colunaY = null;
         for (let i = 1; i < colunas.length; i++) {
             const nome = colunas[i];
             if (pareceId(nome)) continue;
             const valor = rows[0][nome];
-            if (typeof valor === 'number' || (!isNaN(parseFloat(valor)) && isFinite(valor))) {
+            if (typeof valor === 'number') {
                 colunaY = nome;
                 break;
             }
         }
 
-        // Se so tem coluna de ID como numerica, nao faz grafico
+        // Se nenhuma coluna numerica valida, nao faz grafico
         if (!colunaY) {
             return null;
         }
