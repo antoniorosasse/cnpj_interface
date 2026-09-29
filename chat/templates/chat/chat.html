@@ -311,9 +311,6 @@
                 </div>
             </div>
         </div>
-
-        <div id="resultado"></div>
-
     </div>
 </div>
     {% if 'chat.arosasse.tech' not in request.get_host %}
@@ -337,7 +334,6 @@
     const botaoEl    = document.getElementById('enviar');
     const spinnerEl  = document.getElementById('spinner');
     const infoEl     = document.getElementById('info');
-    const resultEl   = document.getElementById('resultado');
     const threadEl   = document.getElementById('thread');
 
     const conversaId = {{ conversa.pk|default:"null" }};
@@ -476,12 +472,6 @@
         return `<div class="sql-box"><span class="label">SQL executado</span>${escaparHtml(sql)}</div>`;
     }
 
-    function renderErro(dados) {
-        const etapa = dados.etapa ? ` (etapa: ${escaparHtml(dados.etapa)})` : '';
-        let html = `<div class="alert alert-danger mt-3"><strong>Erro${etapa}:</strong><br>${escaparHtml(dados.erro || 'desconhecido')}</div>`;
-        if (dados.sql) html += renderSql(dados.sql);
-        return html;
-    }
 
     function renderTabela(colunas, rows) {
         if (!colunas || colunas.length === 0) {
@@ -679,9 +669,9 @@
         const pergunta = perguntaEl.value.trim();
         if (!pergunta) { perguntaEl.focus(); return; }
 
-        resultEl.innerHTML = '';
         setLoading(true);
 
+        // 1) Pergunta do usuario
         threadEl.insertAdjacentHTML('beforeend', renderTurno('user', pergunta));
 
         try {
@@ -696,43 +686,57 @@
 
             const dados = await resp.json();
 
+            // Caso de erro: injeta o turno do assistant com a mensagem
             if (!resp.ok || !dados.ok) {
                 threadEl.insertAdjacentHTML(
                     'beforeend',
                     renderTurno('assistant', dados.erro || 'Erro desconhecido')
                 );
-                resultEl.innerHTML = renderErro(dados);
+                // Se tiver SQL (mesmo com erro), mostra colapsavel
+                if (dados.sql) {
+                    threadEl.insertAdjacentHTML('beforeend',
+                        `<div class="resultado-historico">${renderSqlColapsavel(dados.sql)}</div>`
+                    );
+                }
+                perguntaEl.value = '';
                 return;
             }
 
-            // 1) Texto natural em cima (se houver)
+            // 2) Texto natural do assistant (com fallback pro SQL bruto)
             const textoNatural = renderRespostaTexto(dados.resposta_texto);
             if (textoNatural) {
                 threadEl.insertAdjacentHTML('beforeend', textoNatural);
             } else {
-                // Fallback: mostra o SQL bruto (comportamento antigo)
-                threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', dados.sql));
+                threadEl.insertAdjacentHTML('beforeend',
+                    renderTurno('assistant', dados.sql || ''));
             }
 
+            // 3) SQL colapsavel + tabela + (grafico)
             const infoTxt = `${dados.total_linhas} linha(s) · ${dados.tempo_ms}ms`;
             const badgeOk = dados.truncado
                 ? `<span class="badge-aviso">truncado em ${dados.limit_valor}</span>`
                 : '<span class="badge-ok">ok</span>';
 
-            resultEl.innerHTML =
-                renderSqlColapsavel(dados.sql) +
-                `<div class="card mt-3"><div class="card-body">` +
-                    `<div class="text-muted small mb-2">${escaparHtml(infoTxt)}${badgeOk}</div>` +
-                    renderTabela(dados.colunas, dados.rows) +
-                `</div></div>`;
+            threadEl.insertAdjacentHTML('beforeend',
+                '<div class="resultado-historico">' +
+                    renderSqlColapsavel(dados.sql) +
+                    `<div class="card mt-3"><div class="card-body">` +
+                        `<div class="text-muted small mb-2">${escaparHtml(infoTxt)}${badgeOk}</div>` +
+                        renderTabela(dados.colunas, dados.rows) +
+                    `</div></div>` +
+                '</div>'
+            );
 
             perguntaEl.value = '';
 
         } catch (e) {
-            threadEl.insertAdjacentHTML('beforeend', renderTurno('assistant', String(e)));
-            resultEl.innerHTML = renderErro({ erro: String(e), etapa: 'rede' });
+            threadEl.insertAdjacentHTML('beforeend',
+                renderTurno('assistant', String(e)));
         } finally {
             setLoading(false);
+            // Rola pro final, pra textarea ficar visivel
+            threadEl.scrollTop = threadEl.scrollHeight;
+            window.scrollTo(0, document.body.scrollHeight);
         }
     }
 
