@@ -18,6 +18,9 @@ import glob
 from datetime import datetime, timedelta
 import pyarrow.parquet as pq
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ============================================================
 # CONFIGURAÇÕES
@@ -29,13 +32,12 @@ CHUNK_SIZE = 100000
 BATCH_SIZE = 10000
 
 DB_CONFIG: Dict[str, Any] = {
-    'dbname': 'bancocnpj',
-    'user': 'arosasse',
-    'password': 'REDACTED',
-    'host': 'localhost',
-    'port': '5432'
+    'dbname': os.getenv('PG_DB', 'bancocnpj'),
+    'user': os.getenv('PG_USER', 'arosasse'),
+    'password': os.getenv('PG_PASSWORD'),
+    'host': os.getenv('PG_HOST', 'localhost'),
+    'port': os.getenv('PG_PORT', '5432'),
 }
-
 
 # ============================================================
 # FUNÇÕES

@@ -20,6 +20,9 @@ import glob
 from datetime import datetime, timedelta
 import pyarrow.parquet as pq
 import io
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ============================================================
 # CONFIGURAÇÕES
@@ -29,11 +32,11 @@ PARQUET_PATTERN = "Estabelecimentos*.parquet"
 CHUNK_SIZE = 500000  # 500 mil registros
 
 DB_CONFIG = {
-    'dbname': 'bancocnpj',
-    'user': 'arosasse',
-    'password': 'REDACTED',
-    'host': 'localhost',
-    'port': '5432'
+    'dbname': os.getenv('PG_DB', 'bancocnpj'),
+    'user': os.getenv('PG_USER', 'arosasse'),
+    'password': os.getenv('PG_PASSWORD'),
+    'host': os.getenv('PG_HOST', 'localhost'),
+    'port': os.getenv('PG_PORT', '5432'),
 }
 
 
