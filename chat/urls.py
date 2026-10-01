@@ -26,4 +26,5 @@ urlpatterns = [
     path('nova/', views.chat_nova_view, name='nova'),
     path('deletar/<str:conversa_id>/', views.chat_deletar_view, name='deletar'),
     path('limpar/', views.chat_limpar_view, name='limpar'),
+        path('health/deep/', views.health_deep, name='health_deep'),
 ]

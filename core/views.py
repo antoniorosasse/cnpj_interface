@@ -5,6 +5,10 @@ from psycopg2.extras import RealDictCursor
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_postgres_connection():
@@ -15,7 +19,8 @@ def get_postgres_connection():
             user=settings.PG_USER,
             password=settings.PG_PASSWORD,
             host=settings.PG_HOST,
-            port=settings.PG_PORT
+            port=settings.PG_PORT,
+            connect_timeout=5,   # 5s maximo pra conectar
         )
     except Exception as e:
         print(f"❌ Erro ao conectar ao PostgreSQL: {e}")
@@ -1234,3 +1239,46 @@ def estatisticas(request):
         print("✅ Estatísticas carregadas do cache")
     
     return render(request, 'core/estatisticas.html', context)
+
+def health_deep(request):
+    """
+    Health check profundo: testa conexao real com o Postgres bancocnpj.
+
+    Devolve JSON:
+      {"status": "ok", "db": "postgres", "ms": 12}
+      {"status": "error", "db": "postgres", "erro": "...", "ms": 3000}
+
+    Sempre HTTP 200 (o menu le o JSON, nao o HTTP code).
+    """
+    from django.http import JsonResponse
+
+    inicio = time.monotonic()
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        # Timeout curto: statement_timeout so vale dentro da transacao
+        cur = conn.cursor()
+        cur.execute("SET LOCAL statement_timeout = 3000")
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+
+        ms = int((time.monotonic() - inicio) * 1000)
+        return JsonResponse({'status': 'ok', 'db': 'postgres', 'ms': ms})
+
+    except Exception as exc:
+        ms = int((time.monotonic() - inicio) * 1000)
+        logger.warning('Health deep cnpj (postgres) falhou: %s', exc)
+        return JsonResponse({
+            'status': 'error',
+            'db': 'postgres',
+            'erro': str(exc)[:200],
+            'ms': ms,
+        })
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+

@@ -30,9 +30,12 @@ from .services.sql_executor import executar_sql
 from .services.resposta_natural import gerar_texto_resposta
 #from chat.models import Conversa, Mensagem
 from . import repo
+import time as _time_health
+import logging as _logging_health
 
-
+logger_health = _logging_health.getLogger(__name__)
 logger = logging.getLogger(__name__)
+
 
 
 # Chave da sessao que guarda o id da conversa atual
@@ -412,4 +415,88 @@ def chat_deletar_view(request, conversa_id):
         request.session.pop(SESSION_CONVERSA_ID, None)
 
     return redirect('chat:chat')
+
+def health_deep(request):
+    """
+    Health check profundo do chat: testa Mongo + Postgres (chat_ia).
+
+    Devolve JSON:
+      {
+        "status": "ok" | "error",
+        "mongo":    {"status": "ok"|"error", "ms": N, "erro": "..."},
+        "postgres": {"status": "ok"|"error", "ms": N, "erro": "..."},
+        "ms": N
+      }
+
+    Sempre HTTP 200.
+    """
+    from django.http import JsonResponse
+
+    inicio = _time_health.monotonic()
+    resultado: dict = {'mongo': None, 'postgres': None}
+
+    # ---------- 1) Mongo ----------
+    m_inicio = _time_health.monotonic()
+    try:
+        from . import mongo_models as mm
+        # Tenta um count rapido (leve, usa o indice _id)
+        mm._get_collection().estimated_document_count()
+        resultado['mongo'] = {
+            'status': 'ok',
+            'ms': int((_time_health.monotonic() - m_inicio) * 1000),
+        }
+    except Exception as exc:
+        logger_health.warning('Health deep chat (mongo) falhou: %s', exc)
+        resultado['mongo'] = {
+            'status': 'error',
+            'erro': str(exc)[:200],
+            'ms': int((_time_health.monotonic() - m_inicio) * 1000),
+        }
+
+    # ---------- 2) Postgres (chat_ia) ----------
+    p_inicio = _time_health.monotonic()
+    conn = None
+    try:
+        import psycopg2
+        from .services.sql_executor import _get_config
+
+        cfg = _get_config()
+        conn = psycopg2.connect(**cfg)
+        conn.set_session(readonly=True, autocommit=False)
+        cur = conn.cursor()
+        cur.execute("SET LOCAL statement_timeout = 3000")
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+        conn.rollback()
+
+        resultado['postgres'] = {
+            'status': 'ok',
+            'ms': int((_time_health.monotonic() - p_inicio) * 1000),
+        }
+    except Exception as exc:
+        logger_health.warning('Health deep chat (postgres) falhou: %s', exc)
+        resultado['postgres'] = {
+            'status': 'error',
+            'erro': str(exc)[:200],
+            'ms': int((_time_health.monotonic() - p_inicio) * 1000),
+        }
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    # ---------- Consolidado ----------
+    ok = (
+        resultado['mongo'] and resultado['mongo']['status'] == 'ok'
+        and resultado['postgres'] and resultado['postgres']['status'] == 'ok'
+    )
+    return JsonResponse({
+        'status': 'ok' if ok else 'error',
+        'mongo': resultado['mongo'],
+        'postgres': resultado['postgres'],
+        'ms': int((_time_health.monotonic() - inicio) * 1000),
+    })
     
