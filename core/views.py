@@ -79,6 +79,7 @@ def lista_empresas(request):
     Lista empresas - COM ORDENAÇÃO POR CNPJ, RAZÃO SOCIAL, NOME FANTASIA
     Otimizado com CTE MATERIALIZED para ordenação por razão social
     """
+    aviso = None
     
     # ============================================================
     # 1. PARÂMETROS
@@ -395,42 +396,76 @@ def lista_empresas(request):
                 """ + filtros_sql
                 params = list(filtros_params)
 
-                if is_last_page:
-                    sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
-                    params.append(limit)
-                    cur.execute(sql, params)
+                try:
+                    cur.execute("SET LOCAL statement_timeout = 10000")  # 10 segundos
+
+                    if is_last_page:
+                        sql += " ORDER BY e.nm_fantasia DESC NULLS LAST, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                        params.append(limit)
+                        cur.execute(sql, params)
+                        resultados = cur.fetchall()
+                        resultados = list(reversed(resultados))
+                        has_next = False
+
+                    elif direction == 'prev':
+                        if last_fantasia:
+                            sql += " AND e.nm_fantasia < %s"
+                            params.append(last_fantasia)
+
+                        sql += " ORDER BY e.nm_fantasia DESC NULLS LAST, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                        params.append(limit + 1)
+                        cur.execute(sql, params)
+                        resultados = cur.fetchall()
+
+                        if len(resultados) > limit:
+                            has_next = True
+                            resultados = resultados[:limit]
+                        resultados = list(reversed(resultados))
+
+                    else:
+                        if last_fantasia:
+                            sql += " AND e.nm_fantasia > %s"
+                            params.append(last_fantasia)
+
+                        sql += " ORDER BY e.nm_fantasia NULLS FIRST, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
+                        params.append(limit + 1)
+                        cur.execute(sql, params)
+                        resultados = cur.fetchall()
+
+                        if len(resultados) > limit:
+                            has_next = True
+                            resultados = resultados[:-1]
+
+                except Exception:
+                    # Cancelou aos 10s: avisa o usuário com transparência
+                    conn.rollback()
+                    resultados = []
+                    aviso = "⚠️ A consulta excedeu o tempo limite de 10 segundos. Tente refinar a busca com mais filtros (como Razão Social ou CNPJ)."
+                    fallback_sql = f"""
+                        SELECT 
+                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+                            emp.razao_social, e.nm_fantasia, e.logradouro, e.numero, e.bairro,
+                            e.cep, e.uf, e.email, e.ddd_1 || e.tel_1 AS telefone_1,
+                            e.cnae_principal, c.nm_cnae AS atividade_principal, e.cd_sit_cadastro,
+                            e.dt_ini AS data_inicio_atividade, s.op_simples, s.op_mei,
+                            CASE 
+                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
+                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
+                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
+                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
+                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
+                                ELSE 'OUTRA'    
+                            END AS situacao_descricao
+                        FROM c_estabelecimentos e
+                        LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
+                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
+                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                        WHERE e.cd_matriz_filial = 1
+                    """ + filtros_sql + " ORDER BY e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
+                    fallback_params = list(filtros_params) + [limit]
+                    cur.execute(fallback_sql, fallback_params)
                     resultados = cur.fetchall()
-                    resultados = list(reversed(resultados))
-                    has_next = False
-
-                elif direction == 'prev':
-                    if last_fantasia:
-                        sql += " AND e.nm_fantasia < %s"
-                        params.append(last_fantasia)
-
-                    sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
-                    params.append(limit + 1)
-                    cur.execute(sql, params)
-                    resultados = cur.fetchall()
-
-                    if len(resultados) > limit:
-                        has_next = True
-                        resultados = resultados[:limit]
-                    resultados = list(reversed(resultados))
-
-                else:
-                    if last_fantasia:
-                        sql += " AND e.nm_fantasia > %s"
-                        params.append(last_fantasia)
-
-                    sql += " ORDER BY e.nm_fantasia, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
-                    params.append(limit + 1)
-                    cur.execute(sql, params)
-                    resultados = cur.fetchall()
-
-                    if len(resultados) > limit:
-                        has_next = True
-                        resultados = resultados[:-1]
+                    has_next = len(resultados) >= limit
 
                 if resultados:
                     last_fantasia_next = resultados[-1]['nm_fantasia'] or ''
@@ -569,6 +604,7 @@ def lista_empresas(request):
         'lista_ufs': LISTA_UFS,  # <--- CERTIFIQUE-SE DE QUE ESTA LINHA ESTÁ AQUI
         'aviso': '💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]) else None,
         'total_estimado': total_estimado,
+        'aviso': aviso or ('💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]) else None),
     }
     
     return render(request, 'core/lista.html', context)
