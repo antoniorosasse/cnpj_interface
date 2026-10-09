@@ -5,6 +5,11 @@ from psycopg2.extras import RealDictCursor
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.views.decorators.http import require_POST
+
 import time
 import logging
 
@@ -26,6 +31,36 @@ def get_postgres_connection():
         print(f"❌ Erro ao conectar ao PostgreSQL: {e}")
         raise
 
+LISTA_UFS = [
+    ('AC', 'AC - Acre'),
+    ('AL', 'AL - Alagoas'),
+    ('AP', 'AP - Amapá'),
+    ('AM', 'AM - Amazonas'),
+    ('BA', 'BA - Bahia'),
+    ('CE', 'CE - Ceará'),
+    ('DF', 'DF - Distrito Federal'),
+    ('ES', 'ES - Espírito Santo'),
+    ('GO', 'GO - Goiás'),
+    ('MA', 'MA - Maranhão'),
+    ('MT', 'MT - Mato Grosso'),
+    ('MS', 'MS - Mato Grosso do Sul'),
+    ('MG', 'MG - Minas Gerais'),
+    ('PA', 'PA - Pará'),
+    ('PB', 'PB - Paraíba'),
+    ('PR', 'PR - Paraná'),
+    ('PE', 'PE - Pernambuco'),
+    ('PI', 'PI - Piauí'),
+    ('RJ', 'RJ - Rio de Janeiro'),
+    ('RN', 'RN - Rio Grande do Norte'),
+    ('RS', 'RS - Rio Grande do Sul'),
+    ('RO', 'RO - Rondônia'),
+    ('RR', 'RR - Roraima'),
+    ('SC', 'SC - Santa Catarina'),
+    ('SP', 'SP - São Paulo'),
+    ('SE', 'SE - Sergipe'),
+    ('TO', 'TO - Tocantins'),
+    ('EX', 'EX - Exterior'),
+]
 
 # ============================================================
 # MAPEAMENTO CORRETO DAS SITUAÇÕES
@@ -56,8 +91,7 @@ def lista_empresas(request):
     simples = request.GET.get('simples', '').strip()
     mei = request.GET.get('mei', '').strip()
     ordem = request.GET.get('ordem', 'cnpj')
-    a_partir_de = request.GET.get('a_partir_de', '').strip().upper()
-    
+   
     try:
         page = int(request.GET.get('page', 1))
     except (ValueError, TypeError):
@@ -69,6 +103,12 @@ def lista_empresas(request):
     last_fantasia = request.GET.get('last_fantasia', '')
     direction = request.GET.get('dir', 'next')
     is_last_page = request.GET.get('last_page', '') == 'true'
+    # Se está na página 1, força início limpo (elimina ponteiros reversos residuais)
+    if page <= 1:
+        direction = 'next'
+        last_cnpj = ''
+        last_razao = ''
+        last_fantasia = ''
     
     conn = None
     empresas = []
@@ -99,27 +139,28 @@ def lista_empresas(request):
             filtros_params: list[Any] = []
             
             if razao_social:
-                filtros_sql += " AND UPPER(emp.razao_social) LIKE %s"
+                filtros_sql += " AND emp.razao_social ILIKE %s"
                 filtros_params.append(f'%{razao_social}%')
             
             if nome_fantasia:
-                filtros_sql += " AND UPPER(e.nm_fantasia) LIKE %s"
+                filtros_sql += " AND e.nm_fantasia ILIKE %s"
                 filtros_params.append(f'%{nome_fantasia}%')
             
             if cnpj:
                 if len(cnpj) == 14:
-                    filtros_sql += " AND e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv = %s"
-                    filtros_params.append(cnpj)
+                    # Usa o índice composto em vez de concatenar em runtime
+                    filtros_sql += " AND e.cnpj_basico = %s AND e.cnpj_ordem = %s AND e.cnpj_dv = %s"
+                    filtros_params.extend([cnpj[:8], cnpj[8:12], cnpj[12:14]])
                 elif len(cnpj) == 8:
                     filtros_sql += " AND e.cnpj_basico = %s"
                     filtros_params.append(cnpj)
                 else:
                     filtros_sql += " AND e.cnpj_basico LIKE %s"
-                    filtros_params.append(f'%{cnpj}%')
+                    filtros_params.append(f'{cnpj}%')  # Busca prefixada aproveita B-tree
             
             if uf:
-                filtros_sql += " AND UPPER(e.uf) = %s"
-                filtros_params.append(uf)
+                filtros_sql += " AND e.uf = %s"
+                filtros_params.append(uf.upper())
             
             if situacao and situacao in SITUACOES:
                 filtros_sql += " AND e.cd_sit_cadastro = %s"
@@ -136,231 +177,178 @@ def lista_empresas(request):
                 filtros_sql += " AND NOT EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = e.cnpj_basico AND s.op_mei = 'S')"
             
             # ============================================================
-            # 3. FILTRO "A PARTIR DE"
+            # 4. CONTAGEM OTIMIZADA (VIA METADADOS OU QUERY LIMPA)
             # ============================================================
-            if a_partir_de:
-                if ordem == 'razao_social':
-                    filtros_sql += " AND emp.razao_social >= %s"
-                    filtros_params.append(a_partir_de)
-                elif ordem == 'nome_fantasia':
-                    filtros_sql += " AND e.nm_fantasia >= %s"
-                    filtros_params.append(a_partir_de)
+            total = None
+
+            # Caso 1: Sem filtros -> Total geral direto da tabela de totais (0.2 ms)
+            filtros_ativos = [razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]
+            if not any(filtros_ativos):
+                cur.execute("""
+                    SELECT valor FROM c_estatisticas_totais 
+                    WHERE categoria = 'geral' AND chave = 'total_matrizes'
+                """)
+                res = cur.fetchone()
+                if res:
+                    total = res['valor']
+
+            # Caso 2: Filtro apenas por UF
+            elif uf and not any([razao_social, nome_fantasia, cnpj, situacao, simples, mei]):
+                cur.execute("""
+                    SELECT valor FROM c_estatisticas_totais 
+                    WHERE categoria = 'uf' AND chave = %s
+                """, [uf])
+                res = cur.fetchone()
+                if res:
+                    total = res['valor']
+
+            # Caso 3: Filtro apenas por Situação
+            elif situacao and not any([razao_social, nome_fantasia, cnpj, uf, simples, mei]):
+                cur.execute("""
+                    SELECT valor FROM c_estatisticas_totais 
+                    WHERE categoria = 'situacao' AND chave = %s
+                """, [situacao])
+                res = cur.fetchone()
+                if res:
+                    total = res['valor']
+
+            # Caso 4: Filtro apenas por Simples
+            elif simples == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, mei]):
+                cur.execute("""
+                    SELECT valor FROM c_estatisticas_totais 
+                    WHERE categoria = 'simples' AND chave = 'S'
+                """)
+                res = cur.fetchone()
+                if res:
+                    total = res['valor']
+
+            # Caso 5: Filtro apenas por MEI
+            elif mei == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples]):
+                cur.execute("""
+                    SELECT valor FROM c_estatisticas_totais 
+                    WHERE categoria = 'mei' AND chave = 'S'
+                """)
+                res = cur.fetchone()
+                if res:
+                    total = res['valor']
+
+            # Fallback para buscas combinadas: com cache de 15 min e proteção de timeout de 800ms
+            total_estimado = False
+            if total is None:
+                from django.core.cache import cache
+                cache_key = f"cnt_{razao_social}_{nome_fantasia}_{cnpj}_{uf}_{situacao}_{simples}_{mei}"
+                total_em_cache = cache.get(cache_key)
+
+                if total_em_cache is not None:
+                    total = total_em_cache
                 else:
-                    filtros_sql += " AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) >= %s"
-                    filtros_params.append(a_partir_de)
-            
-            # ============================================================
-            # 4. CONTAGEM
-            # ============================================================
-            count_sql = """
-                SELECT COUNT(*) as total
-                FROM c_estabelecimentos e
-                LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                WHERE e.cd_matriz_filial = 1
-            """ + filtros_sql
-            count_params = list(filtros_params)
-            
-            cur.execute(count_sql, count_params)
-            resultado = cur.fetchone()
-            total = resultado['total'] if resultado else 0
-            
-            total_paginas = (total + limit - 1) // limit if total > 0 else 0
+                    join_emp = "LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico" if razao_social else ""
+                    count_sql = f"""
+                        SELECT COUNT(*) as total
+                        FROM c_estabelecimentos e
+                        {join_emp}
+                        WHERE e.cd_matriz_filial = 1
+                    """ + filtros_sql
+                    count_params = list(filtros_params)
+
+                    try:
+                        cur.execute("SET LOCAL statement_timeout = 800")
+                        cur.execute(count_sql, count_params)
+                        resultado = cur.fetchone()
+                        total = resultado['total'] if resultado else 0
+                        cache.set(cache_key, total, 900)  # Salva por 15 min
+                    except Exception:
+                        # Se passou de 800ms (busca massiva), faz rollback limpo e não trava o usuário
+                        conn.rollback()
+                        total = 100000  # Define piso estimado para não ficar zero
+                        total_estimado = True
+
+            if total_estimado:
+                total_paginas = 5000
+            else:
+                total_paginas = (total + limit - 1) // limit if total and total > 0 else 0
             
             # ============================================================
             # 5. PAGINAÇÃO (KEYSET POR ORDENAÇÃO)
             # ============================================================
             resultados: list[Any] = []
             
-            # ============================================================
-            # ----- ORDENAÇÃO POR RAZÃO SOCIAL (OTIMIZADO COM CTE) -----
+# ============================================================
+            # ----- ORDENAÇÃO POR RAZÃO SOCIAL (INNER JOIN + KEYSET) -----
             # ============================================================
             if ordem == 'razao_social':
-                
-                # ✅ DETECTA SE É A PRIMEIRA PÁGINA (sem last_razao)
-                is_first_page = (not last_razao) and (not last_cnpj) and (direction == 'next') and (not is_last_page)
-                
-                if is_first_page:
-                    # ============================================================
-                    # ✅ OTIMIZADO: CTE MATERIALIZED
-                    # Ordena c_empresas PRIMEIRO, pega 20, depois faz JOIN
-                    # ============================================================
-                    
-                    # Filtros que se aplicam a c_empresas (na CTE)
-                    filtros_emp = ""
-                    filtros_emp_params: list[Any] = []
-                    
-                    if razao_social:
-                        filtros_emp += " AND UPPER(razao_social) LIKE %s"
-                        filtros_emp_params.append(f'%{razao_social}%')
-                    
-                    if a_partir_de:
-                        filtros_emp += " AND razao_social >= %s"
-                        filtros_emp_params.append(a_partir_de)
-                    
-                    # Filtros que se aplicam a c_estabelecimentos
-                    filtros_est = " AND e.cd_matriz_filial = 1"
-                    filtros_est_params: list[Any] = []
-                    
-                    if nome_fantasia:
-                        filtros_est += " AND UPPER(e.nm_fantasia) LIKE %s"
-                        filtros_est_params.append(f'%{nome_fantasia}%')
-                    
-                    if cnpj:
-                        if len(cnpj) == 14:
-                            filtros_est += " AND e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv = %s"
-                            filtros_est_params.append(cnpj)
-                        elif len(cnpj) == 8:
-                            filtros_est += " AND e.cnpj_basico = %s"
-                            filtros_est_params.append(cnpj)
-                        else:
-                            filtros_est += " AND e.cnpj_basico LIKE %s"
-                            filtros_est_params.append(f'%{cnpj}%')
-                    
-                    if uf:
-                        filtros_est += " AND UPPER(e.uf) = %s"
-                        filtros_est_params.append(uf)
-                    
-                    if situacao and situacao in SITUACOES:
-                        filtros_est += " AND e.cd_sit_cadastro = %s"
-                        filtros_est_params.append(SITUACOES[situacao])
-                    
-                    if simples == 'S':
-                        filtros_est += " AND EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = e.cnpj_basico AND s.op_simples = 'S')"
-                    elif simples == 'N':
-                        filtros_est += " AND NOT EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = e.cnpj_basico AND s.op_simples = 'S')"
-                    
-                    if mei == 'S':
-                        filtros_est += " AND EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = e.cnpj_basico AND s.op_mei = 'S')"
-                    elif mei == 'N':
-                        filtros_est += " AND NOT EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = e.cnpj_basico AND s.op_mei = 'S')"
-                    
-                    sql = f"""
-                        WITH empresas_ordenadas AS MATERIALIZED (
-                            SELECT cnpj_basico, razao_social
-                            FROM c_empresas
-                            WHERE 1=1 {filtros_emp}
-                            ORDER BY razao_social
-                            LIMIT %s
-                        )
-                        SELECT 
-                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                            emp.razao_social,
-                            e.nm_fantasia,
-                            e.logradouro,
-                            e.numero,
-                            e.bairro,
-                            e.cep,
-                            e.uf,
-                            e.email,
-                            e.ddd_1 || e.tel_1 AS telefone_1,
-                            e.cnae_principal,
-                            c.nm_cnae AS atividade_principal,
-                            e.cd_sit_cadastro,
-                            e.dt_ini AS data_inicio_atividade,
-                            s.op_simples,
-                            s.op_mei,
-                            CASE 
-                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                                ELSE 'OUTRA'    
-                            END AS situacao_descricao
-                        FROM empresas_ordenadas emp
-                        INNER JOIN c_estabelecimentos e ON e.cnpj_basico = emp.cnpj_basico
-                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                        WHERE 1=1 {filtros_est}
-                        ORDER BY emp.razao_social, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv
-                        LIMIT %s
-                    """
-                    
-                    params = list(filtros_emp_params) + [limit + 1] + list(filtros_est_params) + [limit + 1]
-                    
+                # Toda matriz possui cadastro em c_empresas: INNER JOIN permite usar idx_empresas_razao_cnpj
+                sql = """
+                    SELECT 
+                        e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+                        emp.razao_social,
+                        e.nm_fantasia,
+                        e.logradouro,
+                        e.numero,
+                        e.bairro,
+                        e.cep,
+                        e.uf,
+                        e.email,
+                        e.ddd_1 || e.tel_1 AS telefone_1,
+                        e.cnae_principal,
+                        c.nm_cnae AS atividade_principal,
+                        e.cd_sit_cadastro,
+                        e.dt_ini AS data_inicio_atividade,
+                        s.op_simples,
+                        s.op_mei,
+                        CASE 
+                            WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
+                            WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
+                            WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
+                            WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
+                            WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
+                            ELSE 'OUTRA'    
+                        END AS situacao_descricao
+                    FROM c_estabelecimentos e
+                    INNER JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
+                    LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
+                    LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                    WHERE e.cd_matriz_filial = 1
+                """ + filtros_sql
+                params = list(filtros_params)
+
+                if is_last_page:
+                    sql += " ORDER BY emp.razao_social DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                    params.append(limit)
                     cur.execute(sql, params)
                     resultados = cur.fetchall()
-                    
+                    resultados = list(reversed(resultados))
+                    has_next = False
+
+                elif direction == 'prev':
+                    if last_razao:
+                        sql += " AND emp.razao_social < %s"
+                        params.append(last_razao)
+
+                    sql += " ORDER BY emp.razao_social DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                    params.append(limit + 1)
+                    cur.execute(sql, params)
+                    resultados = cur.fetchall()
+
+                    if len(resultados) > limit:
+                        has_next = True
+                        resultados = resultados[:limit]
+                    resultados = list(reversed(resultados))
+
+                else:
+                    if last_razao:
+                        sql += " AND emp.razao_social > %s"
+                        params.append(last_razao)
+
+                    sql += " ORDER BY emp.razao_social, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
+                    params.append(limit + 1)
+                    cur.execute(sql, params)
+                    resultados = cur.fetchall()
+
                     if len(resultados) > limit:
                         has_next = True
                         resultados = resultados[:-1]
-                
-                else:
-                    # ============================================================
-                    # KEYSET: já tem ponto de partida (last_razao + last_cnpj)
-                    # ============================================================
-                    sql = """
-                        SELECT 
-                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                            emp.razao_social,
-                            e.nm_fantasia,
-                            e.logradouro,
-                            e.numero,
-                            e.bairro,
-                            e.cep,
-                            e.uf,
-                            e.email,
-                            e.ddd_1 || e.tel_1 AS telefone_1,
-                            e.cnae_principal,
-                            c.nm_cnae AS atividade_principal,
-                            e.cd_sit_cadastro,
-                            e.dt_ini AS data_inicio_atividade,
-                            s.op_simples,
-                            s.op_mei,
-                            CASE 
-                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                                ELSE 'OUTRA'    
-                            END AS situacao_descricao
-                        FROM c_estabelecimentos e
-                        LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                        WHERE e.cd_matriz_filial = 1
-                    """ + filtros_sql
-                    params = list(filtros_params)
-                    
-                    if is_last_page:
-                        sql += " ORDER BY emp.razao_social DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC"
-                        sql += " LIMIT %s"
-                        params.append(limit)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        resultados = list(reversed(resultados))
-                        has_next = False
-                    
-                    elif direction == 'prev':
-                        if last_razao and last_cnpj:
-                            sql += " AND (emp.razao_social < %s OR (emp.razao_social = %s AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) < %s))"
-                            params.extend([last_razao, last_razao, last_cnpj])
-                        sql += " ORDER BY emp.razao_social DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC"
-                        sql += " LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:limit]
-                        resultados = list(reversed(resultados))
-                        
-                    else:
-                        if last_razao and last_cnpj:
-                            sql += " AND (emp.razao_social > %s OR (emp.razao_social = %s AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) > %s))"
-                            params.extend([last_razao, last_razao, last_cnpj])
-                        sql += " ORDER BY emp.razao_social, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv"
-                        sql += " LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:-1]
-                
+
                 if resultados:
                     last_razao_next = resultados[-1]['razao_social'] or ''
                     first_razao_prev = resultados[0]['razao_social'] or ''
@@ -368,190 +356,82 @@ def lista_empresas(request):
                     first_cnpj_prev = resultados[0]['cnpj_completo']
             
             # ============================================================
-            # ----- ORDENAÇÃO POR NOME FANTASIA (OTIMIZADO COM CTE) -----
+            # ----- ORDENAÇÃO POR NOME FANTASIA -----
             # ============================================================
             elif ordem == 'nome_fantasia':
-                is_first_page = (not last_fantasia) and (not last_cnpj) and (direction == 'next') and (not is_last_page)
-                
-                if is_first_page:
-                    # Filtros que se aplicam a c_estabelecimentos (na CTE)
-                    filtros_est_cte = " AND cd_matriz_filial = 1"
-                    filtros_est_cte_params: list[Any] = []
-                    
-                    if nome_fantasia:
-                        filtros_est_cte += " AND UPPER(nm_fantasia) LIKE %s"
-                        filtros_est_cte_params.append(f'%{nome_fantasia}%')
-                    
-                    if a_partir_de:
-                        filtros_est_cte += " AND nm_fantasia >= %s"
-                        filtros_est_cte_params.append(a_partir_de)
-                    
-                    if uf:
-                        filtros_est_cte += " AND UPPER(uf) = %s"
-                        filtros_est_cte_params.append(uf)
-                    
-                    if situacao and situacao in SITUACOES:
-                        filtros_est_cte += " AND cd_sit_cadastro = %s"
-                        filtros_est_cte_params.append(SITUACOES[situacao])
-                    
-                    if simples == 'S':
-                        filtros_est_cte += " AND EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = c_estabelecimentos.cnpj_basico AND s.op_simples = 'S')"
-                    elif simples == 'N':
-                        filtros_est_cte += " AND NOT EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = c_estabelecimentos.cnpj_basico AND s.op_simples = 'S')"
-                    
-                    if mei == 'S':
-                        filtros_est_cte += " AND EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = c_estabelecimentos.cnpj_basico AND s.op_mei = 'S')"
-                    elif mei == 'N':
-                        filtros_est_cte += " AND NOT EXISTS (SELECT 1 FROM c_simples s WHERE s.cnpj_basico = c_estabelecimentos.cnpj_basico AND s.op_mei = 'S')"
-                    
-                    # Filtros que se aplicam a c_empresas (no SELECT principal)
-                    filtros_emp_sel = ""
-                    filtros_emp_sel_params: list[Any] = []
-                    
-                    if razao_social:
-                        filtros_emp_sel += " AND UPPER(emp.razao_social) LIKE %s"
-                        filtros_emp_sel_params.append(f'%{razao_social}%')
-                    
-                    if cnpj:
-                        if len(cnpj) == 14:
-                            filtros_emp_sel += " AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) = %s"
-                            filtros_emp_sel_params.append(cnpj)
-                        elif len(cnpj) == 8:
-                            filtros_emp_sel += " AND e.cnpj_basico = %s"
-                            filtros_emp_sel_params.append(cnpj)
-                        else:
-                            filtros_emp_sel += " AND e.cnpj_basico LIKE %s"
-                            filtros_emp_sel_params.append(f'%{cnpj}%')
-                    
-                    sql = f"""
-                        WITH estabelecimentos_ordenados AS MATERIALIZED (
-                            SELECT cnpj_basico, cnpj_ordem, cnpj_dv, nm_fantasia
-                            FROM c_estabelecimentos
-                            WHERE 1=1 {filtros_est_cte}
-                            ORDER BY nm_fantasia, cnpj_basico, cnpj_ordem, cnpj_dv
-                            LIMIT %s
-                        )
-                        SELECT 
-                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                            emp.razao_social,
-                            e.nm_fantasia,
-                            e.logradouro,
-                            e.numero,
-                            e.bairro,
-                            e.cep,
-                            e.uf,
-                            e.email,
-                            e.ddd_1 || e.tel_1 AS telefone_1,
-                            e.cnae_principal,
-                            c.nm_cnae AS atividade_principal,
-                            e.cd_sit_cadastro,
-                            e.dt_ini AS data_inicio_atividade,
-                            s.op_simples,
-                            s.op_mei,
-                            CASE 
-                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                                ELSE 'OUTRA'    
-                            END AS situacao_descricao
-                        FROM estabelecimentos_ordenados est_cte
-                        INNER JOIN c_estabelecimentos e 
-                            ON e.cnpj_basico = est_cte.cnpj_basico 
-                            AND e.cnpj_ordem = est_cte.cnpj_ordem 
-                            AND e.cnpj_dv = est_cte.cnpj_dv
-                        LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                        WHERE 1=1 {filtros_emp_sel}
-                        ORDER BY e.nm_fantasia, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv
-                        LIMIT %s
-                    """
-                    
-                    params = list(filtros_est_cte_params) + [limit + 1] + list(filtros_emp_sel_params) + [limit + 1]
-                    
+                join_emp = "INNER JOIN" if razao_social else "LEFT JOIN"
+
+                sql = f"""
+                    SELECT 
+                        e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+                        emp.razao_social,
+                        e.nm_fantasia,
+                        e.logradouro,
+                        e.numero,
+                        e.bairro,
+                        e.cep,
+                        e.uf,
+                        e.email,
+                        e.ddd_1 || e.tel_1 AS telefone_1,
+                        e.cnae_principal,
+                        c.nm_cnae AS atividade_principal,
+                        e.cd_sit_cadastro,
+                        e.dt_ini AS data_inicio_atividade,
+                        s.op_simples,
+                        s.op_mei,
+                        CASE 
+                            WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
+                            WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
+                            WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
+                            WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
+                            WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
+                            ELSE 'OUTRA'    
+                        END AS situacao_descricao
+                    FROM c_estabelecimentos e
+                    {join_emp} c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
+                    LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
+                    LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                    WHERE e.cd_matriz_filial = 1
+                """ + filtros_sql
+                params = list(filtros_params)
+
+                if is_last_page:
+                    sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                    params.append(limit)
                     cur.execute(sql, params)
                     resultados = cur.fetchall()
-                    
+                    resultados = list(reversed(resultados))
+                    has_next = False
+
+                elif direction == 'prev':
+                    if last_fantasia:
+                        sql += " AND e.nm_fantasia < %s"
+                        params.append(last_fantasia)
+
+                    sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
+                    params.append(limit + 1)
+                    cur.execute(sql, params)
+                    resultados = cur.fetchall()
+
+                    if len(resultados) > limit:
+                        has_next = True
+                        resultados = resultados[:limit]
+                    resultados = list(reversed(resultados))
+
+                else:
+                    if last_fantasia:
+                        sql += " AND e.nm_fantasia > %s"
+                        params.append(last_fantasia)
+
+                    sql += " ORDER BY e.nm_fantasia, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
+                    params.append(limit + 1)
+                    cur.execute(sql, params)
+                    resultados = cur.fetchall()
+
                     if len(resultados) > limit:
                         has_next = True
                         resultados = resultados[:-1]
-                
-                else:
-                    # KEYSET
-                    sql = """
-                        SELECT 
-                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                            emp.razao_social,
-                            e.nm_fantasia,
-                            e.logradouro,
-                            e.numero,
-                            e.bairro,
-                            e.cep,
-                            e.uf,
-                            e.email,
-                            e.ddd_1 || e.tel_1 AS telefone_1,
-                            e.cnae_principal,
-                            c.nm_cnae AS atividade_principal,
-                            e.cd_sit_cadastro,
-                            e.dt_ini AS data_inicio_atividade,
-                            s.op_simples,
-                            s.op_mei,
-                            CASE 
-                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                                ELSE 'OUTRA'    
-                            END AS situacao_descricao
-                        FROM c_estabelecimentos e
-                        LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                        WHERE e.cd_matriz_filial = 1
-                    """ + filtros_sql
-                    params = list(filtros_params)
-                    
-                    if is_last_page:
-                        sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC"
-                        sql += " LIMIT %s"
-                        params.append(limit)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        resultados = list(reversed(resultados))
-                        has_next = False
-                    
-                    elif direction == 'prev':
-                        if last_fantasia and last_cnpj:
-                            sql += " AND (e.nm_fantasia < %s OR (e.nm_fantasia = %s AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) < %s))"
-                            params.extend([last_fantasia, last_fantasia, last_cnpj])
-                        sql += " ORDER BY e.nm_fantasia DESC, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC"
-                        sql += " LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:limit]
-                        resultados = list(reversed(resultados))
-                        
-                    else:
-                        if last_fantasia and last_cnpj:
-                            sql += " AND (e.nm_fantasia > %s OR (e.nm_fantasia = %s AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) > %s))"
-                            params.extend([last_fantasia, last_fantasia, last_cnpj])
-                        sql += " ORDER BY e.nm_fantasia, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv"
-                        sql += " LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:-1]
-                
+
                 if resultados:
                     last_fantasia_next = resultados[-1]['nm_fantasia'] or ''
                     first_fantasia_prev = resultados[0]['nm_fantasia'] or ''
@@ -606,9 +486,13 @@ def lista_empresas(request):
                     has_next = False
                     
                 elif direction == 'prev':
-                    if last_cnpj:
-                        sql += " AND e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv < %s"
+                    if last_cnpj and len(last_cnpj) == 14:
+                        sql += " AND (e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv) < (%s, %s, %s)"
+                        params.extend([last_cnpj[:8], last_cnpj[8:12], last_cnpj[12:14]])
+                    elif last_cnpj:
+                        sql += " AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) < %s"
                         params.append(last_cnpj)
+
                     sql += " ORDER BY e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC"
                     sql += " LIMIT %s"
                     params.append(limit + 1)
@@ -621,9 +505,13 @@ def lista_empresas(request):
                     resultados = list(reversed(resultados))
                     
                 else:
-                    if last_cnpj:
-                        sql += " AND e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv > %s"
+                    if last_cnpj and len(last_cnpj) == 14:
+                        sql += " AND (e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv) > (%s, %s, %s)"
+                        params.extend([last_cnpj[:8], last_cnpj[8:12], last_cnpj[12:14]])
+                    elif last_cnpj:
+                        sql += " AND (e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv) > %s"
                         params.append(last_cnpj)
+
                     sql += " ORDER BY e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv"
                     sql += " LIMIT %s"
                     params.append(limit + 1)
@@ -667,7 +555,6 @@ def lista_empresas(request):
         'simples': simples,
         'mei': mei,
         'ordem': ordem,
-        'a_partir_de': a_partir_de,
         'total': total,
         'total_paginas': total_paginas,
         'page': page,
@@ -679,7 +566,9 @@ def lista_empresas(request):
         'first_razao': first_razao_prev,
         'last_fantasia': last_fantasia_next,
         'first_fantasia': first_fantasia_prev,
-        'aviso': '💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei, a_partir_de]) else None,
+        'lista_ufs': LISTA_UFS,  # <--- CERTIFIQUE-SE DE QUE ESTA LINHA ESTÁ AQUI
+        'aviso': '💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]) else None,
+        'total_estimado': total_estimado,
     }
     
     return render(request, 'core/lista.html', context)
@@ -711,7 +600,7 @@ def buscar_empresas_rapido(request):
                 WITH empresas_encontradas AS MATERIALIZED (
                     SELECT cnpj_basico, razao_social
                     FROM c_empresas
-                    WHERE UPPER(razao_social) LIKE %s
+                    WHERE razao_social ILIKE %s
                     ORDER BY razao_social
                     LIMIT 20
                 )
@@ -767,6 +656,7 @@ def buscar_empresas_rapido(request):
 
 def detalhe_empresa(request, cnpj):
     """Detalhe de uma empresa - COM TODAS AS INFORMAÇÕES"""
+    next_url = request.GET.get('next', '')
     
     conn = None
     empresa = None
@@ -1016,6 +906,7 @@ def detalhe_empresa(request, cnpj):
         'total_socios': total_socios,
         'total_filiais': total_filiais,
         'total_estabelecimentos': len(estabelecimentos),
+        'next_url': next_url,
     }
     
     return render(request, 'core/detalhe.html', context)
@@ -1023,221 +914,117 @@ def detalhe_empresa(request, cnpj):
 
 def estatisticas(request):
     """
-    Estatísticas completas com CACHE (atualiza a cada 1 hora)
+    Exibe estatísticas lendo diretamente da tabela c_estatisticas_totais (em < 5ms).
     """
-    from django.core.cache import cache
-    
-    # ✅ SE O USUÁRIO CLICOU EM "ATUALIZAR", LIMPA O CACHE
-    if request.GET.get('refresh') == '1':
-        cache.delete('estatisticas_completas')
-        print("🔄 Cache de estatísticas limpo pelo usuário")
-    
-    context = cache.get('estatisticas_completas')
-    
-    if context is None:
-        conn = None
-        context = {}
-        
-        try:
-            conn = get_postgres_connection()
-            
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                
-                # ============================================================
-                # 1. TOTAIS GERAIS
-                # ============================================================
+    conn = None
+    context = {}
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT categoria, chave, descricao, valor, atualizado_em
+                FROM c_estatisticas_totais
+                ORDER BY categoria, valor DESC
+            """)
+            linhas = cur.fetchall()
+
+            if not linhas:
+                recalcular_totais_banco()
                 cur.execute("""
-                    SELECT 
-                        COUNT(*) as total_matrizes,
-                        COUNT(CASE WHEN cd_sit_cadastro = 2 THEN 1 END) as total_ativas,
-                        COUNT(CASE WHEN cd_sit_cadastro = 4 THEN 1 END) as total_inaptas,
-                        COUNT(CASE WHEN cd_sit_cadastro = 8 THEN 1 END) as total_baixadas,
-                        COUNT(CASE WHEN cd_sit_cadastro = 3 THEN 1 END) as total_suspensas,
-                        COUNT(CASE WHEN cd_sit_cadastro = 1 THEN 1 END) as total_nulas,
-                        COUNT(DISTINCT uf) as total_ufs
-                    FROM c_estabelecimentos
-                    WHERE cd_matriz_filial = 1
+                    SELECT categoria, chave, descricao, valor, atualizado_em
+                    FROM c_estatisticas_totais
+                    ORDER BY categoria, valor DESC
                 """)
-                resultado = cur.fetchone()
-                context['totais'] = dict(resultado) if resultado else {}
-                
-                # ============================================================
-                # 2. TOP 10 UFs
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        uf,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos
-                    WHERE cd_matriz_filial = 1
-                    AND uf IS NOT NULL AND uf != ''
-                    GROUP BY uf
-                    ORDER BY total DESC
-                    LIMIT 10
-                """)
-                context['top_ufs'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 3. DISTRIBUIÇÃO POR SITUAÇÃO
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        CASE 
-                            WHEN cd_sit_cadastro = 1 THEN 'NULA'
-                            WHEN cd_sit_cadastro = 2 THEN 'ATIVA'
-                            WHEN cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                            WHEN cd_sit_cadastro = 4 THEN 'INAPTA'
-                            WHEN cd_sit_cadastro = 8 THEN 'BAIXADA'
-                            ELSE 'OUTRA'
-                        END AS situacao,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos
-                    WHERE cd_matriz_filial = 1
-                    GROUP BY cd_sit_cadastro
-                    ORDER BY total DESC
-                """)
-                context['situacoes'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 4. DISTRIBUIÇÃO POR PORTE DA EMPRESA
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        CASE 
-                            WHEN emp.porte_empresa = 0 THEN 'NÃO INFORMADO'
-                            WHEN emp.porte_empresa = 1 THEN 'MICRO EMPRESA'
-                            WHEN emp.porte_empresa = 3 THEN 'EMPRESA DE PEQUENO PORTE'
-                            WHEN emp.porte_empresa = 5 THEN 'DEMAIS'
-                            WHEN emp.porte_empresa IS NULL THEN 'NÃO INFORMADO'
-                            ELSE 'NÃO INFORMADO'
-                        END AS porte,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos e
-                    LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                    WHERE e.cd_matriz_filial = 1
-                    GROUP BY emp.porte_empresa
-                    ORDER BY total DESC
-                """)
-                context['portes'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 5. TOP 10 CNAES PRINCIPAIS
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        e.cnae_principal,
-                        c.nm_cnae,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos e
-                    LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                    WHERE e.cd_matriz_filial = 1
-                    AND e.cnae_principal IS NOT NULL
-                    GROUP BY e.cnae_principal, c.nm_cnae
-                    ORDER BY total DESC
-                    LIMIT 10
-                """)
-                context['top_cnaes'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 6. TOP 10 NATUREZAS JURÍDICAS
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        emp.nat_juridica AS codigo,
-                        COALESCE(n.nat_juridica, 'NÃO INFORMADA') AS descricao,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos e
-                    LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                    LEFT JOIN c_naturezas n ON emp.nat_juridica = n.cd_nat_juridica
-                    WHERE e.cd_matriz_filial = 1
-                    AND emp.nat_juridica IS NOT NULL
-                    GROUP BY emp.nat_juridica, n.nat_juridica
-                    ORDER BY total DESC
-                    LIMIT 10
-                """)
-                context['top_naturezas'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 7. SIMPLES E MEI
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        COUNT(CASE WHEN s.op_simples = 'S' THEN 1 END) as total_simples,
-                        COUNT(CASE WHEN s.op_mei = 'S' THEN 1 END) as total_mei
-                    FROM c_estabelecimentos e
-                    LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                    WHERE e.cd_matriz_filial = 1
-                """)
-                resultado = cur.fetchone()
-                context['simples_mei'] = dict(resultado) if resultado else {}
-                
-                # ============================================================
-                # 8. EMPRESAS POR ANO DE ABERTURA
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        EXTRACT(YEAR FROM dt_ini)::integer as ano,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos
-                    WHERE cd_matriz_filial = 1
-                    AND dt_ini IS NOT NULL
-                    AND EXTRACT(YEAR FROM dt_ini) >= 2000
-                    GROUP BY EXTRACT(YEAR FROM dt_ini)
-                    ORDER BY ano DESC
-                    LIMIT 15
-                """)
-                context['por_ano'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 9. TOP 10 MUNICÍPIOS
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        e.municipio AS codigo,
-                        COALESCE(m.municipio, 'NÃO INFORMADO') AS nome_municipio,
-                        e.uf,
-                        COUNT(*) as total
-                    FROM c_estabelecimentos e
-                    LEFT JOIN c_municipios m ON e.municipio = m.cd_municipio
-                    WHERE e.cd_matriz_filial = 1
-                    AND e.municipio IS NOT NULL
-                    GROUP BY e.municipio, m.municipio, e.uf
-                    ORDER BY total DESC
-                    LIMIT 10
-                """)
-                context['top_municipios'] = [dict(r) for r in cur.fetchall()]
-                
-                # ============================================================
-                # 10. TOTAL DE SÓCIOS
-                # ============================================================
-                cur.execute("""
-                    SELECT 
-                        COUNT(*) as total_socios,
-                        COUNT(DISTINCT cnpj_basico) as total_empresas_com_socios
-                    FROM c_socios
-                """)
-                resultado = cur.fetchone()
-                context['socios'] = dict(resultado) if resultado else {}
-                
-                # ============================================================
-                # 11. DATA DA ÚLTIMA ATUALIZAÇÃO
-                # ============================================================
-                from datetime import datetime
-                context['ultima_atualizacao'] = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-                
-            cache.set('estatisticas_completas', context, 3600)
-            print("✅ Estatísticas calculadas e salvas no cache")
-            
-        except Exception as e:
-            import traceback
-            print(f"❌ Erro nas estatísticas: {e}")
-            traceback.print_exc()
-        finally:
-            if conn:
-                conn.close()
-    else:
-        print("✅ Estatísticas carregadas do cache")
-    
+                linhas = cur.fetchall()
+
+            por_cat = {}
+            ultima_data = None
+            for r in linhas:
+                por_cat.setdefault(r['categoria'], []).append(r)
+                if not ultima_data or (r['atualizado_em'] and r['atualizado_em'] > ultima_data):
+                    ultima_data = r['atualizado_em']
+
+            geral = {r['chave']: r['valor'] for r in por_cat.get('geral', [])}
+            situacoes_dict = {r['chave']: r['valor'] for r in por_cat.get('situacao', [])}
+            ufs = por_cat.get('uf', [])
+
+            context['totais'] = {
+                'total_matrizes': geral.get('total_matrizes', 0),
+                'total_ativas': situacoes_dict.get('ATIVA', 0),
+                'total_inaptas': situacoes_dict.get('INAPTA', 0),
+                'total_baixadas': situacoes_dict.get('BAIXADA', 0),
+                'total_suspensas': situacoes_dict.get('SUSPENSA', 0),
+                'total_nulas': situacoes_dict.get('NULA', 0),
+                'total_ufs': len(ufs),
+            }
+
+            simples_dict = {r['chave']: r['valor'] for r in por_cat.get('simples', [])}
+            mei_dict = {r['chave']: r['valor'] for r in por_cat.get('mei', [])}
+            context['simples_mei'] = {
+                'total_simples': simples_dict.get('S', 0),
+                'total_mei': mei_dict.get('S', 0),
+            }
+
+            context['top_ufs'] = [
+                {'uf': r['chave'], 'total': r['valor']}
+                for r in ufs[:10]
+            ]
+
+            context['situacoes'] = [
+                {'situacao': r['chave'], 'total': r['valor']}
+                for r in por_cat.get('situacao', [])
+            ]
+
+            context['portes'] = [
+                {'porte': r['descricao'], 'total': r['valor']}
+                for r in por_cat.get('porte', [])
+            ]
+
+            context['top_cnaes'] = [
+                {'cnae_principal': r['chave'], 'nm_cnae': r['descricao'], 'total': r['valor']}
+                for r in por_cat.get('cnae', [])[:10]
+            ]
+
+            context['top_naturezas'] = [
+                {'codigo': r['chave'], 'descricao': r['descricao'], 'total': r['valor']}
+                for r in por_cat.get('natureza', [])[:10]
+            ]
+
+            anos = por_cat.get('ano', [])
+            anos.sort(key=lambda x: int(x['chave']) if x['chave'].isdigit() else 0, reverse=True)
+            context['por_ano'] = [
+                {'ano': int(r['chave']), 'total': r['valor']}
+                for r in anos[:15]
+            ]
+
+            top_mun = []
+            for r in por_cat.get('municipio', [])[:10]:
+                partes = (r['descricao'] or '').split('|')
+                nome = partes[0] if len(partes) > 0 else 'NÃO INFORMADO'
+                uf_mun = partes[1] if len(partes) > 1 else ''
+                top_mun.append({
+                    'codigo': r['chave'],
+                    'nome_municipio': nome,
+                    'uf': uf_mun,
+                    'total': r['valor']
+                })
+            context['top_municipios'] = top_mun
+
+            socios_dict = {r['chave']: r['valor'] for r in por_cat.get('socios', [])}
+            context['socios'] = {
+                'total_socios': socios_dict.get('total_socios', 0),
+                'total_empresas_com_socios': socios_dict.get('empresas_com_socios', 0),
+            }
+
+            if ultima_data:
+                context['ultima_atualizacao'] = ultima_data.strftime('%d/%m/%Y %H:%M:%S')
+
+    except Exception as e:
+        logger.exception("Erro ao carregar estatísticas: %s", e)
+    finally:
+        if conn:
+            conn.close()
+
     return render(request, 'core/estatisticas.html', context)
 
 def health_deep(request):
@@ -1282,3 +1069,39 @@ def health_deep(request):
             except Exception:
                 pass
 
+def recalcular_totais_banco():
+    """Chama a Stored Procedure do PostgreSQL para recalcular totais."""
+    inicio = time.time()
+    conn = get_postgres_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CALL sp_recalcular_estatisticas_totais();")
+        conn.commit()
+    finally:
+        conn.close()
+    return round(time.time() - inicio, 2)
+
+
+@login_required
+@require_POST
+def recalcular_totais(request):
+    """View administrativa para disparar o recálculo via botão."""
+    if not request.user.is_superuser:
+        raise PermissionDenied("Apenas administradores podem recalcular os totais.")
+
+    try:
+        from django.core.cache import cache
+        from django.contrib import messages
+        from django.shortcuts import redirect
+
+        segundos = recalcular_totais_banco()
+
+        # Limpa o cache da página de estatísticas para refletir na hora
+        cache.delete('estatisticas_completas')
+
+        messages.success(request, f"Totais do banco recalculados com sucesso em {segundos}s!")
+    except Exception as e:
+        logger.exception("Erro ao recalcular totais do banco: %s", e)
+        messages.error(request, f"Erro ao recalcular totais: {e}")
+
+    return redirect('core:estatisticas')

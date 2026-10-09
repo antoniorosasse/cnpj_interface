@@ -16,4 +16,5 @@ urlpatterns = [
     
     # Estatísticas
     path('estatisticas/', views.estatisticas, name='estatisticas'),
+    path('estatisticas/recalcular/', views.recalcular_totais, name='recalcular_totais'),
 ]

@@ -22,9 +22,14 @@
                 </small>
                 {% endif %}
             </div>
-            <a href="?refresh=1" class="btn btn-outline-primary">
-                <i class="bi bi-arrow-clockwise"></i> Atualizar
-            </a>
+{% if user.is_superuser %}
+            <form method="post" action="{% url 'core:recalcular_totais' %}" class="d-inline" onsubmit="return confirm('Deseja recalcular todos os totais e estatísticas do banco? Isso pode levar cerca de 15 a 30 segundos.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-warning">
+                    <i class="bi bi-arrow-repeat"></i> Recalcular Totais do Banco
+                </button>
+            </form>
+            {% endif %}
         </div>
 
         <!-- ============================================================ -->

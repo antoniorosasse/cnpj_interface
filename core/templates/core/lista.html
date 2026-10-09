@@ -8,7 +8,11 @@
         <h1><i class="bi bi-building"></i> Empresas</h1>
         <p class="text-muted">
             <i class="bi bi-info-circle"></i> 
-            {{ total|format_number }} empresas encontradas
+            {% if total_estimado %}
+                Mais de 100.000 empresas encontradas
+            {% else %}
+                {{ total|format_number }} empresas encontradas
+            {% endif %}
         </p>
         
         {% if aviso %}
@@ -37,10 +41,14 @@
                         <input type="text" name="cnpj" class="form-control" 
                                placeholder="Ex: 12345678000199" value="{{ cnpj }}" maxlength="18">
                     </div>
-                    <div class="col-md-1">
-                        <label class="form-label">UF</label>
-                        <input type="text" name="uf" class="form-control text-uppercase" 
-                               placeholder="SP" value="{{ uf }}" maxlength="2" style="text-transform: uppercase;">
+                    <div class="col-md-2">
+                        <label class="form-label">Estado (UF)</label>
+                        <select name="uf" class="form-select">
+                            <option value="">Todos</option>
+                            {% for sigla, nome in lista_ufs %}
+                            <option value="{{ sigla }}" {% if uf == sigla %}selected{% endif %}>{{ nome }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="col-md-1">
                         <label class="form-label">Situação</label>
@@ -70,19 +78,7 @@
                         </select>
                     </div>
                     
-                    <!-- ✅ NOVO: CAMPO "A PARTIR DE" -->
-                    <div class="col-md-2">
-                        <label class="form-label">
-                            <i class="bi bi-arrow-right-circle"></i> A partir de
-                            <small class="text-muted">(início da busca)</small>
-                        </label>
-                        <input type="text" name="a_partir_de" class="form-control text-uppercase" 
-                               placeholder="Ex: K" value="{{ a_partir_de }}" 
-                               style="text-transform: uppercase;">
-                        <small class="text-muted">Para ordenação por Razão Social/Nome Fantasia/CNPJ</small>
-                    </div>
-                    
-                    <div class="col-md-2">
+                     <div class="col-md-2">
                         <label class="form-label">Ordenar por</label>
                         <select name="ordem" class="form-select">
                             <option value="cnpj" {% if ordem == 'cnpj' %}selected{% endif %}>CNPJ</option>
@@ -143,9 +139,9 @@
                         </td>
                         <td>{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
                         <td>
-                            <a href="{% url 'core:detalhe' empresa.cnpj_completo %}" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-eye"></i>
-                            </a>
+                        <a href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary" title="Ver detalhes">
+                            <i class="bi bi-eye"></i>
+                        </a>
                         </td>
                     </tr>
                     {% empty %}
@@ -160,14 +156,17 @@
         <nav aria-label="Paginação">
             <ul class="pagination justify-content-center">
                 {% if page > 1 %}
-                <li class="page-item"><a class="page-link" href="?page=1&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-double-left"></i></a></li>
                 <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&last_fantasia={{ first_fantasia }}&dir=prev{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-left"></i></a></li>
                 {% else %}
                 <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
                 <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
                 {% endif %}
                 
-                <li class="page-item active"><span class="page-link">{{ page }} / {{ total_paginas|format_number }}</span></li>
+                <li class="page-item active">
+                    <span class="page-link">
+                        Página {{ page }} de {% if total_estimado %}+{{ total_paginas|format_number }}{% else %}{{ total_paginas|format_number }}{% endif %}
+                    </span>
+                </li>
                 
                 {% if has_next %}
                 <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&last_fantasia={{ last_fantasia }}&dir=next{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-right"></i></a></li>
@@ -179,8 +178,7 @@
         {% endif %}
         
         <p class="text-muted small">
-            <i class="bi bi-clock"></i> Mostrando {{ empresas|length }} de {{ total|format_number }} empresas
-            {% if a_partir_de %}<strong>(a partir de "{{ a_partir_de }}")</strong>{% endif %}
+            <i class="bi bi-clock"></i> Mostrando {{ empresas|length }} de {% if total_estimado %}+100.000{% else %}{{ total|format_number }}{% endif %} empresas
         </p>
     </div>
 </div>
