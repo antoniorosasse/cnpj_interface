@@ -47,6 +47,8 @@ c_empresas  (~36.9M linhas) -- dados cadastrais da empresa
   id_empresa      serial (PK)
 
   INDICES: cnpj_basico (unique), porte_empresa, nat_juridica, razao_social (trgm)
+           idx_empresas_razao_cnpj (razao_social, cnpj_basico) <- use na
+             ordenacao por razao_social (permite keyset rapido)
 
 =====================================================================
 c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
@@ -81,11 +83,24 @@ c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
   id_estabelecimento  serial (PK)
 
   INDICES (destaques):
+    -- Simples
     cnpj_basico, cd_matriz_filial, cd_sit_cadastro, uf, municipio,
     cnae_principal, dt_ini, cep
-    Vários indices PARCIAIS com WHERE cd_matriz_filial = 1
-    (matriz_sit, matriz_uf, matriz_cnae, matriz_ano, matriz_mun,
-     matriz_count, keyset_parcial)
+    -- Compostos parciais (WHERE cd_matriz_filial = 1) - USE ESTES em filtros
+    idx_estab_uf_matriz_mun (uf, municipio)
+    idx_estab_uf_sit_fantasia_matriz (uf, cd_sit_cadastro, nm_fantasia,
+                                       cnpj_basico, cnpj_ordem, cnpj_dv)
+    idx_estabelecimentos_fantasia_cnpj (nm_fantasia, cnpj_basico,
+                                         cnpj_ordem, cnpj_dv)
+    idx_estabelecimentos_keyset_parcial (cnpj_basico, cnpj_ordem, cnpj_dv)
+    idx_estabelecimentos_cnpj_desc_parcial (cnpj_basico DESC, cnpj_ordem DESC,
+                                             cnpj_dv DESC)
+    -- Parciais de coluna unica (WHERE cd_matriz_filial = 1)
+    matriz_sit, matriz_uf, matriz_cnae, matriz_ano, matriz_mun, matriz_count
+    -- Nao-parciais uteis
+    idx_estabelecimentos_cnpj_completo (cnpj_basico, cnpj_ordem, cnpj_dv)
+    idx_estabelecimentos_cidade_uf (municipio, uf)
+    idx_estabelecimentos_uf_sit (uf, cd_sit_cadastro)
 
 =====================================================================
 c_simples  (~30.3M linhas) -- optantes Simples/MEI
@@ -125,7 +140,8 @@ c_socios  (~18.9M linhas) -- socios das empresas
   faixa_etaria          smallint        (ver CODIGOS abaixo)
   id_socio              serial (PK)
 
-  INDICES: cnpj_basico, cnpj_cpf, faixa_etaria, nome_ou_razao_social (trgm)
+  INDICES: cnpj_basico, cnpj_cpf, faixa_etaria, nome_ou_razao_social (trgm),
+           cnpj_cpf (trgm)
 
   ATENCAO: a coluna de qualificacao chama-se qualif_socio (NAO
   qualificacao). Nao invente nomes.
@@ -235,6 +251,12 @@ Prefira:
   - Filtro por cd_sit_cadastro = 2 (idem)
   - Filtro por op_simples = 'S' ou op_mei = 'S' (indices parciais)
   - Subconsulta com IN em vez de JOIN entre gigantes
+  - Ordenar/contar por razao_social: use idx_empresas_razao_cnpj
+    (e' composto: razao_social + cnpj_basico, permite keyset rapido)
+  - Ordenar/contar por nome fantasia em uma UF: use
+    idx_estab_uf_sit_fantasia_matriz (composto: uf + cd_sit_cadastro +
+    nm_fantasia + cnpj_basico + cnpj_ordem + cnpj_dv)
+  - Contar por UF: use idx_estab_uf_matriz_mun (uf + municipio, parcial)
 """
 
 
