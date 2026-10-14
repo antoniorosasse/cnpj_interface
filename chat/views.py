@@ -30,6 +30,8 @@ from .services.sql_executor import executar_sql
 from .services.resposta_natural import gerar_texto_resposta
 #from chat.models import Conversa, Mensagem
 from . import repo
+from .models import LogAcesso
+from .signals import _pegar_ip
 import time as _time_health
 import logging as _logging_health
 
@@ -214,6 +216,18 @@ def chat_api_view(request):
             {'ok': False, 'erro': 'Pergunta vazia.'},
             status=400,
         )
+
+    # --- log de acesso (pergunta no chat) ---
+    try:
+        LogAcesso.objects.create(
+            usuario=request.user if request.user.is_authenticated else None,
+            tipo=LogAcesso.TIPO_CHAT_PERGUNTA,
+            ip=_pegar_ip(request),
+            user_agent=(request.META.get('HTTP_USER_AGENT', '') or '')[:300],
+            detalhe=pergunta[:500],
+        )
+    except Exception:
+        logger.exception('Falha ao registrar log de pergunta')
 
     # --- conversa atual (ou cria) ---
     conversa = _conversa_atual(request)

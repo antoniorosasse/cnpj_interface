@@ -73,3 +73,50 @@ class Mensagem(models.Model):
     def __str__(self):
         preview = self.conteudo[:50]
         return f'[{self.papel}] {preview}'
+
+
+
+class LogAcesso(models.Model):
+    """
+    Registro de eventos de acesso/uso do chat.
+
+    Tipos (por enquanto):
+      - 'login':          alguem logou (signal user_logged_in)
+      - 'chat_pergunta':  alguem enviou uma pergunta no chat
+
+    Fica no banco 'default' (django_internal, Postgres), independente
+    do backend de persistencia do chat (Postgres ORM ou MongoDB).
+    """
+
+    TIPO_LOGIN = 'login'
+    TIPO_CHAT_PERGUNTA = 'chat_pergunta'
+    TIPO_CHOICES = [
+        (TIPO_LOGIN, 'Login'),
+        (TIPO_CHAT_PERGUNTA, 'Pergunta no chat'),
+    ]
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs_acesso',
+    )
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True, default='')
+    detalhe = models.TextField(blank=True, default='')
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-criado_em']
+        verbose_name = 'Log de acesso'
+        verbose_name_plural = 'Logs de acesso'
+        indexes = [
+            models.Index(fields=['tipo', '-criado_em']),
+            models.Index(fields=['-criado_em']),
+        ]
+
+    def __str__(self):
+        quem = self.usuario.username if self.usuario else '(anonimo)'
+        return f'[{self.tipo}] {quem} @ {self.criado_em:%Y-%m-%d %H:%M}'
