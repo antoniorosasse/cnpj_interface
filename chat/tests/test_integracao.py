@@ -129,7 +129,7 @@ class IntegracaoBaseTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             username='teste_integracao',
-            password='senha_forte_12345',
+            password='test-only',
         )
         self.client = Client()
         self.client.force_login(self.user)

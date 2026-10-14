@@ -19,7 +19,7 @@ class ConversaTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='teste', password='senha12345'
+            username='teste', password='test-only'
         )
 
     def test_criar_conversa(self):
@@ -55,7 +55,7 @@ class MensagemTests(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='teste2', password='senha12345'
+            username='teste2', password='test-only'
         )
         self.conversa = Conversa.objects.create(usuario=self.user)
 
