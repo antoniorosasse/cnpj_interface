@@ -308,6 +308,17 @@ read-only. Tem historico de conversas e contexto.
 - Passa o historico da conversa como contexto (ultimas 10 mensagens)
 - Pode responder `RECUSAR: <motivo>` quando a pergunta pede dado que nao
   existe no schema (ex: faturamento, numero de funcionarios)
+  ### 1.1 Busca semântica (vetorial)
+
+  Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` pode gerar um SQL com a cláusula:
+
+  ```sql
+  ORDER BY embedding <=> %s::halfvec(384)
+
+  O chat/services/embedding_service.py gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o %s antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
+
+  Custo de disco: < 2 MB (apenas 1.359 CNAEs).
+  Performance: ~30ms em produção.
 
 ### 2. `sql_validator`
 
