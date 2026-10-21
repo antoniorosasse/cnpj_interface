@@ -346,10 +346,24 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
             )
             continue
 
+        # --- injeta o vetor, se o SQL usar busca semantica ---
+        from .embedding_service import injetar_vetor
+        sql_com_vetor, erro_vetor = injetar_vetor(validation.sql, pergunta)
+        if erro_vetor:
+            return {
+                'ok': False,
+                'sql': '',
+                'erro': erro_vetor,
+                'tipo_erro': 'embedding',
+                'tentativas': tentativa,
+                'resposta_bruta': ultima_bruta,
+                'validation': None,
+            }
+
         # --- sucesso ---
         return {
             'ok': True,
-            'sql': validation.sql,
+            'sql': sql_com_vetor,  # <-- SQL com o vetor injetado
             'erro': None,
             'tipo_erro': None,
             'tentativas': tentativa,

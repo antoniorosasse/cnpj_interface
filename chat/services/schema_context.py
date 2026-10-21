@@ -153,6 +153,42 @@ TABELAS DE LOOKUP (pequenas, JOIN barato)
 c_cnaes
   cnae      integer (PK)     -- codigo do CNAE
   nm_cnae   varchar(255)     -- descricao
+  embedding halfvec(384)     -- vetor da descricao (para busca semantica)
+
+=====================================================================
+BUSCA SEMANTICA (VETORIAL)
+=====================================================================
+
+A tabela c_cnaes tem uma coluna `embedding` (halfvec(384)) com o vetor
+da descricao do CNAE. Use-a quando a pergunta for sobre um CONCEITO
+ou ATIVIDADE e nao houver um codigo CNAE explicito.
+
+COMO USAR:
+Quando o usuario perguntar "empresas de energia solar" (e nao
+"empresas com CNAE 4321-5/00"), voce deve:
+
+1. Descobrir qual CNAE e o mais similar usando a coluna embedding:
+   SELECT cnae, nm_cnae
+   FROM c_cnaes
+   ORDER BY embedding <=> %s::halfvec(384)
+   LIMIT 5
+
+2. Usar o(s) cnae(s) encontrado(s) para filtrar os estabelecimentos:
+   SELECT e.cnpj_basico, emp.razao_social, c.nm_cnae
+   FROM c_estabelecimentos e
+   JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
+   JOIN c_cnaes c ON e.cnae_principal = c.cnae
+   WHERE e.cd_matriz_filial = 1
+     AND e.cnae_principal IN (...)
+   LIMIT 100
+
+O %s acima e um vetor que o sistema vai injetar automaticamente na
+query. Voce NAO precisa saber o valor. Apenas use a sintaxe
+`ORDER BY embedding <=> %s::halfvec(384)`.
+
+NUNCA use a coluna embedding para outra coisa. Ela serve apenas para
+descobrir o CNAE mais similar a um termo em portugues.
+
 
 c_municipios
   cd_municipio  integer (PK) -- codigo IBGE

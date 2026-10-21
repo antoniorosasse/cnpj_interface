@@ -281,8 +281,15 @@ def chat_api_view(request):
 
     validation = geracao['validation']
 
-    # --- 2) executa SQL ---
-    execucao = executar_sql(validation)
+    # --- 2) executa SQL (com o vetor ja injetado pelo gerador) ---
+    from .services.sql_validator import ValidationResult
+    validation_com_vetor = ValidationResult(
+        sql=geracao['sql'],
+        original_sql=validation.original_sql,
+        teve_limit=validation.teve_limit,
+        limit_valor=validation.limit_valor,
+    )
+    execucao = executar_sql(validation_com_vetor)
 
     # --- 2b) Se o Postgres rejeitou por coluna/tabela inexistente,
     # tenta 1x mais passando o erro pro LLM corrigir.
@@ -293,7 +300,7 @@ def chat_api_view(request):
         logger.warning('Retry por erro de SQL: %s', execucao['erro'])
 
         historico_corrigido = list(historico) + [
-            {'role': 'assistant', 'content': validation.sql},
+            {'role': 'assistant', 'content': geracao['sql']},  # <-- usa o SQL com vetor
             {'role': 'user', 'content': (
                 f'O SQL acima deu erro no Postgres: {execucao["erro"]}. '
                 'Corrija e responda APENAS com o SQL, sem markdown.'
@@ -302,8 +309,16 @@ def chat_api_view(request):
         geracao2 = gerar_sql(pergunta=pergunta, historico=historico_corrigido)
 
         if geracao2['ok']:
-            validation = geracao2['validation']
-            execucao = executar_sql(validation)
+            # O gerador2 já injetou o vetor no SQL dele
+            from .services.sql_validator import ValidationResult
+            validation2_com_vetor = ValidationResult(
+                sql=geracao2['sql'],
+                original_sql=geracao2['validation'].original_sql,
+                teve_limit=geracao2['validation'].teve_limit,
+                limit_valor=geracao2['validation'].limit_valor,
+            )
+            validation = geracao2['validation']  # mantém o original para os metadados
+            execucao = executar_sql(validation2_com_vetor)
 
     # --- 3) gera texto natural (so se houve dados) ---
     resposta_texto = ''
@@ -320,6 +335,15 @@ def chat_api_view(request):
     repo.adicionar_mensagem(cid, 'user', pergunta)
 
     if execucao['ok']:
+        # Exibe o SQL com um placeholder legivel em vez dos 384 numeros
+        sql_exibicao = geracao['sql']
+        if '<vetor>' not in sql_exibicao:  # evita duplicar se ja tiver
+            import re
+            sql_exibicao = re.sub(
+                r"'\[[^\]]+\]'::halfvec\(384\)",
+                "'[VETOR]'::halfvec(384)",
+                sql_exibicao
+            )
         repo.adicionar_mensagem(
             cid,
             'assistant',
@@ -344,7 +368,8 @@ def chat_api_view(request):
     resposta = {
         'ok': execucao['ok'],
         'etapa': 'execucao' if not execucao['ok'] else 'ok',
-        'sql': validation.sql,
+        'sql': sql_exibicao,  # <-- SQL limpo
+        'sql_real': geracao['sql'],  # opcional: guarda o real pra debug
         'sql_original': validation.original_sql,
         'teve_limit': validation.teve_limit,
         'limit_valor': validation.limit_valor,
