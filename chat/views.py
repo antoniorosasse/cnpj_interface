@@ -334,16 +334,20 @@ def chat_api_view(request):
     # --- 4) salva as duas mensagens ---
     repo.adicionar_mensagem(cid, 'user', pergunta)
 
+    # SQL para exibicao: por padrao, o SQL bruto (com o vetor ainda).
+    # Se a execucao deu certo, substitui o vetor por '[VETOR]' (legivel).
+    # Definido AQUI (fora do if) pra garantir que sempre exista no
+    # resposta = {...} la embaixo (fix do UnboundLocalError).
+    sql_exibicao = geracao['sql']
+    if execucao['ok'] and '<vetor>' not in sql_exibicao:
+        import re
+        sql_exibicao = re.sub(
+            r"'\[[^\]]+\]'::halfvec\(384\)",
+            "'[VETOR]'::halfvec(384)",
+            sql_exibicao
+        )
+
     if execucao['ok']:
-        # Exibe o SQL com um placeholder legivel em vez dos 384 numeros
-        sql_exibicao = geracao['sql']
-        if '<vetor>' not in sql_exibicao:  # evita duplicar se ja tiver
-            import re
-            sql_exibicao = re.sub(
-                r"'\[[^\]]+\]'::halfvec\(384\)",
-                "'[VETOR]'::halfvec(384)",
-                sql_exibicao
-            )
         repo.adicionar_mensagem(
             cid,
             'assistant',
