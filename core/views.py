@@ -144,7 +144,20 @@ def lista_empresas(request):
                 filtros_params.append(f'%{razao_social}%')
             
             if nome_fantasia:
-                filtros_sql += " AND e.nm_fantasia ILIKE %s"
+                # Busca o fantasia na matriz OU em qualquer filial (via cnpj_basico).
+                # Usa UNION (nao OR) porque o OR faz o planner rodar a subquery
+                # por linha (7776ms); o UNION materializa uma vez (68ms).
+                # Parte A: matrizes com fantasia na matriz (GIN parcial).
+                # Parte B: matrizes cujo cnpj_basico tem fantasia em qualquer
+                #          estabelecimento (GIN novo, sem filtro de matriz).
+                filtros_sql += """ AND e.cnpj_basico IN (
+                    SELECT cnpj_basico FROM c_estabelecimentos
+                    WHERE cd_matriz_filial = 1 AND nm_fantasia ILIKE %s
+                    UNION
+                    SELECT cnpj_basico FROM c_estabelecimentos
+                    WHERE nm_fantasia ILIKE %s
+                )"""
+                filtros_params.append(f'%{nome_fantasia}%')
                 filtros_params.append(f'%{nome_fantasia}%')
             
             if cnpj:
