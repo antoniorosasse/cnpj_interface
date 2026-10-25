@@ -115,6 +115,27 @@ REGRAS DE OURO:
    -> LIMIT 100 e' ok. Ex: "quantas empresas por cidade"
    -> NAO use LIMIT.
 
+9. BUSCA POR NOME FANTASIA (CRITICO):
+   - O nome fantasia pode estar SO na filial, nao na matriz.
+     (Ex: a matriz do Supermercados Alvorada nao tem fantasia
+     preenchido; so a filial tem.)
+   - Se o usuario pedir "empresas com nome fantasia X", use EXISTS:
+     WHERE e.cd_matriz_filial = 1
+       AND EXISTS (
+         SELECT 1 FROM c_estabelecimentos sub
+         WHERE sub.cnpj_basico = e.cnpj_basico
+           AND sub.nm_fantasia ILIKE '%X%'
+       )
+   - NUNCA remova o filtro cd_matriz_filial = 1 (o usuario quer
+     empresas, nao estabelecimentos).
+   - NUNCA use e.nm_fantasia ILIKE direto (perde as que so tem
+     fantasia na filial).
+   - NUNCA use OR (ex: e.nm_fantasia ILIKE %s OR EXISTS (...)):
+     o planner escolhe Merge Join e le 36M de linhas (~23s).
+     EXISTS sozinho forca Nested Loop (~200ms).
+   - O indice idx_estab_nome_fantasia_gin_todos (GIN, sem filtro de
+     matriz) cobre a subquery do EXISTS.
+
 ORDEM DOS JOINS (critico para performance):
 - Quando a pergunta filtrar por um valor MUITO SELETIVO em c_socios
   (ex: "socio Antonio", "socio com nome Maria"), comece pela tabela
