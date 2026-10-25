@@ -93,14 +93,14 @@ c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
     idx_estabelecimentos_fantasia_cnpj (nm_fantasia, cnpj_basico,
                                          cnpj_ordem, cnpj_dv)
     idx_estabelecimentos_keyset_parcial (cnpj_basico, cnpj_ordem, cnpj_dv)
-    idx_estabelecimentos_cnpj_desc_parcial (cnpj_basico DESC, cnpj_ordem DESC,
-                                             cnpj_dv DESC)
     -- Parciais de coluna unica (WHERE cd_matriz_filial = 1)
-    matriz_sit, matriz_uf, matriz_cnae, matriz_ano, matriz_mun, matriz_count
+    matriz_sit, matriz_cnae, matriz_ano, matriz_mun
     -- Nao-parciais uteis
     idx_estabelecimentos_cnpj_completo (cnpj_basico, cnpj_ordem, cnpj_dv)
     idx_estabelecimentos_cidade_uf (municipio, uf)
     idx_estabelecimentos_uf_sit (uf, cd_sit_cadastro)
+    idx_estab_nome_fantasia_gin_todos (nm_fantasia) GIN trigram, SEM filtro
+      de matriz - use para buscar nome fantasia em matriz OU filial
 
 =====================================================================
 c_simples  (~30.3M linhas) -- optantes Simples/MEI
@@ -269,6 +269,14 @@ TRADUCAO DE LINGUAGEM NATURAL PARA CODIGO:
   "MEI"                      -> WHERE op_mei = 'S'
   "Simples"                  -> WHERE op_simples = 'S'
   "socio pessoa fisica"      -> WHERE id_tipo_socio = 2
+  "nome fantasia X"         -> WHERE EXISTS (
+                                  SELECT 1 FROM c_estabelecimentos sub
+                                  WHERE sub.cnpj_basico = e.cnpj_basico
+                                    AND sub.nm_fantasia ILIKE '%X%'
+                                )
+                                (o nome fantasia pode estar SO na filial,
+                                 nao na matriz. Por isso use EXISTS, nao
+                                 e.nm_fantasia ILIKE direto)
 
 =====================================================================
 DICA CRITICA DE PERFORMANCE
@@ -293,6 +301,12 @@ Prefira:
     idx_estab_uf_sit_fantasia_matriz (composto: uf + cd_sit_cadastro +
     nm_fantasia + cnpj_basico + cnpj_ordem + cnpj_dv)
   - Contar por UF: use idx_estab_uf_matriz_mun (uf + municipio, parcial)
+  - Buscar por nome fantasia: use EXISTS com subquery em
+    c_estabelecimentos (cobre matriz + filial via
+    idx_estab_nome_fantasia_gin_todos). NAO use OR do tipo
+    `e.nm_fantasia ILIKE %s OR EXISTS (...)`, porque o planner escolhe
+    Merge Join e le 36M de linhas (~23s). Use EXISTS sozinho, que forca
+    Nested Loop (~200ms).
 """
 
 
