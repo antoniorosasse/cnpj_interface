@@ -133,6 +133,15 @@ def lista_empresas(request):
         
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             
+            # Quando nome_fantasia for preenchido, a filtros_sql tem um UNION
+            # (matriz + filial). Sem isso, o planner escolhe Merge Join
+            # (le 36.5M de linhas, 22.9s). Desabilitando mergejoin/hashjoin,
+            # forca Nested Loop (178ms).
+            # SET LOCAL vale so ate o fim da transacao (nao afeta outras conexoes).
+            if nome_fantasia:
+                cur.execute("SET LOCAL enable_mergejoin = off")
+                cur.execute("SET LOCAL enable_hashjoin = off")
+            
             # ============================================================
             # 2. FILTROS
             # ============================================================
