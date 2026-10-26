@@ -1,0 +1,12 @@
+# Sinônimos de CNAE para o embedding (chat IA).
+# Formato: termo_coloquial -> texto_para_o_modelo
+# O parser faz lower() e strip() nas duas partes.
+# Linhas em branco e com # são ignoradas.
+#
+# NOTA: "padaria", "confeitaria" e "carpintaria" estao no nm_cnae,
+# entao o ILIKE do SYSTEM_PROMPT ja os cobre. So mantenha aqui
+# termos que NAO estao no nm_cnae.
+
+oficina mecânica -> manutenção e reparação mecânica de veículos automotores
+oficinas mecânicas -> manutenções e reparações mecânicas de veículos automotores
+oficinas mecanicas -> manutenções e reparações mecânicas de veículos automotores

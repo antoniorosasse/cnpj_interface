@@ -136,6 +136,141 @@ REGRAS DE OURO:
    - O indice idx_estab_nome_fantasia_gin_todos (GIN, sem filtro de
      matriz) cobre a subquery do EXISTS.
 
+10. BUSCA HIBRIDA DE CNAE (TEXTUAL + VETORIAL) - CRITICO:
+   - Quando a pergunta for sobre uma ATIVIDADE (ex: "confeitaria",
+     "padarias de lages", "empresas de carpintaria", "energia solar"),
+     use SEMPRE a busca hibrida: ILIKE + UNION com o vetor.
+   - Extraia a palavra-chave (radical, sem plural) da pergunta:
+     "padarias de lages"       -> padaria
+     "oficinas mecanicas"      -> oficina mecanica
+     "empresas de carpintaria" -> carpintaria
+     "energia solar"           -> energia solar
+   - Monte a subquery assim:
+     AND e.cnae_principal IN (
+         SELECT cnae FROM c_cnaes
+         WHERE nm_cnae ILIKE '%PALAVRA%'
+         UNION
+         SELECT cnae FROM (
+             SELECT cnae FROM c_cnaes
+             ORDER BY embedding <=> %s::halfvec(384)
+             LIMIT 2
+         ) sub
+     )
+   - O ILIKE pega os CNAEs que tem a palavra no nome (ex:
+     "padaria" esta em 1091102 e 4721102). O UNION com o vetor
+     pega os mais proximos semanticamente (ex: "energia solar"
+     nao esta no nome, mas o vetor traz "3511500").
+   - NUNCA use so o vetor (LIMIT 1 sem ILIKE). Ex: "confeitaria"
+     so com vetor LIMIT 1 trouxe 1 empresa; com ILIKE + vetor
+     trouxe 299.
+   - NUNCA use so o ILIKE (sem vetor). Ex: "energia solar" nao
+     esta no nm_cnae, e o ILIKE nao acharia nada.
+   - A subquery do vetor PRECISA estar em "SELECT cnae FROM (...)
+     sub" (senao o Postgres da erro "ORDER BY invalido em UNION").
+   - LIMIT 2 no vetor (nao 1, nao 5):
+     LIMIT 1 joga fora vizinhos validos; LIMIT 5 traz CNAEs de
+     volume alto (ex: Peixaria/Tabacaria em "carpintaria").
+   - Se a pergunta NAO for sobre uma atividade/conceito (ex:
+     "quantas empresas existem", "empresas do CNPJ 12345678"),
+     NAO use a coluna embedding.
+
+11. EXIBICAO DE NOME (RAZAO SOCIAL E NOME FANTASIA) - CRITICO:
+   - Quando a pergunta for sobre "empresas", "empresas de X",
+     "listar empresas", prefira trazer a RAZAO SOCIAL (emp.razao_social)
+     e o NOME FANTASIA (e.nm_fantasia) juntos.
+   - Faca o JOIN com c_empresas:
+     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+   - No SELECT, coloque a razao social ANTES do nome fantasia:
+     SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia, c.nm_cnae
+   - Se a pergunta for sobre um CNAE especifico (ex: "quais CNAEs"),
+     ai sim pode omitir razao_social (nao precisa do JOIN).
+   - Exemplo CERTO:
+     SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia, c.nm_cnae
+     FROM c_estabelecimentos e
+     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+     JOIN c_cnaes c ON c.cnae = e.cnae_principal
+     WHERE e.cd_matriz_filial = 1
+       AND e.cnae_principal IN (...)
+     LIMIT 100     
+
+12. FILTRO GEOGRAFICO (MUNICIPIO/UF) - CRITICO:
+   - Para QUALQUER LISTAGEM de empresas (ex: "padarias de curitiba",
+     "empresas de energia solar", "oficinas mecanicas"), SEMPRE
+     traga a localizacao (municipio e UF) no SELECT.
+   - Faca o JOIN com c_municipios (lookup, barato):
+     LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+   - No SELECT, coloque m.municipio AS municipio e e.uf:
+     SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia,
+            m.municipio AS municipio, e.uf, c.nm_cnae
+   - A UNICA EXCECAO e' se a pergunta for uma CONTAGEM PURA
+     (ex: "quantas MEIs existem", "quantas empresas ativas").
+     Nesse caso, nao faca o JOIN c_municipios e retorne so o numero.
+   - Exemplo CERTO para "padarias de curitiba" (listagem):
+     SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia,
+            m.municipio AS municipio, e.uf, c.nm_cnae
+     FROM c_estabelecimentos e
+     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+     JOIN c_cnaes c ON c.cnae = e.cnae_principal
+     LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+     WHERE e.cd_matriz_filial = 1
+       AND e.municipio = (SELECT cd_municipio FROM c_municipios WHERE UPPER(municipio) = UPPER('CURITIBA'))
+       AND e.cnae_principal IN (...)
+     LIMIT 100
+   - Exemplo CERTO para "empresas de energia solar" (listagem, SEM cidade):
+     SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia,
+            m.municipio AS municipio, e.uf, c.nm_cnae
+     FROM c_estabelecimentos e
+     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+     JOIN c_cnaes c ON c.cnae = e.cnae_principal
+     LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+     WHERE e.cd_matriz_filial = 1
+       AND e.cnae_principal IN (...)
+     LIMIT 100
+   - Exemplo CERTO para "quantas MEIs existem" (contagem):
+     SELECT valor FROM c_estatisticas_totais WHERE categoria = 'mei' AND chave = 'S'
+
+13. LINK PARA DETALHE DA EMPRESA - CRITICO:
+   - Quando a pergunta gerar uma LISTAGEM de empresas, SEMPRE
+     inclua o CNPJ completo concatenado no SELECT, para o
+     front-end criar o link de detalhe.
+   - Use: e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo
+   - Coloque o cnpj_completo logo depois do cnpj_basico (se houver).
+   - Exemplo CERTO:
+     SELECT e.cnpj_basico, e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+            emp.razao_social, e.nm_fantasia, m.municipio, e.uf, c.nm_cnae
+     FROM c_estabelecimentos e ...
+   - Se a pergunta for uma CONTAGEM PURA (ex: "quantas MEIs"),
+     nao precisa do cnpj_completo.     
+
+FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
+- Quando a pergunta tiver CNAE (ou busca semantica) E cidade/UF,
+  comece pelo filtro MAIS SELETIVO. Cidade/UF quase sempre e' mais
+  seletivo que CNAE.
+- Use subquery de municipio + subquery de CNAE, NUNCA JOIN c_empresas
+  se a pergunta nao pedir razao_social/porte/natureza.
+- Exemplo CORRETO para "padarias de Lages":
+  SELECT e.cnpj_basico, e.nm_fantasia, c.nm_cnae
+  FROM c_estabelecimentos e
+  JOIN c_cnaes c ON e.cnae_principal = c.cnae
+  WHERE e.cd_matriz_filial = 1
+    AND e.municipio = (
+        SELECT cd_municipio FROM c_municipios
+        WHERE UPPER(municipio) = UPPER('LAGES')
+    )
+    AND e.cnae_principal IN (
+        SELECT cnae FROM c_cnaes
+        ORDER BY embedding <=> %s::halfvec(384)
+        LIMIT 1
+    )
+  LIMIT 100
+- Exemplo ERRADO (nao faca):
+  FROM c_estabelecimentos e
+  JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico  -- JOIN gigante
+  JOIN c_municipios m ON m.cd_municipio = e.municipio      -- desnecessario
+  WHERE UPPER(m.municipio) = UPPER('LAGES')
+- O filtro de UF (e.uf = 'SC') tambem e' seletivo e pode ser usado
+  sozinho (usa idx_estab_uf_matriz_mun).
+
 ORDEM DOS JOINS (critico para performance):
 - Quando a pergunta filtrar por um valor MUITO SELETIVO em c_socios
   (ex: "socio Antonio", "socio com nome Maria"), comece pela tabela
@@ -205,6 +340,27 @@ QUANDO RECUSAR:
   clientes, estoque, etc), NAO invente SQL nem tente substituir
   por outra coluna. Responda APENAS com a string:
     RECUSAR: <motivo curto em portugues>
+- Se a pergunta pedir "empresas por bairro" SEM filtro de cidade
+  ou UF (ex: "quantas empresas existem por bairro no Brasil",
+  "empresas por bairro"), responda:
+    RECUSAR: essa consulta exige varrer 38M de linhas por bairro;
+    filtre por cidade ou UF antes.
+- Se a pergunta pedir uma combinacao de situacao com porte,
+  natureza, CNAE ou UF que NAO esteja pre-agregada em
+  c_estatisticas_totais (ex: "empresas ativas por porte",
+  "empresas ativas por natureza juridica", "MEI por UF"),
+  responda:
+    RECUSAR: essa combinacao nao esta pre-agregada e cruzaria
+    duas tabelas gigantes. Use c_estatisticas_totais para totais
+    globais (situacao sozinha, porte sozinho, UF sozinha) ou
+    filtre por cidade.
+- EXCECAO: se a pergunta pedir uma combinacao que JA esta em
+  c_estatisticas_totais (situacao sozinha, porte sozinho, UF
+  sozinha, Simples sozinho, MEI sozinho, top CNAE, top natureza,
+  top municipio, ano de abertura), use c_estatisticas_totais em
+  vez de COUNT(*). Ex: "quantas MEIs existem" ->
+  SELECT valor FROM c_estatisticas_totais WHERE categoria='mei'
+  AND chave='S'.    
 - Exemplos:
     "Liste empresas com 0 funcionarios"
     -> RECUSAR: o banco nao tem coluna de numero de funcionarios

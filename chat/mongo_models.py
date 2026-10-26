@@ -58,8 +58,15 @@ COLECAO = 'chat_conversas'
 
 def _get_collection() -> Collection:
     """Retorna a collection chat_conversas (singleton via ConexaoMongoDB)."""
+    import sys
     mongo = ConexaoMongoDB()
     db = mongo.get_database()
+    
+    # Se estiver rodando testes, usa uma collection separada
+    # para não apagar as conversas reais de desenvolvimento.
+    if 'test' in sys.argv or 'pytest' in sys.modules:
+        return db[COLECAO + '_test']
+    
     return db[COLECAO]
 
 

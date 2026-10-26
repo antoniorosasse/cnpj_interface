@@ -1,0 +1,100 @@
+# Palavras que NÃO devem ir pro embedding (cidade, UF, stopwords, termos genéricos).
+# Uma por linha. Case-insensitive. Linhas com # são ignoradas.
+
+# --- Cidades (top + cidades do log) ---
+lages
+curitiba
+são paulo
+sao paulo
+rio de janeiro
+manaus
+joinville
+florianópolis
+florianopolis
+blumenau
+criciúma
+criciuma
+chapecó
+chapeco
+londrina
+maringá
+maringa
+ponta grossa
+cascavel
+foz do iguaçu
+foz do iguacu
+
+# --- UFs (siglas + nomes) ---
+ac
+al
+ap
+am
+ba
+ce
+df
+es
+go
+ma
+mt
+ms
+mg
+pa
+pb
+pr
+pe
+pi
+rj
+rn
+rs
+ro
+rr
+sc
+sp
+se
+to
+acre
+alagoas
+amapá
+amapa
+amazonas
+bahia
+ceará
+ceara
+distrito federal
+espírito santo
+espirito santo
+goiás
+goias
+maranhão
+maranhao
+mato grosso
+mato grosso do sul
+minas gerais
+pará
+para
+paraíba
+paraiba
+paraná
+parana
+pernambuco
+piauí
+piaui
+rio grande do norte
+rio grande do sul
+rondônia
+rondonia
+roraima
+santa catarina
+são paulo
+sao paulo
+sergipe
+tocantins
+
+# --- Stopwords ---
+# (vazio: NAO remover stopwords. Elas dao contexto ao modelo Braza.
+#  Ex: "empresas de carpintaria" com "empresas" traz carpintaria;
+#  sem "empresas" traz Peixaria.)
+
+# --- Termos genéricos ---
+# (vazio: NAO remover "empresas". O modelo usa a palavra para
+#  inferir que o CNAE e' de comeco/servico.)

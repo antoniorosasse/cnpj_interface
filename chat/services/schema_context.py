@@ -163,28 +163,88 @@ A tabela c_cnaes tem uma coluna `embedding` (halfvec(384)) com o vetor
 da descricao do CNAE. Use-a quando a pergunta for sobre um CONCEITO
 ou ATIVIDADE e nao houver um codigo CNAE explicito.
 
-COMO USAR:
-Quando o usuario perguntar "empresas de energia solar" (e nao
-"empresas com CNAE 4321-5/00"), voce deve:
+COMO USAR (BUSCA HIBRIDA - TEXTUAL + VETORIAL):
+Quando o usuario perguntar sobre uma ATIVIDADE/CONCEITO, use
+SEMPRE a busca hibrida: ILIKE (textual) + UNION com o vetor.
 
-1. Descobrir qual CNAE e o mais similar usando a coluna embedding:
-   SELECT cnae, nm_cnae
-   FROM c_cnaes
-   ORDER BY embedding <=> %s::halfvec(384)
-   LIMIT 5
+1. Extraia a palavra-chave da pergunta (o radical, sem plural):
+   "padarias de lages"      -> padaria
+   "confeitaria"            -> confeitaria
+   "oficinas mecanicas"     -> oficina mecanica
+   "empresas de carpintaria"-> carpintaria
+   "energia solar"          -> energia solar (nao esta no nm_cnae)
 
-2. Usar o(s) cnae(s) encontrado(s) para filtrar os estabelecimentos:
-   SELECT e.cnpj_basico, emp.razao_social, c.nm_cnae
-   FROM c_estabelecimentos e
-   JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-   JOIN c_cnaes c ON e.cnae_principal = c.cnae
-   WHERE e.cd_matriz_filial = 1
-     AND e.cnae_principal IN (...)
-   LIMIT 100
+2. Use a busca hibrida (SEMPRE com UNION, SEMPRE com subquery no vetor):
+   AND e.cnae_principal IN (
+       SELECT cnae FROM c_cnaes
+       WHERE nm_cnae ILIKE '%PALAVRA%'
+       UNION
+       SELECT cnae FROM (
+           SELECT cnae FROM c_cnaes
+           ORDER BY embedding <=> %s::halfvec(384)
+           LIMIT 2
+       ) sub
+   )
+
+   O ILIKE pega os CNAEs que tem a palavra no nome (ex: "padaria"
+   esta em 1091102 e 4721102). O UNION com o vetor pega os CNAEs
+   mais proximos semanticamente (ex: "energia solar" nao esta no
+   nome de nenhum CNAE, mas o vetor traz "3511500 Geracao de
+   energia eletrica").
+
+3. NUNCA use so o vetor (sem ILIKE). Motivo: o vetor com LIMIT 1
+   escolhe UM CNAE so e joga fora os outros validos. Ex: "confeitaria"
+   com so vetor trouxe 1 empresa; com ILIKE trouxe 299.
+
+4. NUNCA use so o ILIKE (sem vetor). Motivo: "energia solar" nao
+   tem no nm_cnae, e o ILIKE nao acharia nada.
+
+5. A subquery do vetor PRECISA estar dentro de "SELECT cnae FROM (...) sub".
+   Se voce fizer "SELECT cnae FROM c_cnaes ORDER BY ... LIMIT 2" direto
+   dentro do UNION, o Postgres da erro ("ORDER BY invalido em UNION").
+
+EXEMPLO COMPLETO para "confeitaria em lages":
+  SELECT e.cnpj_basico, emp.razao_social, c.nm_cnae
+  FROM c_estabelecimentos e
+  JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
+  JOIN c_cnaes c ON e.cnae_principal = c.cnae
+  WHERE e.cd_matriz_filial = 1
+    AND e.municipio = (SELECT cd_municipio FROM c_municipios WHERE UPPER(municipio) = UPPER('LAGES'))
+    AND e.cnae_principal IN (
+        SELECT cnae FROM c_cnaes
+        WHERE nm_cnae ILIKE '%confeitaria%'
+        UNION
+        SELECT cnae FROM (
+            SELECT cnae FROM c_cnaes
+            ORDER BY embedding <=> %s::halfvec(384)
+            LIMIT 2
+        ) sub
+    )
+  LIMIT 100
 
 O %s acima e um vetor que o sistema vai injetar automaticamente na
 query. Voce NAO precisa saber o valor. Apenas use a sintaxe
 `ORDER BY embedding <=> %s::halfvec(384)`.
+
+REGRA CRITICA: no UNION, o vetor DEVE estar em subquery:
+  CERTO: UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(384) LIMIT 2) sub
+  ERRADO: UNION SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(384) LIMIT 2
+  (o "ERRADO" da erro "ORDER BY invalido em UNION")
+
+Use LIMIT 2 no vetor (nao 1, nao 5):
+  - LIMIT 1 joga fora os CNAEs vizinhos validos (ex: "confeitaria"
+    com LIMIT 1 trouxe 1 empresa; com LIMIT 2 + ILIKE trouxe 299).
+  - LIMIT 5 traz CNAEs de volume alto que dominam o LIMIT 100
+    (ex: "carpintaria" com LIMIT 5 trouxe Peixaria e Tabacaria).
+  - LIMIT 2 e' o ponto de equilibrio.
+
+REGRA CRITICA: use sempre LIMIT 1 na subquery do embedding.
+NUNCA use LIMIT 5 (ou qualquer numero > 1). Motivo: com LIMIT > 1,
+a query traz varios CNAEs "proximos" e o LIMIT 100 da query
+externa e' preenchido pelo CNAE de MAIOR VOLUME, nao pelo mais
+relevante. Exemplo real: "empresas de carpintaria" trazia o CNAE
+de "corte e dobra de metais" (que tem muito mais empresas) em vez
+do CNAE de carpintaria. Com LIMIT 1, o CNAE certo aparece.
 
 NUNCA use a coluna embedding para outra coisa. Ela serve apenas para
 descobrir o CNAE mais similar a um termo em portugues.
@@ -307,6 +367,10 @@ Prefira:
     `e.nm_fantasia ILIKE %s OR EXISTS (...)`, porque o planner escolhe
     Merge Join e le 36M de linhas (~23s). Use EXISTS sozinho, que forca
     Nested Loop (~200ms).
+  - Para listagens de empresas, use SEMPRE INNER JOIN c_empresas emp ON
+    emp.cnpj_basico = e.cnpj_basico e selecione emp.razao_social junto com
+    e.nm_fantasia. A razao_social e' o nome oficial e sempre existe,
+    enquanto nm_fantasia pode ser null.  
 """
 
 

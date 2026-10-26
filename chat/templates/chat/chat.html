@@ -485,6 +485,9 @@
         const idTabela = 'tabela-' + (++tabelaIdx);
         tabelaStore[idTabela] = { colunas: colunas, rows: rows };
 
+        // Verifica se a tabela tem a coluna cnpj_completo
+        const temCnpjCompleto = colunas.includes('cnpj_completo');
+
         let html = '';
         html += `<div class="d-flex justify-content-end mb-2">`;
         html += `<button type="button" class="btn btn-sm btn-outline-secondary" `;
@@ -494,13 +497,33 @@
         html += `<div id="${idTabela}-canvas" class="mb-3" style="display:none;"></div>`;
 
         html += '<div class="tabela-wrapper"><table><thead><tr>';
-        for (const c of colunas) html += `<th>${escaparHtml(c)}</th>`;
+        for (const c of colunas) {
+            // Renomeia o cabecalho cnpj_completo para "CNPJ" (mais legivel)
+            const titulo = (c === 'cnpj_completo') ? 'CNPJ' : c;
+            html += `<th>${escaparHtml(titulo)}</th>`;
+        }
         html += '</tr></thead><tbody>';
+        
         for (const row of rows) {
             html += '<tr>';
             for (const c of colunas) {
-                const vFmt = formatarValor(row[c]);
-                html += `<td>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
+                // Se for a coluna cnpj_completo e tiver valor, transforma em link
+                if (c === 'cnpj_completo' && row[c]) {
+                    // Formata o CNPJ (00.000.000/0000-00) se for 14 digitos
+                    const cnpjLimpo = String(row[c]).replace(/\D/g, '');
+                    let cnpjFmt = cnpjLimpo;
+                    if (cnpjLimpo.length === 14) {
+                        cnpjFmt = cnpjLimpo.slice(0,2) + '.' +
+                                  cnpjLimpo.slice(2,5) + '.' +
+                                  cnpjLimpo.slice(5,8) + '/' +
+                                  cnpjLimpo.slice(8,12) + '-' +
+                                  cnpjLimpo.slice(12,14);
+                    }
+                    html += `<td><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(cnpjFmt)}</a></td>`;
+                } else {
+                    const vFmt = formatarValor(row[c]);
+                    html += `<td>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
+                }
             }
             html += '</tr>';
         }
