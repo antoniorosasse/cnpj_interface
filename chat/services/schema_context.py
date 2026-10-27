@@ -209,7 +209,7 @@ EXEMPLO COMPLETO para "confeitaria em lages":
   JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
   JOIN c_cnaes c ON e.cnae_principal = c.cnae
   WHERE e.cd_matriz_filial = 1
-    AND e.municipio = (SELECT cd_municipio FROM c_municipios WHERE UPPER(municipio) = UPPER('LAGES'))
+    AND e.municipio IN (SELECT cd_municipio FROM c_municipios WHERE municipio ILIKE '%LAGES%')
     AND e.cnae_principal IN (
         SELECT cnae FROM c_cnaes
         WHERE nm_cnae ILIKE '%confeitaria%'
@@ -319,6 +319,13 @@ faixa_etaria (c_socios):
   9 = Maiores de 80 anos
 
 TRADUCAO DE LINGUAGEM NATURAL PARA CODIGO:
+  "empresas de <cidade>"    -> WHERE e.municipio IN (
+                                  SELECT cd_municipio FROM c_municipios
+                                  WHERE municipio ILIKE '%TOKEN%'
+                                )
+                                (nome oficial, sem acento, pode ter "DE"
+                                 no meio: Balneario Picarras esta gravado
+                                 como BALNEARIO DE PICARRAS)
   "micro empresa" / "ME"     -> WHERE porte_empresa = 1
   "pequeno porte" / "EPP"    -> WHERE porte_empresa = 3
   "demais" / "grande"        -> WHERE porte_empresa = 5

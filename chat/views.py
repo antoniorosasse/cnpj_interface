@@ -322,13 +322,33 @@ def chat_api_view(request):
 
     # --- 3) gera texto natural (so se houve dados) ---
     resposta_texto = ''
+
+    # O LIMIT pode vir do proprio SQL gerado pelo LLM (ex: LIMIT 100 numa
+    # listagem). Nesse caso o executor NAO marca truncado (ele so marca
+    # quando corta em CHAT_SQL_MAX_ROWS), e o texto natural acaba dizendo
+    # "N empresas no total" usando o numero do LIMIT, nao o total real.
+    # Se a consulta bateu exatamente no LIMIT do SQL, tratamos como truncada.
+    truncado_efetivo = execucao['truncado']
+    if (
+        not truncado_efetivo
+        and validation.limit_valor
+        and not validation.teve_limit
+        and len(execucao.get('rows') or []) >= validation.limit_valor
+    ):
+        truncado_efetivo = True
     if execucao['ok'] and execucao.get('rows'):
         resposta_texto = gerar_texto_resposta(
             pergunta=pergunta,
             colunas=execucao['colunas'],
             rows=execucao['rows'],
-            truncado=execucao['truncado'],
+            truncado=truncado_efetivo,
             total_linhas_exibidas=execucao['total_linhas'],
+        )
+    elif execucao['ok']:
+        resposta_texto = (
+            'Nenhuma empresa encontrada com esses filtros. '
+            'Se o filtro foi por cidade, tente apenas parte do nome e sem acento '
+            '(ex: PICARRAS em vez de Balneario Picarras).'
         )
 
     # --- 4) salva as duas mensagens ---
@@ -357,7 +377,7 @@ def chat_api_view(request):
             colunas=execucao['colunas'],
             rows=execucao['rows'],
             total_linhas=execucao['total_linhas'],
-            truncado=execucao['truncado'],
+            truncado=truncado_efetivo,
             tempo_ms=execucao['tempo_ms'],
         )
     else:
@@ -381,7 +401,7 @@ def chat_api_view(request):
         'colunas': execucao['colunas'],
         'rows': execucao['rows'],
         'total_linhas': execucao['total_linhas'],
-        'truncado': execucao['truncado'],
+        'truncado': truncado_efetivo,
         'tempo_ms': execucao['tempo_ms'],
         'erro': execucao['erro'],
     }

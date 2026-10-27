@@ -160,6 +160,22 @@ REGRAS DE OURO:
      "padaria" esta em 1091102 e 4721102). O UNION com o vetor
      pega os mais proximos semanticamente (ex: "energia solar"
      nao esta no nome, mas o vetor traz "3511500").
+   - CRITICO - ORDER BY DE PRIORIDADE: como o UNION nao garante
+     ordem, e o LIMIT 100 pode encher de CNAE "parecido" (do
+     vetor) antes de chegar no CNAE exato (do ILIKE), SEMPRE
+     adicione um ORDER BY de prioridade:
+     ORDER BY
+         (e.cnae_principal IN (
+             SELECT cnae FROM c_cnaes
+             WHERE nm_cnae ILIKE '%PALAVRA%'
+         )) DESC,
+         e.cnpj_basico
+   - Isso forca o Postgres a trazer as empresas do CNAE EXATO
+     (ILIKE) antes das empresas do CNAE "parecido" (vetor).
+     Exemplo real: "padarias de lages" trazia Peixaria (do vetor)
+     nas primeiras posicoes porque o UNION nao tem ordem. Com o
+     ORDER BY de prioridade, padaria vem primeiro, e o LIMIT 100
+     enche de padaria (Peixaria so aparece se faltar padaria).
    - NUNCA use so o vetor (LIMIT 1 sem ILIKE). Ex: "confeitaria"
      so com vetor LIMIT 1 trouxe 1 empresa; com ILIKE + vetor
      trouxe 299.
@@ -194,6 +210,17 @@ REGRAS DE OURO:
      LIMIT 100     
 
 12. FILTRO GEOGRAFICO (MUNICIPIO/UF) - CRITICO:
+   - NOME DE MUNICIPIO (CRITICO): a base da RFB NAO tem acento e usa o
+     nome oficial, que pode ter "DE"/"DO"/"DOS" no meio. Ex: "Balneario
+     Picarras" esta gravado como 'BALNEARIO DE PICARRAS'. Por isso
+     NUNCA compare o nome inteiro com "=". Use ILIKE parcial com o
+     pedaco MAIS DISTINTIVO do nome, SEM acento:
+       AND e.municipio IN (
+           SELECT cd_municipio FROM c_municipios
+           WHERE municipio ILIKE '%PICARRAS%'
+       )
+     NUNCA use UPPER(municipio) = UPPER('nome digitado pelo usuario'):
+     qualquer acento ou um "DE" a mais zera o resultado.
    - Para QUALQUER LISTAGEM de empresas (ex: "padarias de curitiba",
      "empresas de energia solar", "oficinas mecanicas"), SEMPRE
      traga a localizacao (municipio e UF) no SELECT.
@@ -213,7 +240,7 @@ REGRAS DE OURO:
      JOIN c_cnaes c ON c.cnae = e.cnae_principal
      LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
      WHERE e.cd_matriz_filial = 1
-       AND e.municipio = (SELECT cd_municipio FROM c_municipios WHERE UPPER(municipio) = UPPER('CURITIBA'))
+       AND e.municipio IN (SELECT cd_municipio FROM c_municipios WHERE municipio ILIKE '%CURITIBA%')
        AND e.cnae_principal IN (...)
      LIMIT 100
    - Exemplo CERTO para "empresas de energia solar" (listagem, SEM cidade):
@@ -253,9 +280,8 @@ FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
   FROM c_estabelecimentos e
   JOIN c_cnaes c ON e.cnae_principal = c.cnae
   WHERE e.cd_matriz_filial = 1
-    AND e.municipio = (
-        SELECT cd_municipio FROM c_municipios
-        WHERE UPPER(municipio) = UPPER('LAGES')
+    AND e.municipio IN (SELECT cd_municipio FROM c_municipios
+        WHERE municipio ILIKE '%LAGES%'
     )
     AND e.cnae_principal IN (
         SELECT cnae FROM c_cnaes
@@ -267,7 +293,7 @@ FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
   FROM c_estabelecimentos e
   JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico  -- JOIN gigante
   JOIN c_municipios m ON m.cd_municipio = e.municipio      -- desnecessario
-  WHERE UPPER(m.municipio) = UPPER('LAGES')
+  WHERE m.municipio ILIKE '%LAGES%'
 - O filtro de UF (e.uf = 'SC') tambem e' seletivo e pode ser usado
   sozinho (usa idx_estab_uf_matriz_mun).
 
@@ -280,7 +306,7 @@ ORDEM DOS JOINS (critico para performance):
     JOIN c_estabelecimentos e ON e.cnpj_basico = s.cnpj_basico
     JOIN c_municipios m ON m.cd_municipio = e.municipio
     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
-    WHERE UPPER(m.municipio) = UPPER('LAGES')
+    WHERE m.municipio ILIKE '%LAGES%'
       AND e.cd_matriz_filial = 1
       AND UPPER(s.nome_ou_razao_social) LIKE 'ANTONIO%'
     LIMIT 100
@@ -330,7 +356,7 @@ QUANDO MOSTRAR DESCRICOES:
     FROM c_estabelecimentos e
     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
     JOIN c_municipios m ON m.cd_municipio = e.municipio
-    WHERE UPPER(m.municipio) = UPPER('LAGES')
+    WHERE m.municipio ILIKE '%LAGES%'
       AND e.cd_matriz_filial = 1
     LIMIT 100  
 
