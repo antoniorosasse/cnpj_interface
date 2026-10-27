@@ -39,3 +39,10 @@ Thumbs.db
 
 # Backups
 *.bak
+
+# Backups de patches
+*.bak_*
+*.bak_antes_*
+
+# Arquivos de IDE/agentes
+.roo/
