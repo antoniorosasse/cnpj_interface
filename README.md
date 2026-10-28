@@ -5,7 +5,7 @@ que traduz perguntas em linguagem natural para SQL.
 
 ## Stack
 
-- Django 5.1.7
+- Django 6.1.1
 - Python 3.13
 - PostgreSQL 15 (dois bancos: `django_internal` e `bancocnpj`)
 - MongoDB 8 (backend alternativo do chat, via `CHAT_USE_MONGO=1`)
@@ -39,7 +39,7 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templates/chat/
     |   |   +-- chat.html
     |   |   +-- historico.html
-    |   +-- tests/                  # 159 testes
+    |   +-- tests/                  # 170 testes
     |   |   +-- test_integracao.py
     |   |   +-- test_models.py
     |   |   +-- test_mongo_models.py
@@ -418,7 +418,7 @@ e nao passa pelo ORM.
 
     python manage.py test chat
 
-Roda **159 testes** em `chat/tests/`:
+Roda **170 testes** em `chat/tests/`:
 
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
 - `test_mongo_models.py` - funcoes pymongo (`chat_conversas`)

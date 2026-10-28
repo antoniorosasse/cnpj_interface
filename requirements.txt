@@ -1,4 +1,4 @@
-Django==5.1.7
+Django==6.1.1
 gunicorn==26.0.0
 psycopg2-binary==2.9.10
 pymongo==4.10.1
@@ -7,3 +7,11 @@ requests==2.32.3
 openai==1.57.0
 django-crispy-forms==2.3
 crispy-bootstrap5==0.7
+
+# Busca semantica de CNAE (embedding via sentence-transformers/Braza)
+numpy==2.5.2
+sentence-transformers==6.1.0
+torch==2.14.1
+
+# Conexao AS/400 (opcional/legado)
+JPype1==1.7.1

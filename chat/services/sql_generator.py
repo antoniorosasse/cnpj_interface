@@ -8,6 +8,7 @@ gerado com sql_validator.validar_sql() antes de devolver.
 Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
+import os
 import re
 import logging
 
@@ -18,6 +19,11 @@ from typing import Optional
 
 
 logger = logging.getLogger(__name__)
+
+# Limite de linhas por query (deve coincidir com o CHAT_SQL_MAX_ROWS
+# lido pelo sql_executor, para o validador nao aceitar um LIMIT maior
+# do que o executor vai efetivamente buscar).
+MAX_ROWS_POR_QUERY = int(os.getenv('CHAT_SQL_MAX_ROWS', '1000'))
 
 
 # ============================================================
@@ -537,7 +543,7 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
 
         # --- valida o SQL ---
         try:
-            validation: ValidationResult = validar_sql(sql)
+            validation: ValidationResult = validar_sql(sql, max_rows=MAX_ROWS_POR_QUERY)
         except SQLValidationError as exc:
             ultimo_erro = str(exc)
             logger.warning('SQL invalido na tentativa %s: %s', tentativa, exc)

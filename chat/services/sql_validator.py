@@ -76,10 +76,15 @@ def _normalizar_espacos(sql: str) -> str:
     return re.sub(r'\s+', ' ', sql).strip()
 
 
+def _remover_strings(sql: str) -> str:
+    """Remove literais de string (ex: 'DROP') para nao gerar falsos positivos."""
+    return re.sub(r"'(?:[^']|'')*'", "''", sql)
+
+
 def _tem_multiplas_queries(sql: str) -> bool:
     """Camada 2: detecta ';' que separa queries (ignora ';' dentro de strings)."""
     # remove strings literais para nao confundir ';' dentro delas
-    sql_sem_strings = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    sql_sem_strings = _remover_strings(sql)
     # remove ponto e virgula final (permitido)
     sql_sem_ponto_final = sql_sem_strings.rstrip().rstrip(';')
     return ';' in sql_sem_ponto_final
@@ -87,7 +92,9 @@ def _tem_multiplas_queries(sql: str) -> bool:
 
 def _validar_select_only(sql: str) -> None:
     """Camada 1 + 4: so permite SELECT e bloqueia funcoes/palavras perigosas."""
-    sql_normalizado = _normalizar_espacos(sql).upper()
+    # Remove strings literais antes de procurar palavras proibidas,
+    # senao um WHERE x = 'ALTER' seria rejeitado injustamente.
+    sql_normalizado = _normalizar_espacos(_remover_strings(sql)).upper()
 
     for palavra in PALAVRAS_PROIBIDAS:
         padrao = rf'\b{palavra}\b'

@@ -410,7 +410,6 @@ def chat_api_view(request):
 
 
 @login_required
-@login_required
 def chat_historico_view(request):
     """Lista todas as conversas do usuario."""
     conversas = repo.listar_conversas(user=request.user, limite=200)

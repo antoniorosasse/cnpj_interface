@@ -28,7 +28,7 @@ def get_postgres_connection():
             connect_timeout=5,   # 5s maximo pra conectar
         )
     except Exception as e:
-        print(f"❌ Erro ao conectar ao PostgreSQL: {e}")
+        logger.error("Erro ao conectar ao PostgreSQL: %s", e)
         raise
 
 LISTA_UFS = [
@@ -586,9 +586,7 @@ def lista_empresas(request):
             empresas = resultados
             
     except Exception as e:
-        import traceback
-        print(f"❌ Erro: {e}")
-        traceback.print_exc()
+        logger.exception("Erro ao listar empresas: %s", e)
         empresas = []
         total = 0
         has_next = False
@@ -686,9 +684,7 @@ def buscar_empresas_rapido(request):
             resultados = cur.fetchall()
             
     except Exception as e:
-        import traceback
-        print(f"❌ Erro na busca rápida: {e}")
-        traceback.print_exc()
+        logger.exception("Erro na busca rápida: %s", e)
         resultados = []
     finally:
         if conn:
@@ -948,9 +944,7 @@ def detalhe_empresa(request, cnpj):
             total_socios = len(socios)
             
     except Exception as e:
-        import traceback
-        print(f"❌ Erro no detalhe: {e}")
-        traceback.print_exc()
+        logger.exception("Erro ao buscar detalhe da empresa: %s", e)
         from django.http import Http404
         raise Http404("Erro ao buscar empresa")
     finally:
