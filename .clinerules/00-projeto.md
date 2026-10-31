@@ -11,6 +11,7 @@ neste workspace. Mantenha-o enxuto e versionado no git.
 | Estado atual, pendencias, decisoes e arquitetura | `/home/neto/Projetos/docs/PROJETOS.md` |
 | Comandos (dev/prod, queries, git, djLint) | `/home/neto/Projetos/docs/COMANDOS.md` |
 | Historico detalhado (blocos 1-32, com commits e erros) | `/home/neto/Projetos/docs/HISTORICO.md` |
+| Briefing portatil (para colar em outra IA) | `/home/neto/Projetos/docs/TODOS_PROJETOS.md` |
 | Este arquivo | regras especificas do `cnpj_interface` |
 
 Nao repita aqui o que ja esta nas regras globais (R1-R16) nem duplique o estado
