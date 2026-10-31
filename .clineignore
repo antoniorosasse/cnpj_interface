@@ -1,0 +1,26 @@
+# .clineignore - o que o Cline NAO deve ler/indexar (economiza contexto)
+# Sintaxe igual ao .gitignore.
+
+# Ambiente virtual e bytecode
+venv/
+__pycache__/
+*.py[cod]
+
+# Artefatos gerados
+staticfiles/
+logs/
+*.log
+
+# Banco local e arquivos binarios grandes
+db.sqlite3
+*.sqlite3
+lib/jt400.jar
+
+# Segredos (remova .env daqui apenas se precisar de ajuda com configuracao)
+.env
+.env.*
+
+# Backups e temporarios
+*.bak
+*.bak_*
+*.swp
