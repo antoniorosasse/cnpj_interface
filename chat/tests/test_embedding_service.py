@@ -56,6 +56,19 @@ class TemPlaceholderTests(TestCase):
     def test_sql_vazio(self):
         self.assertFalse(embedding_service.tem_placeholder(''))
 
+    def test_like_com_porcentagem_s_nao_e_placeholder(self):
+        # "%supermercado%" comeca com "%s", mas nao e' um placeholder.
+        self.assertFalse(
+            embedding_service.tem_placeholder(
+                "SELECT * FROM t WHERE nome ILIKE '%supermercado%'"
+            )
+        )
+
+    def test_placeholder_em_comentario_nao_conta(self):
+        self.assertFalse(
+            embedding_service.tem_placeholder('SELECT 1 -- usar %s aqui')
+        )
+
 
 class InjetarVetorTests(TestCase):
     """Testes da funcao injetar_vetor."""
@@ -101,6 +114,65 @@ class InjetarVetorTests(TestCase):
         if erro is not None:  # <-- Adicionado para o Pylance
             self.assertIn('Falha ao gerar o vetor', erro)
 
+    @patch('chat.services.embedding_service.gerar_vetor')
+    def test_like_antes_do_placeholder_nao_corrompe_sql(self, mock_gerar):
+        # Regressao do erro "sintaxe em ou proximo a '['" no chat:
+        # o "%s" de '%supermercado%' era substituido no lugar do
+        # placeholder real do vetor.
+        mock_gerar.return_value = '[0.1,0.2]'
+        sql = (
+            'SELECT e.cnpj_basico FROM c_estabelecimentos e '
+            'WHERE e.cnae_principal IN ( '
+            "  SELECT cnae FROM c_cnaes WHERE nm_cnae ILIKE '%supermercado%' "
+            '  UNION '
+            '  SELECT cnae FROM ( '
+            '    SELECT cnae FROM c_cnaes '
+            '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+            '  ) sub '
+            ') LIMIT 100'
+        )
+
+        sql_final, erro = embedding_service.injetar_vetor(sql, 'supermercados')
+
+        self.assertIsNone(erro)
+        # O literal do ILIKE fica intacto...
+        self.assertIn("ILIKE '%supermercado%'", sql_final)
+        self.assertNotIn("'upermercado%'", sql_final)
+        # ...e o vetor entra no placeholder de verdade.
+        self.assertIn("'[0.1,0.2]'::halfvec(384)", sql_final)
+        self.assertNotIn('<=> %s', sql_final)
+        mock_gerar.assert_called_once_with('supermercados')
+
+    @patch('chat.services.embedding_service.gerar_vetor')
+    def test_placeholder_so_dentro_de_literal_nao_injeta(self, mock_gerar):
+        sql = "SELECT * FROM t WHERE nome ILIKE '%supermercado%'"
+
+        sql_final, erro = embedding_service.injetar_vetor(sql, 'pergunta')
+
+        self.assertEqual(sql_final, sql)
+        self.assertIsNone(erro)
+        mock_gerar.assert_not_called()
+
+    @patch('chat.services.embedding_service.gerar_vetor')
+    def test_injeta_multiplos_placeholders(self, mock_gerar):
+        mock_gerar.return_value = '[0.1,0.2]'
+        sql = (
+            'SELECT * FROM t WHERE a <=> %s::halfvec(384) '
+            "AND b ILIKE '%s%' "
+            'AND c <=> %s LIMIT 5'
+        )
+
+        sql_final, erro = embedding_service.injetar_vetor(sql, 'pergunta')
+
+        self.assertIsNone(erro)
+        self.assertEqual(
+            sql_final,
+            "SELECT * FROM t WHERE a <=> '[0.1,0.2]'::halfvec(384) "
+            "AND b ILIKE '%s%' "
+            "AND c <=> '[0.1,0.2]'::halfvec(384) LIMIT 5",
+        )
+        mock_gerar.assert_called_once_with('pergunta')
+
 
 class IntegracaoGerarSqlTests(TestCase):
     """Testa se o gerar_sql injeta o vetor corretamente."""
@@ -108,7 +180,7 @@ class IntegracaoGerarSqlTests(TestCase):
     @patch('chat.services.sql_generator.gerar_resposta')
     @patch('chat.services.embedding_service.gerar_vetor')
     def test_gerar_sql_com_busca_vetorial(self, mock_vetor, mock_llm):
-        # LLM gera SQL com placeholder
+        # LLM gera SQL com placeholder no formato de fallback (opcao 1)
         mock_llm.return_value = (
             'SELECT e.cnpj_basico, emp.razao_social, c.nm_cnae '
             'FROM c_estabelecimentos e '
@@ -116,7 +188,16 @@ class IntegracaoGerarSqlTests(TestCase):
             'JOIN c_cnaes c ON e.cnae_principal = c.cnae '
             'WHERE e.cd_matriz_filial = 1 '
             'AND e.cnae_principal IN ( '
-            '  SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(384) LIMIT 5 '
+            "  SELECT cnae FROM c_cnaes WHERE nm_cnae ILIKE '%energia solar%' "
+            '  UNION '
+            '  SELECT cnae FROM ( '
+            '    SELECT cnae FROM c_cnaes '
+            '    WHERE NOT EXISTS ( '
+            '      SELECT 1 FROM c_cnaes '
+            "      WHERE nm_cnae ILIKE '%energia solar%' "
+            '    ) '
+            '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+            '  ) sub '
             ') LIMIT 100'
         )
         mock_vetor.return_value = '[0.1,0.2,0.3]'

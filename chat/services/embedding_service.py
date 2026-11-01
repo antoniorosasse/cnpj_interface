@@ -8,6 +8,7 @@ e formata como string para injetar no SQL (halfvec(384)).
 
 import logging
 import os
+import re
 from functools import lru_cache
 
 from django.conf import settings
@@ -148,28 +149,101 @@ def gerar_vetor(pergunta: str) -> str | None:
         return None
 
 
+def _posicoes_placeholder(sql: str) -> list[int]:
+    """
+    Devolve as posicoes dos placeholders %s REAIS do SQL.
+
+    Percorre o SQL ignorando:
+      - literais de string ('...', com '' como escape)
+      - comentarios de linha (-- ...)
+      - comentarios de bloco (/* ... */)
+
+    Isso evita o bug em que "%s" dentro de um LIKE (ex:
+    '%supermercado%') era confundido com o placeholder do vetor.
+    """
+    posicoes = []
+    i = 0
+    n = len(sql)
+
+    while i < n:
+        ch = sql[i]
+
+        # Literal de string: pula ate o ' de fechamento.
+        if ch == "'":
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    # '' e' um ' escapado dentro da string
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        # Comentario de linha
+        if ch == '-' and i + 1 < n and sql[i + 1] == '-':
+            fim_linha = sql.find('\n', i)
+            if fim_linha == -1:
+                break
+            i = fim_linha + 1
+            continue
+
+        # Comentario de bloco
+        if ch == '/' and i + 1 < n and sql[i + 1] == '*':
+            fim_bloco = sql.find('*/', i + 2)
+            if fim_bloco == -1:
+                break
+            i = fim_bloco + 2
+            continue
+
+        # Placeholder de verdade (fora de string/comentario)
+        if ch == '%' and i + 1 < n and sql[i + 1] == 's':
+            posicoes.append(i)
+            i += 2
+            continue
+
+        i += 1
+
+    return posicoes
+
+
 def tem_placeholder(sql: str) -> bool:
-    """Retorna True se o SQL contem o placeholder %s."""
-    return '%s' in sql
+    """Retorna True se o SQL contem o placeholder %s fora de literais."""
+    if not sql:
+        return False
+    return bool(_posicoes_placeholder(sql))
 
 
 def injetar_vetor(sql: str, pergunta: str) -> tuple[str, str | None]:
     """
-    Substitui o primeiro %s do SQL pelo vetor da pergunta.
+    Substitui os placeholders %s REAIS do SQL pelo vetor da pergunta.
+
+    Placeholders dentro de literais (ex: ILIKE '%supermercado%', que
+    contem a substring "%s") sao ignorados. O cast ::halfvec(384) e'
+    adicionado apenas quando o SQL nao o traz logo apos o placeholder.
 
     Retorna (sql_final, erro). Se erro for None, deu certo.
     """
-    if not tem_placeholder(sql):
+    posicoes = _posicoes_placeholder(sql)
+    if not posicoes:
         return sql, None
 
     vetor = gerar_vetor(pergunta)
     if vetor is None:
         return sql, 'Falha ao gerar o vetor da pergunta (modelo indisponivel).'
 
-    # Substitui o PRIMEIRO %s pelo vetor, sem duplicar o cast
-    if '::halfvec' in sql:
-        # A IA já incluiu o cast no SQL; só substitui o %s pelo vetor cru
-        sql_final = sql.replace('%s', f"'{vetor}'", 1)
-    else:
-        sql_final = sql.replace('%s', f"'{vetor}'::halfvec(384)", 1)
+    literal = f"'{vetor}'"
+    sql_final = sql
+
+    # Da direita para a esquerda, para as posicoes anteriores continuarem
+    # validas depois de cada substituicao.
+    for inicio in reversed(posicoes):
+        fim = inicio + 2
+        # A IA pode ja ter copiado o cast do schema_context.
+        tem_cast = re.match(r'\s*::', sql[fim:]) is not None
+        trecho = literal if tem_cast else literal + '::halfvec(384)'
+        sql_final = sql_final[:inicio] + trecho + sql_final[fim:]
+
     return sql_final, None

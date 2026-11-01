@@ -4,8 +4,9 @@
 # Linhas em branco e com # são ignoradas.
 #
 # NOTA: "padaria" e "confeitaria" estao no nm_cnae (o ILIKE cobre).
-# Mas o embedding tambem precisa mapear para o CNAE certo, senao o
-# UNION com o vetor traz "Peixaria" e polui o LIMIT 100.
+# O embedding so entra como fallback (quando o ILIKE nao acha nada),
+# mas ainda precisa mapear para o CNAE certo para nao trazer vizinhos
+# errados quando o fallback for usado.
 
 padaria -> padaria e confeitaria com predominância de revenda
 padarias -> padarias e confeitarias com predominância de revenda
