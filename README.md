@@ -271,6 +271,16 @@ disparar o recalculo pelo botao na propria pagina.
 A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
 
 - **Indices parciais** com `WHERE cd_matriz_filial = 1` (matrizes sao ~10% da tabela)
+- **Indice de cidade** `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (1,1 GB, sem filtro de matriz, cobre sede e filial) para o semi-join "tem estabelecimento na cidade" do chat. Criado sem bloquear a tabela:
+
+      psql -h localhost -p 5432 -U arosasse -d bancocnpj -v ON_ERROR_STOP=1 <<'SQL'
+      SET maintenance_work_mem = '1GB';
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_estab_municipio_cnpj
+          ON c_estabelecimentos (municipio, cnpj_basico);
+      ANALYZE c_estabelecimentos;
+      SQL
+
+  (38,5M linhas em ~1min44s. `CONCURRENTLY` exige autocommit: nada de `psql -1`/`BEGIN`.)
 - **Keyset pagination** em vez de OFFSET
 - **Tabela de metadados** `c_estatisticas_totais` pra contagens instantaneas
 - **ILIKE** em vez de `UPPER(col) LIKE` (aproveita indices GIN trigram)
@@ -331,7 +341,9 @@ read-only. Tem historico de conversas e contexto.
                             WHERE municipio ILIKE '%PICARRAS%'))
   ```
 
-  O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atacadistas de picarras" = 0,3 s com o `IN` e 3,3 s com o `EXISTS` (o `IN` deixa o planner montar um hash dos `cnpj_basico` da cidade). O custo cresce com o tamanho da cidade **e** com a popularidade do CNAE (atacadistas de picarras 0,3 s; padarias de picarras 2-5 s; padarias de Lages 6 s; padarias de Curitiba 12 s, contra 0,03-0,3 s do filtro direto na matriz). Por isso a regra mantém o filtro direto em capitais/metrópoles, em atividades muito comuns e em contagens puras.
+  O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atacadistas de picarras" = 0,3 s com o `IN` e 3,3 s com o `EXISTS` (o `IN` deixa o planner montar um hash dos `cnpj_basico` da cidade). O semi-join agora usa o índice `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (criado com `CREATE INDEX CONCURRENTLY` em 31/10/2026: 38,5M linhas, 1,1 GB, ~1min44s; `maintenance_work_mem=1GB`), e os 632 mil `cnpj_basico` de Curitiba saem num `Index Only Scan` em ~165 ms. Com ele os tempos caíram para cerca de metade (atacadistas de picarras 0,3 s; supermercados de picarras 0,3-0,9 s; padarias de picarras 4-6 s; padarias de Lages 4-5 s; padarias de Curitiba 5-7 s, contra 0,01-0,2 s do filtro direto na matriz). O gargalo que sobrou é o CNAE, não a cidade: `ILIKE '%padaria%'` casa com 3 CNAEs e o planner varre as ~405 mil matrizes de padaria do Brasil uma vez por CNAE (~1,7 s cada). Por isso a regra mantém o filtro direto em capitais/metrópoles, em atividades muito comuns e em contagens puras.
+
+Não troque o `IN` por `= ANY(ARRAY(SELECT ...))` tentando "otimizar": em Picarras fica 0,3 s (13x mais rápido), mas o planner perde a estimativa de linhas e o plano desanda (8,5 s em padarias de Lages na primeira execução e Curitiba não terminou nem em minutos).
 
 
   ```sql

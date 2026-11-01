@@ -443,6 +443,19 @@ class FiltroGeograficoPorEstabelecimentoTests(TestCase):
         self.assertIn('02831172', texto)
         self.assertIn('FORMA ERRADA (EXISTS correlacionado', texto)
 
+    def test_documentacao_cita_o_indice_de_cidade_e_o_aviso_do_any_array(self):
+        """O LLM so escolhe o semi-join se souber do indice que o cobre.
+
+        Regressao de 31/10/2026: idx_estab_municipio_cnpj (municipio,
+        cnpj_basico) foi criado em producao (Index Only Scan, ~165 ms para
+        os 632 mil cnpj de Curitiba). O `= ANY(ARRAY(SELECT ...))` parece
+        mais rapido em cidade pequena, mas desanda em Lages/Curitiba.
+        """
+        for texto in (self._sem_quebras(SYSTEM_PROMPT),
+                      self._sem_quebras(SCHEMA_CONTEXT)):
+            self.assertIn('idx_estab_municipio_cnpj', texto)
+            self.assertIn('= ANY(ARRAY(SELECT ...))', texto)
+
     @patch(ALVO_LLM)
     def test_sql_com_semi_join_geografico_e_aceito(self, mock_llm):
         mock_llm.return_value = self.SQL_SEMI_JOIN

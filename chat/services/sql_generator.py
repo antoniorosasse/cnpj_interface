@@ -326,24 +326,33 @@ REGRAS DE OURO:
      cnpj_basico da cidade e sai ~10x mais rapido.
    - O EXISTS da regra 9 (nome fantasia) CONTINUA valendo: sao coisas
      diferentes (aquele usa o indice GIN de nm_fantasia e e' barato).
-   - CUSTO (medido no banco real, com cache quente): o semi-join cresce
-     com o tamanho da cidade E com a popularidade da atividade.
+   - O indice idx_estab_municipio_cnpj (municipio, cnpj_basico) cobre o
+     semi-join (Index Only Scan): os 632 mil cnpj_basico de Curitiba saem
+     em ~165 ms. O gargalo agora e' o CNAE, nao o tamanho da cidade.
+   - CUSTO (medido no banco real, cache quente, com esse indice): o
+     semi-join cresce com a popularidade da atividade.
      "atacadistas de picarras" = 0,3 s; "supermercados de picarras" =
-     0,5 s; "padarias de picarras" = 2 a 5 s; "padarias de lages" =
-     6 s; "padarias de curitiba" = 12 s. O filtro direto na matriz
-     leva 0,03 a 0,3 s em todos esses casos. Use o bom senso:
+     0,3 a 0,9 s; "padarias de picarras" = 4 a 6 s; "padarias de lages" =
+     4 a 5 s; "padarias de curitiba" = 5 a 7 s. Motivo: ILIKE '%padaria%'
+     casa com 3 CNAEs e o planner varre as ~405 mil matrizes de padaria do
+     Brasil uma vez por CNAE (~1,7 s cada). O filtro direto na matriz
+     leva 0,01 a 0,2 s em todos esses casos. Use o bom senso:
        * CIDADE PEQUENA/MEDIA + atividade especifica: use o semi-join
          (e' o caso do KOCH em Picarras).
        * CAPITAL OU METROPOLE (Sao Paulo, Rio de Janeiro, Belo
          Horizonte, Curitiba, Porto Alegre, Florianopolis, Salvador,
          Recife, Fortaleza, Goiania, Manaus, Belem, Brasilia): use o
          filtro direto na matriz (e.municipio IN (...)). La a rede
-         procurada quase sempre tem a matriz na propria capital e o
-         semi-join custa 10 s ou mais.
+         procurada quase sempre tem a matriz na propria capital e
+         atividade comum custa 4 a 7 s no semi-join.
        * ATIVIDADE MUITO COMUM (padaria, mercado, restaurante, posto,
          farmacia, salao de beleza - centenas de milhares de matrizes
          no Brasil): prefira o filtro direto na matriz, pelo mesmo
          motivo de custo.
+   - NAO troque o IN por `= ANY(ARRAY(SELECT ...))` tentando otimizar:
+     em Picarras da 0,3 s, mas o planner perde a estimativa de linhas e o
+     plano desanda (8,5 s em "padarias de lages" na 1a execucao e
+     "padarias de curitiba" nao termina nem em minutos). Fique no IN.
    - CONTAGEM PURA (COUNT sem GROUP BY, ex: "quantas padarias tem em
      curitiba") tambem usa o filtro direto na matriz: o semi-join nao
      muda o numero de forma util e so custa tempo.

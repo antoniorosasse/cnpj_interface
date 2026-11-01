@@ -104,6 +104,9 @@ c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
     -- Nao-parciais uteis
     idx_estabelecimentos_cnpj_completo (cnpj_basico, cnpj_ordem, cnpj_dv)
     idx_estabelecimentos_cidade_uf (municipio, uf)
+    idx_estab_municipio_cnpj (municipio, cnpj_basico)  -- semi-join de cidade
+      (matriz + filial; Index Only Scan: os 632 mil cnpj_basico de Curitiba
+      saem em ~165 ms - ver secao FILTRO POR CIDADE)
     idx_estabelecimentos_uf_sit (uf, cd_sit_cadastro)
     idx_estab_nome_fantasia_gin_todos (nm_fantasia) GIN trigram, SEM filtro
       de matriz - use para buscar nome fantasia em matriz OU filial
@@ -377,15 +380,29 @@ FORMA ERRADA (EXISTS correlacionado - 10x mais lento):
 O EXISTS de nome fantasia (secao CODIGOS CONHECIDOS) NAO e' afetado:
 aquele usa idx_estab_nome_fantasia_gin_todos e e' barato.
 
-CUSTO (medido, cache quente) - o semi-join escala com o tamanho da cidade
-e com a popularidade da atividade:
+CUSTO (medido, cache quente, JA com o indice idx_estab_municipio_cnpj)
+- o semi-join escala com a popularidade da atividade, nao com o tamanho
+da cidade:
 
   atacadistas de picarras    0,3 s
-  supermercados de picarras  0,5 s
-  padarias de picarras       2 a 5 s
-  padarias de lages          6 s
-  padarias de curitiba      12 s
-  (filtro direto na matriz: 0,03 a 0,3 s nos mesmos casos)
+  supermercados de picarras  0,3 a 0,9 s
+  padarias de picarras       4 a 6 s
+  padarias de lages          4 a 5 s
+  padarias de curitiba       5 a 7 s
+  (filtro direto na matriz: 0,01 a 0,2 s nos mesmos casos)
+
+O indice idx_estab_municipio_cnpj (municipio, cnpj_basico) resolveu o lado
+da CIDADE: os 632 mil cnpj_basico de Curitiba saem num Index Only Scan em
+~165 ms. O que pesa agora e' o lado do CNAE: ILIKE '%padaria%' casa com 3
+CNAEs e o planner faz um Bitmap Heap Scan nas ~405 mil matrizes de padaria
+do Brasil, uma varredura por CNAE (~1,7 s cada). Por isso atividade comum
+continua cara mesmo em cidade pequena.
+
+ATENCAO - NAO troque o IN por `= ANY(ARRAY(SELECT ...))` tentando
+"otimizar": em Picarras ele da 0,3 s (13x mais rapido), mas o planner
+perde a estimativa de linhas e o plano desanda - 8,5 s em "padarias de
+lages" na primeira execucao e "padarias de curitiba" nao terminou nem em
+minutos. Fique no IN (subquery).
 
 Por isso:
   - cidade pequena/media + atividade especifica -> use o semi-join;
@@ -400,7 +417,8 @@ estabelecimento em <cidade>", porque a coluna municipio exibe o municipio
 da matriz.
 
 INDICES ENVOLVIDOS:
-  idx_estabelecimentos_municipio (municipio)          -- lado da cidade
+  idx_estab_municipio_cnpj (municipio, cnpj_basico)    -- lado da cidade
+                                     (Index Only Scan, ~165 ms/632k linhas)
   idx_estabelecimentos_cnpj_basico (cnpj_basico)      -- salto para a matriz
   idx_estab_matriz_mun_cnae (municipio, cnae_principal) WHERE matriz
                                                       -- filtro direto
