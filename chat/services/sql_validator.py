@@ -135,6 +135,87 @@ REGEX_AGREGACAO = re.compile(
 )
 
 
+def _intervalo_lista_select(sql: str) -> tuple | None:
+    """
+    Retorna (inicio, fim) da LISTA DE COLUNAS do SELECT de nivel 0.
+
+    Serve pra limpar subqueries dessa lista antes de procurar
+    agregacoes (ver _tem_agregacao).
+    """
+    profundidade = 0
+    i = 0
+    n = len(sql)
+    inicio = None
+
+    while i < n:
+        ch = sql[i]
+
+        if ch == '(':
+            profundidade += 1
+        elif ch == ')':
+            profundidade -= 1
+        elif profundidade == 0:
+            if inicio is None and sql[i:i + 6].upper() == 'SELECT':
+                antes_ok = i == 0 or not (sql[i - 1].isalnum() or sql[i - 1] == '_')
+                if antes_ok:
+                    inicio = i + 6
+                    i += 6
+                    continue
+            elif inicio is not None and sql[i:i + 4].upper() == 'FROM':
+                antes_ok = i == 0 or not (sql[i - 1].isalnum() or sql[i - 1] == '_')
+                depois = i + 4
+                depois_ok = depois >= n or not (
+                    sql[depois].isalnum() or sql[depois] == '_'
+                )
+                if antes_ok and depois_ok:
+                    return inicio, i
+
+        i += 1
+
+    return None
+
+
+def _limpar_subqueries(trecho: str) -> str:
+    """
+    Remove os grupos entre parenteses que contenham SELECT (subqueries).
+
+    Motivo: subqueries correlacionadas na lista de colunas costumam ter
+    COUNT/SUM (ex: qtd_estabelecimentos). Sem essa limpeza o regex de
+    agregacao acharia o COUNT de dentro da subquery e trataria uma
+    LISTAGEM como agregacao, deixando de forcar LIMIT.
+    """
+    saida = []
+    i = 0
+    n = len(trecho)
+
+    while i < n:
+        ch = trecho[i]
+
+        if ch != '(':
+            saida.append(ch)
+            i += 1
+            continue
+
+        # acha o parentese de fechamento correspondente
+        prof = 1
+        j = i + 1
+        while j < n and prof > 0:
+            if trecho[j] == '(':
+                prof += 1
+            elif trecho[j] == ')':
+                prof -= 1
+            j += 1
+
+        if 'SELECT' in trecho[i:j].upper():
+            i = j  # descarta a subquery inteira
+            continue
+
+        saida.append(ch)
+        i += 1
+
+    return ''.join(saida)
+
+
 def _tem_agregacao(sql: str) -> bool:
     """
     Retorna True se o SQL tem GROUP BY ou funcao de agregacao
@@ -143,7 +224,16 @@ def _tem_agregacao(sql: str) -> bool:
     Nesse caso, o validador NAO deve forcar LIMIT: a query ja
     retorna poucas linhas por natureza (1 por grupo), e o usuario
     quer o resultado completo.
+
+    Subqueries na lista de colunas sao ignoradas: uma listagem que
+    traz qtd_estabelecimentos via (SELECT COUNT(*) ...) continua
+    sendo listagem e precisa de LIMIT.
     """
+    intervalo = _intervalo_lista_select(sql)
+    if intervalo:
+        ini, fim = intervalo
+        sql = sql[:ini] + _limpar_subqueries(sql[ini:fim]) + sql[fim:]
+
     return bool(REGEX_AGREGACAO.search(sql))
 
 

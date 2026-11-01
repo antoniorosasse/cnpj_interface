@@ -165,6 +165,32 @@ class SQLValidatorTestCase(TestCase):
         self.assertFalse(r.teve_limit)
         self.assertEqual(r.limit_valor, 0)
 
+    def test_listagem_com_count_correlacionado_ganha_limit(self):
+        """
+        COUNT dentro de subquery no SELECT nao torna a listagem
+        agregacao: o validador deve forcar LIMIT.
+        """
+        r = validar_sql(
+            'SELECT e.cnpj_basico, '
+            '(SELECT COUNT(*) FROM c_estabelecimentos x '
+            'WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos '
+            "FROM c_estabelecimentos e WHERE e.uf = 'SC'"
+        )
+        self.assertIn('LIMIT', r.sql.upper())
+        self.assertTrue(r.teve_limit)
+        self.assertEqual(r.limit_valor, DEFAULT_MAX_ROWS)
+
+    def test_group_by_com_subquery_continua_agregacao(self):
+        """GROUP BY no nivel 0 continua sendo agregacao (sem LIMIT)."""
+        r = validar_sql(
+            'SELECT e.uf, COUNT(*) AS total, '
+            '(SELECT COUNT(*) FROM c_estabelecimentos x '
+            'WHERE x.uf = e.uf) AS qtd_uf '
+            'FROM c_estabelecimentos e GROUP BY e.uf'
+        )
+        self.assertNotIn('LIMIT', r.sql.upper())
+        self.assertFalse(r.teve_limit)
+
     def test_listagem_ainda_ganha_limit(self):
         """SELECT sem agregacao (listagem) DEVE ganhar LIMIT."""
         r = validar_sql('SELECT * FROM c_empresas WHERE uf = \'SP\'')
