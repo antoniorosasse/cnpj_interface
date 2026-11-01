@@ -18,6 +18,7 @@ from chat.services.resposta_natural import (
     gerar_texto_resposta,
     _montar_user_prompt,
     _fallback_texto,
+    extrair_cidade_semi_join,
     LIMITE_LINHAS,
 )
 from chat.services.llm_client import LLMError
@@ -203,6 +204,13 @@ class SystemPromptTests(TestCase):
         # Listagens trazem qtd_estabelecimentos: o texto deve citar o numero
         self.assertIn('qtd_estabelecimentos', SYSTEM_PROMPT)
         self.assertIn('NUNCA some', SYSTEM_PROMPT)
+
+    def test_prompt_explica_estabelecimento_na_cidade(self):
+        from chat.services.resposta_natural import SYSTEM_PROMPT
+        # Semi-join de cidade: "com estabelecimento em X", nao "sediada em X"
+        self.assertIn('estabelecimento em X', SYSTEM_PROMPT)
+        self.assertIn('MATRIZ', SYSTEM_PROMPT)
+
         
 class PromptNaoMencionaParcialTests(TestCase):
     """Garante que _montar_user_prompt nao sugere 'parcial' quando nao truncado."""
@@ -221,5 +229,150 @@ class PromptNaoMencionaParcialTests(TestCase):
             total_linhas_exibidas=30,
         )
         self.assertIn('TRUNCADA', out.upper())
+
+
+# SQL no formato que o gerador usa para "empresas de X cidade": as
+# matrizes sao listadas, mas o filtro de cidade e um semi-join em
+# c_estabelecimentos (qualquer filial).
+SQL_SEMI_JOIN_PICARRAS = """
+SELECT e.cnpj_basico, e.razao_social, m.municipio
+FROM c_estabelecimentos e
+JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+WHERE e.cd_matriz_filial = 1
+  AND e.cnpj_basico IN (
+      SELECT f.cnpj_basico
+      FROM c_estabelecimentos f
+      WHERE f.municipio IN (
+          SELECT cd_municipio
+          FROM c_municipios
+          WHERE municipio ILIKE '%PICARRAS%'
+      )
+      AND f.cnae_fiscal_principal IN (
+          SELECT cd_cnae FROM c_cnaes WHERE descricao ILIKE '%padaria%'
+      )
+  )
+LIMIT 100
+"""
+
+# Filtro direto: a linha listada ja e do municipio pedido.
+SQL_FILTRO_DIRETO = """
+SELECT e.cnpj_basico, e.razao_social, m.municipio
+FROM c_estabelecimentos e
+LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+WHERE e.municipio IN (
+    SELECT cd_municipio FROM c_municipios
+    WHERE municipio ILIKE '%PICARRAS%'
+)
+LIMIT 100
+"""
+
+
+class ExtrairCidadeSemiJoinTests(TestCase):
+    """Testes do reconhecimento do semi-join de cidade."""
+
+    def test_extrai_cidade_do_semi_join(self):
+        self.assertEqual(
+            extrair_cidade_semi_join(SQL_SEMI_JOIN_PICARRAS), 'PICARRAS'
+        )
+
+    def test_filtro_direto_nao_e_semi_join(self):
+        self.assertIsNone(extrair_cidade_semi_join(SQL_FILTRO_DIRETO))
+
+    def test_sql_sem_cidade_devolve_none(self):
+        sql = 'SELECT cnpj_basico FROM c_empresas WHERE uf = \'PR\' LIMIT 10'
+        self.assertIsNone(extrair_cidade_semi_join(sql))
+
+    def test_sql_vazio_devolve_none(self):
+        self.assertIsNone(extrair_cidade_semi_join(None))
+        self.assertIsNone(extrair_cidade_semi_join(''))
+
+    def test_semi_join_de_outra_tabela_devolve_none(self):
+        sql = (
+            'SELECT cnpj_basico FROM c_empresas '
+            'WHERE cnpj_basico IN (SELECT cnpj_basico FROM c_socios)'
+        )
+        self.assertIsNone(extrair_cidade_semi_join(sql))
+
+    def test_normaliza_percentuais_e_espacos(self):
+        sql = SQL_SEMI_JOIN_PICARRAS.replace(
+            "'%PICARRAS%'", "'% Balneario   Picarras %'"
+        )
+        self.assertEqual(
+            extrair_cidade_semi_join(sql), 'Balneario Picarras'
+        )
+
+    def test_aceita_ilike_sem_percentual(self):
+        sql = SQL_SEMI_JOIN_PICARRAS.replace("'%PICARRAS%'", "'LAGES'")
+        self.assertEqual(extrair_cidade_semi_join(sql), 'LAGES')
+
+
+class AvisoCidadeNoPromptTests(TestCase):
+    """O aviso de semi-join precisa chegar ao LLM."""
+
+    def test_prompt_avisa_cidade_quando_semi_join(self):
+        out = _montar_user_prompt(
+            'padarias de picarras', ['municipio'], [{'municipio': 'TIJUCAS'}],
+            cidade_semi_join='PICARRAS',
+        )
+        self.assertIn('estabelecimento em PICARRAS', out)
+        self.assertIn('MATRIZ', out)
+
+    def test_prompt_sem_cidade_nao_avisa(self):
+        out = _montar_user_prompt('p', ['a'], [{'a': 1}])
+        self.assertNotIn('estabelecimento em', out)
+        self.assertNotIn('MATRIZ', out)
+
+    @patch(ALVO_LLM)
+    def test_gerar_texto_resposta_extrai_cidade_do_sql(self, mock_llm):
+        mock_llm.return_value = 'texto ok'
+        r = gerar_texto_resposta(
+            'lojas de picarras', ['municipio'], [{'municipio': 'TIJUCAS'}],
+            sql=SQL_SEMI_JOIN_PICARRAS,
+        )
+        self.assertEqual(r, 'texto ok')
+        prompt = mock_llm.call_args.kwargs['user_prompt']
+        self.assertIn('estabelecimento em PICARRAS', prompt)
+
+    @patch(ALVO_LLM)
+    def test_gerar_texto_resposta_filtro_direto_nao_avisa(self, mock_llm):
+        mock_llm.return_value = 'texto ok'
+        gerar_texto_resposta(
+            'lojas de picarras', ['municipio'], [{'municipio': 'PICARRAS'}],
+            sql=SQL_FILTRO_DIRETO,
+        )
+        prompt = mock_llm.call_args.kwargs['user_prompt']
+        self.assertNotIn('estabelecimento em', prompt)
+
+    @patch(ALVO_LLM)
+    def test_aceita_cidade_semi_join_explicita(self, mock_llm):
+        mock_llm.return_value = 'texto ok'
+        gerar_texto_resposta(
+            'p', ['a'], [{'a': 1}], cidade_semi_join='LAGES',
+        )
+        prompt = mock_llm.call_args.kwargs['user_prompt']
+        self.assertIn('estabelecimento em LAGES', prompt)
+
+
+class FallbackComCidadeTests(TestCase):
+    """O fallback (LLM fora) tambem precisa citar a cidade do semi-join."""
+
+    def test_fallback_cita_cidade(self):
+        r = _fallback_texto(['a'], [{'a': 1}], cidade_semi_join='PICARRAS')
+        self.assertIn('1 linha', r)
+        self.assertIn('estabelecimento em PICARRAS', r)
+
+    def test_fallback_sem_cidade_mantem_texto_antigo(self):
+        r = _fallback_texto(['a'], [{'a': 1}])
+        self.assertNotIn('estabelecimento em', r)
+
+    @patch(ALVO_LLM)
+    def test_llm_falhando_usa_fallback_com_cidade(self, mock_llm):
+        mock_llm.side_effect = LLMError('fora do ar')
+        r = gerar_texto_resposta(
+            'p', ['a'], [{'a': 1}], sql=SQL_SEMI_JOIN_PICARRAS,
+        )
+        self.assertIn('estabelecimento em PICARRAS', r)
+
 
                 

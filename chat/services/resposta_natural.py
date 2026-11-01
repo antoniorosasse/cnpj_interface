@@ -24,6 +24,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 
 import json
 import logging
+import re
 
 from .llm_client import gerar_resposta, LLMError
 
@@ -73,8 +74,80 @@ SYSTEM_PROMPT = (
     "quantidade de estabelecimentos (matriz + filiais) da empresa "
     "destacada, por exemplo: 'o KOCH HIPERMERCADO S/A tem 115 "
     "estabelecimentos'. Use o valor da propria linha; NUNCA some nem "
-    "estime esse numero."
+    "estime esse numero.\n"
+    "9. Se o sistema avisar que o filtro de cidade foi por "
+    "'empresa com estabelecimento em X', diga exatamente isso "
+    "('empresas com estabelecimento em X'). NUNCA apresente a coluna "
+    "municipio como se fosse a cidade filtrada: ela mostra o municipio "
+    "da MATRIZ, que pode ser outro."
 )
+
+
+# Semi-join de cidade gerado pelo LLM:
+#   e.cnpj_basico IN (SELECT f.cnpj_basico FROM c_estabelecimentos f
+#                      WHERE f.municipio IN (SELECT cd_municipio
+#                                            FROM c_municipios
+#                                            WHERE municipio ILIKE '%X%'))
+_SEMI_JOIN_RE = re.compile(r'cnpj_basico\s+in\s*\(\s*select\b', re.IGNORECASE)
+
+# Municipio pedido dentro do bloco do semi-join.
+_CIDADE_ILIKE_RE = re.compile(
+    r"(?:^|[.\s(])municipio\s+ilike\s+'([^']*)'",
+    re.IGNORECASE,
+)
+
+
+def _bloco_parenteses(sql: str, abre: int) -> str:
+    """Devolve o trecho de sql de 'abre' ate o ')' correspondente.
+
+    'abre' e o indice do '('. Devolve '' se os parenteses nao fecharem.
+    Ignora parenteses dentro de strings simples.
+    """
+    profundidade = 0
+    dentro_string = False
+    for i in range(abre, len(sql)):
+        char = sql[i]
+        if char == "'":
+            dentro_string = not dentro_string
+            continue
+        if dentro_string:
+            continue
+        if char == '(':
+            profundidade += 1
+        elif char == ')':
+            profundidade -= 1
+            if profundidade == 0:
+                return sql[abre:i + 1]
+    return ''
+
+
+def extrair_cidade_semi_join(sql: str | None) -> str | None:
+    """Cidade filtrada por semi-join, ou None se o SQL nao usa semi-join.
+
+    So devolve algo quando o SQL filtra a cidade via
+    'cnpj_basico IN (SELECT ... FROM c_estabelecimentos ... municipio ILIKE
+    '%X%')'. Nesse caso a lista contem empresas que tem algum
+    estabelecimento em X, mas a coluna municipio projetada normalmente e a
+    da matriz -- o texto natural precisa avisar disso.
+
+    Filtro direto ('e.municipio IN (SELECT ... ILIKE ...)') devolve None:
+    ai a coluna municipio e a propria cidade pedida e nao ha o que avisar.
+    """
+    if not sql:
+        return None
+
+    for match in _SEMI_JOIN_RE.finditer(sql):
+        abre = sql.index('(', match.start())
+        bloco = _bloco_parenteses(sql, abre)
+        if not bloco or 'c_estabelecimentos' not in bloco.lower():
+            continue
+        cidade = _CIDADE_ILIKE_RE.search(bloco)
+        if not cidade:
+            continue
+        nome = ' '.join(cidade.group(1).replace('%', ' ').split())
+        if nome:
+            return nome
+    return None
 
 
 def _montar_user_prompt(
@@ -83,6 +156,7 @@ def _montar_user_prompt(
     rows: list,
     truncado: bool = False,
     total_linhas_exibidas: int | None = None,
+    cidade_semi_join: str | None = None,
 ) -> str:
     """Monta o prompt do usuario com pergunta + dados limitados."""
     linhas = rows[:LIMITE_LINHAS]
@@ -105,12 +179,28 @@ def _montar_user_prompt(
             "esta e uma lista parcial (sem inventar numeros)."
         )
 
+    aviso_cidade = ''
+    if cidade_semi_join:
+        aviso_cidade = (
+            "\n\nATENCAO: o filtro de cidade desta consulta foi "
+            f"\"empresa com estabelecimento em {cidade_semi_join}\" "
+            "(qualquer filial), e NAO \"empresa sediada em "
+            f"{cidade_semi_join}\". A coluna municipio dos dados abaixo "
+            "mostra o municipio da MATRIZ e pode ser diferente de "
+            f"{cidade_semi_join}. Diga isso de forma natural, por "
+            f"exemplo: \"sao {total} empresas com estabelecimento em "
+            f"{cidade_semi_join}; a primeira, X, tem a matriz em "
+            "OUTRA_CIDADE\". NAO trate a coluna municipio como se fosse "
+            "a cidade filtrada."
+        )
+
     return (
         f"Pergunta do usuario:\n{pergunta}\n\n"
         f"Colunas retornadas: {', '.join(colunas)}\n\n"
         f"Dados (JSON):\n{dados_json}"
         f"{aviso_total}"
-        f"{aviso_truncado}\n\n"
+        f"{aviso_truncado}"
+        f"{aviso_cidade}\n\n"
         f"Responda agora, em portugues, com 1 a 3 frases. "
         f"Use APENAS os numeros que aparecem nos dados acima. "
         f"Destaque no maximo os {TOP_N} primeiros itens e SEMPRE cite "
@@ -124,6 +214,8 @@ def gerar_texto_resposta(
     rows: list | None,
     truncado: bool = False,
     total_linhas_exibidas: int | None = None,
+    sql: str | None = None,
+    cidade_semi_join: str | None = None,
 ) -> str:
     """
     Gera 1-3 frases em PT-BR resumindo os dados.
@@ -133,12 +225,19 @@ def gerar_texto_resposta(
     - NUNCA levanta excecao.
     - truncado: True se o sql_executor cortou a query em CHAT_SQL_MAX_ROWS.
     - total_linhas_exibidas: quantas linhas foram efetivamente exibidas.
+    - sql: SQL executado. Se for um semi-join de cidade, o prompt avisa o
+      LLM de que a lista e de empresas com estabelecimento na cidade (a
+      coluna municipio pode ser a da matriz).
+    - cidade_semi_join: cidade ja extraida (sobrepoe o sql).
     """
     if not rows:
         return ''
 
     if not colunas:
         return ''
+
+    if cidade_semi_join is None and sql:
+        cidade_semi_join = extrair_cidade_semi_join(sql)
 
     try:
         texto = gerar_resposta(
@@ -147,26 +246,37 @@ def gerar_texto_resposta(
                 pergunta, colunas, rows,
                 truncado=truncado,
                 total_linhas_exibidas=total_linhas_exibidas,
+                cidade_semi_join=cidade_semi_join,
             ),
             temperature=0.2,
             max_tokens=MAX_TOKENS_RESPOSTA,
         )
     except LLMError as exc:
         logger.warning('Falha ao gerar texto natural: %s', exc)
-        return _fallback_texto(colunas, rows)
+        return _fallback_texto(colunas, rows, cidade_semi_join)
     except Exception as exc:
         logger.exception('Erro inesperado ao gerar texto natural')
-        return _fallback_texto(colunas, rows)
+        return _fallback_texto(colunas, rows, cidade_semi_join)
 
     texto = (texto or '').strip()
     if not texto:
-        return _fallback_texto(colunas, rows)
+        return _fallback_texto(colunas, rows, cidade_semi_join)
 
     return texto
 
 
-def _fallback_texto(colunas: list, rows: list) -> str:
+def _fallback_texto(
+    colunas: list,
+    rows: list,
+    cidade_semi_join: str | None = None,
+) -> str:
     """Texto simples quando o LLM falha. Nao inventa nada."""
     total = len(rows)
     plural = 'linha' if total == 1 else 'linhas'
+    if cidade_semi_join:
+        return (
+            f"A consulta retornou {total} {plural} de empresas com "
+            f"estabelecimento em {cidade_semi_join}. "
+            "Veja os detalhes na tabela abaixo."
+        )
     return f"A consulta retornou {total} {plural}. Veja os detalhes na tabela abaixo."

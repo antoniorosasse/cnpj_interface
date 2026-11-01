@@ -376,9 +376,18 @@ Aplica **4 camadas de seguranca**:
 
 ### 4. `resposta_natural`
 
-- Recebe pergunta + colunas + rows + flag `truncado`
+- Recebe pergunta + colunas + rows + flag `truncado` (e o `sql` executado)
 - Gera 1-3 frases em PT-BR citando o total real
 - Se falhar, cai num fallback simples (nunca levanta excecao)
+- **Filtro por cidade (semi-join):** quando o SQL filtra com
+  `e.cnpj_basico IN (SELECT ... FROM c_estabelecimentos ... municipio ILIKE
+  '%X%')`, `extrair_cidade_semi_join()` descobre a cidade e o prompt avisa o
+  LLM de que a lista é de **empresas com estabelecimento em X** (qualquer
+  filial), não "sediadas em X". Sem esse aviso o texto citava a coluna
+  `municipio` da matriz (ex: KOCH de Tijucas) como se o filtro tivesse
+  falhado. Filtro direto (`e.municipio IN (...)`) não gera aviso: ali a
+  coluna `municipio` é a própria cidade pedida.
+
 
 ### 5. Persistencia (Repository pattern)
 

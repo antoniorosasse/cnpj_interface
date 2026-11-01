@@ -310,6 +310,73 @@ class FluxoCompletoTests(IntegracaoBaseTests):
         self.assertTrue(kwargs['truncado'])
         self.assertEqual(kwargs['total_linhas_exibidas'], 1000) 
 
+    @patch('chat.views.gerar_texto_resposta')
+    @patch(ALVO_EXECUTAR_SQL)
+    @patch(ALVO_GERAR_SQL)
+    def test_view_passa_o_sql_para_resposta_natural(
+        self, mock_gerar, mock_exec, mock_texto
+    ):
+        """A view entrega o SQL executado: o texto detecta o semi-join."""
+        mock_gerar.return_value = _fake_geracao_ok()
+        mock_exec.return_value = _fake_execucao_ok()
+        mock_texto.return_value = 'texto'
+
+        self.client.post(
+            reverse('chat:api'),
+            data=json.dumps({'pergunta': 'Quantas empresas?'}),
+            content_type='application/json',
+        )
+
+        kwargs = mock_texto.call_args.kwargs
+        self.assertEqual(
+            kwargs['sql'], 'SELECT COUNT(*) AS total FROM c_empresas LIMIT 1000'
+        )
+
+    @patch(ALVO_EXECUTAR_SQL)
+    @patch(ALVO_GERAR_SQL)
+    def test_sem_linhas_com_semi_join_cita_estabelecimento_na_cidade(
+        self, mock_gerar, mock_exec
+    ):
+        """Sem resultados, o texto nao pode dizer 'nenhuma empresa' generica."""
+        from chat.services.sql_validator import ValidationResult
+
+        sql = (
+            'SELECT e.cnpj_basico, m.municipio FROM c_estabelecimentos e '
+            "LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio "
+            'WHERE e.cnpj_basico IN ('
+            '  SELECT f.cnpj_basico FROM c_estabelecimentos f '
+            '  WHERE f.municipio IN ('
+            '    SELECT cd_municipio FROM c_municipios '
+            "    WHERE municipio ILIKE '%PICARRAS%'))"
+            ' LIMIT 100'
+        )
+        geracao = _fake_geracao_ok()
+        geracao['sql'] = sql
+        geracao['validation'] = ValidationResult(
+            sql=sql, original_sql=sql, teve_limit=True, limit_valor=100,
+        )
+        mock_gerar.return_value = geracao
+        mock_exec.return_value = {
+            'ok': True,
+            'rows': [],
+            'colunas': ['cnpj_basico', 'municipio'],
+            'erro': None,
+            'tempo_ms': 5,
+            'total_linhas': 0,
+            'truncado': False,
+        }
+
+        resp = self.client.post(
+            reverse('chat:api'),
+            data=json.dumps({'pergunta': 'padarias de picarras'}),
+            content_type='application/json',
+        )
+
+        dados = resp.json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('estabelecimento em PICARRAS', dados['resposta_texto'])
+
+
 
 
 # ============================================================

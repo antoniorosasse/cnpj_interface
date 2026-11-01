@@ -27,7 +27,7 @@ from django.views.decorators.http import require_POST
 
 from .services.sql_generator import gerar_sql
 from .services.sql_executor import executar_sql
-from .services.resposta_natural import gerar_texto_resposta
+from .services.resposta_natural import gerar_texto_resposta, extrair_cidade_semi_join
 #from chat.models import Conversa, Mensagem
 from . import repo
 from .models import LogAcesso
@@ -343,13 +343,27 @@ def chat_api_view(request):
             rows=execucao['rows'],
             truncado=truncado_efetivo,
             total_linhas_exibidas=execucao['total_linhas'],
+            # Se o SQL filtra a cidade por semi-join (cnpj_basico IN (...)),
+            # o texto precisa dizer "empresas com estabelecimento em X":
+            # a coluna municipio mostra o municipio da matriz.
+            sql=validation.sql,
         )
     elif execucao['ok']:
-        resposta_texto = (
-            'Nenhuma empresa encontrada com esses filtros. '
-            'Se o filtro foi por cidade, tente apenas parte do nome e sem acento '
-            '(ex: PICARRAS em vez de Balneario Picarras).'
-        )
+        cidade_semi_join = extrair_cidade_semi_join(validation.sql)
+        if cidade_semi_join:
+            resposta_texto = (
+                f'Nenhuma empresa com estabelecimento em {cidade_semi_join} '
+                'foi encontrada com esses filtros. Tente apenas parte do nome '
+                'da cidade e sem acento '
+                '(ex: PICARRAS em vez de Balneario Picarras).'
+            )
+        else:
+            resposta_texto = (
+                'Nenhuma empresa encontrada com esses filtros. '
+                'Se o filtro foi por cidade, tente apenas parte do nome e sem acento '
+                '(ex: PICARRAS em vez de Balneario Picarras).'
+            )
+
 
     # --- 4) salva as duas mensagens ---
     repo.adicionar_mensagem(cid, 'user', pergunta)
