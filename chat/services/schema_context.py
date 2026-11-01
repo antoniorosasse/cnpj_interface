@@ -82,6 +82,12 @@ c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
   dt_sit_esp          date
   id_estabelecimento  serial (PK)
 
+  CONTAGEM DE ESTABELECIMENTOS (matriz + filiais) de uma empresa:
+    (SELECT COUNT(*) FROM c_estabelecimentos x
+     WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos
+  Barato (a PK comeca por cnpj_basico) e util em LISTAGENS: mostra o
+  tamanho da rede (ex: KOCH HIPERMERCADO S/A = 115 estabelecimentos).
+
   INDICES (destaques):
     -- Simples
     cnpj_basico, cd_matriz_filial, cd_sit_cadastro, uf, municipio,
@@ -156,16 +162,20 @@ c_cnaes
   embedding halfvec(384)     -- vetor da descricao (para busca semantica)
 
 =====================================================================
-BUSCA SEMANTICA (VETORIAL)
+BUSCA SEMANTICA (VETORIAL) - SOMENTE COMO FALLBACK DO ILIKE
 =====================================================================
 
 A tabela c_cnaes tem uma coluna `embedding` (halfvec(384)) com o vetor
-da descricao do CNAE. Use-a quando a pergunta for sobre um CONCEITO
-ou ATIVIDADE e nao houver um codigo CNAE explicito.
+da descricao do CNAE. Ela serve para descobrir o CNAE quando o termo
+da pergunta NAO aparece no nm_cnae.
 
-COMO USAR (BUSCA HIBRIDA - TEXTUAL + VETORIAL):
-Quando o usuario perguntar sobre uma ATIVIDADE/CONCEITO, use
-SEMPRE a busca hibrida: ILIKE (textual) + UNION com o vetor.
+REGRA DE OURO: primeiro o ILIKE, o vetor SO como fallback.
+Use o vetor apenas quando o ILIKE nao encontrar NENHUM CNAE. Motivo:
+o vetor devolve CNAEs "vizinhos" e, misturados ao ILIKE, eles enchem
+o LIMIT 100 da query externa. Exemplo real: "supermercados em
+picarras" (ILIKE em 4711302) devolvia 4 empresas; "supermercados de
+picarras" fazia o vetor trazer 4712100 (minimercados/mercearias) e o
+resultado pulava para 100 linhas de mercearia.
 
 1. Extraia a palavra-chave da pergunta (o radical, sem plural):
    "padarias de lages"      -> padaria
@@ -174,36 +184,47 @@ SEMPRE a busca hibrida: ILIKE (textual) + UNION com o vetor.
    "empresas de carpintaria"-> carpintaria
    "energia solar"          -> energia solar (nao esta no nm_cnae)
 
-2. Use a busca hibrida (SEMPRE com UNION, SEMPRE com subquery no vetor):
+2. Monte a subquery SEMPRE neste formato (ILIKE + vetor protegido
+   por NOT EXISTS):
+
    AND e.cnae_principal IN (
        SELECT cnae FROM c_cnaes
        WHERE nm_cnae ILIKE '%PALAVRA%'
        UNION
        SELECT cnae FROM (
            SELECT cnae FROM c_cnaes
+           WHERE NOT EXISTS (
+               SELECT 1 FROM c_cnaes
+               WHERE nm_cnae ILIKE '%PALAVRA%'
+           )
            ORDER BY embedding <=> %s::halfvec(384)
            LIMIT 2
        ) sub
    )
 
+   O NOT EXISTS e' OBRIGATORIO: ele faz a parte vetorial devolver
+   zero linhas quando o ILIKE encontra algum CNAE. Assim o resultado
+   nunca mistura categorias diferentes.
+
    O ILIKE pega os CNAEs que tem a palavra no nome (ex: "padaria"
-   esta em 1091102 e 4721102). O UNION com o vetor pega os CNAEs
-   mais proximos semanticamente (ex: "energia solar" nao esta no
-   nome de nenhum CNAE, mas o vetor traz "3511500 Geracao de
-   energia eletrica").
+   esta em 1091102 e 4721102). O vetor so entra quando o ILIKE nao
+   acha nada (ex: "energia solar" nao esta no nome de nenhum CNAE,
+   e o vetor traz "3511500 Geracao de energia eletrica").
 
-3. NUNCA use so o vetor (sem ILIKE). Motivo: o vetor com LIMIT 1
-   escolhe UM CNAE so e joga fora os outros validos. Ex: "confeitaria"
-   com so vetor trouxe 1 empresa; com ILIKE trouxe 299.
+3. NUNCA use so o vetor (sem ILIKE). Motivo: sem o ILIKE nao existe
+   fallback, e o vetor com LIMIT 2 escolhe so os 2 CNAEs mais
+   proximos, jogando fora os outros validos. Ex: "confeitaria" com
+   so vetor trouxe 1 empresa; com ILIKE trouxe 299.
 
-4. NUNCA use so o ILIKE (sem vetor). Motivo: "energia solar" nao
-   tem no nm_cnae, e o ILIKE nao acharia nada.
+4. NUNCA remova o NOT EXISTS. Sem ele o vetor entra junto com o
+   ILIKE e o resultado volta a misturar categorias diferentes.
 
 5. A subquery do vetor PRECISA estar dentro de "SELECT cnae FROM (...) sub".
    Se voce fizer "SELECT cnae FROM c_cnaes ORDER BY ... LIMIT 2" direto
    dentro do UNION, o Postgres da erro ("ORDER BY invalido em UNION").
 
-EXEMPLO COMPLETO para "confeitaria em lages":
+EXEMPLO COMPLETO para "energia solar em lages" (o ILIKE nao acha
+nada, entao o vetor entra):
   SELECT e.cnpj_basico, emp.razao_social, c.nm_cnae
   FROM c_estabelecimentos e
   JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
@@ -212,10 +233,14 @@ EXEMPLO COMPLETO para "confeitaria em lages":
     AND e.municipio IN (SELECT cd_municipio FROM c_municipios WHERE municipio ILIKE '%LAGES%')
     AND e.cnae_principal IN (
         SELECT cnae FROM c_cnaes
-        WHERE nm_cnae ILIKE '%confeitaria%'
+        WHERE nm_cnae ILIKE '%energia solar%'
         UNION
         SELECT cnae FROM (
             SELECT cnae FROM c_cnaes
+            WHERE NOT EXISTS (
+                SELECT 1 FROM c_cnaes
+                WHERE nm_cnae ILIKE '%energia solar%'
+            )
             ORDER BY embedding <=> %s::halfvec(384)
             LIMIT 2
         ) sub
@@ -227,27 +252,69 @@ query. Voce NAO precisa saber o valor. Apenas use a sintaxe
 `ORDER BY embedding <=> %s::halfvec(384)`.
 
 REGRA CRITICA: no UNION, o vetor DEVE estar em subquery:
-  CERTO: UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(384) LIMIT 2) sub
-  ERRADO: UNION SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(384) LIMIT 2
-  (o "ERRADO" da erro "ORDER BY invalido em UNION")
-
-Use LIMIT 2 no vetor (nao 1, nao 5):
-  - LIMIT 1 joga fora os CNAEs vizinhos validos (ex: "confeitaria"
-    com LIMIT 1 trouxe 1 empresa; com LIMIT 2 + ILIKE trouxe 299).
-  - LIMIT 5 traz CNAEs de volume alto que dominam o LIMIT 100
-    (ex: "carpintaria" com LIMIT 5 trouxe Peixaria e Tabacaria).
-  - LIMIT 2 e' o ponto de equilibrio.
-
-REGRA CRITICA: use sempre LIMIT 1 na subquery do embedding.
-NUNCA use LIMIT 5 (ou qualquer numero > 1). Motivo: com LIMIT > 1,
-a query traz varios CNAEs "proximos" e o LIMIT 100 da query
-externa e' preenchido pelo CNAE de MAIOR VOLUME, nao pelo mais
-relevante. Exemplo real: "empresas de carpintaria" trazia o CNAE
-de "corte e dobra de metais" (que tem muito mais empresas) em vez
-do CNAE de carpintaria. Com LIMIT 1, o CNAE certo aparece.
+  CERTO: UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(384) LIMIT 2) sub
+  ERRADO: UNION SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(384) LIMIT 2
+  (o "ERRADO" nao tem a subquery "SELECT cnae FROM (...) sub" e da
+  erro "ORDER BY invalido em UNION")
 
 NUNCA use a coluna embedding para outra coisa. Ela serve apenas para
 descobrir o CNAE mais similar a um termo em portugues.
+
+
+=====================================================================
+ATIVIDADE + NOME (MARCA) - OS DOIS FILTROS SAO OBRIGATORIOS
+=====================================================================
+
+Quando a pergunta cita um TIPO DE NEGOCIO e um NOME/MARCA
+("liste os mercados KOCH", "supermercados Koch em SC", "farmacias
+Sao Joao"), a query precisa dos DOIS filtros ligados por AND:
+
+  1. filtro de CNAE (secao BUSCA SEMANTICA acima);
+  2. filtro de nome fantasia (EXISTS, secao CODIGOS CONHECIDOS).
+
+NUNCA descarte o filtro de CNAE. Sem ele a query vira "qualquer
+empresa com o nome": no banco real sao centenas de matrizes com KOCH
+no nome fantasia, o LIMIT 100 corta a lista no meio e a rede de
+supermercados (KOCH HIPERMERCADO S/A, CNAE 4691500) nem aparece.
+
+EXEMPLO COMPLETO para "liste os mercados KOCH":
+
+  SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia,
+         m.municipio, e.uf, c.nm_cnae
+  FROM c_estabelecimentos e
+  JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+  JOIN c_cnaes c ON c.cnae = e.cnae_principal
+  LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+  WHERE e.cd_matriz_filial = 1
+    AND e.cnae_principal IN (
+        SELECT cnae FROM c_cnaes
+        WHERE nm_cnae ILIKE '%mercado%'
+        UNION
+        SELECT cnae FROM (
+            SELECT cnae FROM c_cnaes
+            WHERE NOT EXISTS (
+                SELECT 1 FROM c_cnaes
+                WHERE nm_cnae ILIKE '%mercado%'
+            )
+            ORDER BY embedding <=> %s::halfvec(384)
+            LIMIT 2
+        ) sub
+    )
+    AND EXISTS (
+        SELECT 1 FROM c_estabelecimentos sub
+        WHERE sub.cnpj_basico = e.cnpj_basico
+          AND sub.nm_fantasia ILIKE '%KOCH%'
+    )
+  ORDER BY emp.razao_social
+  LIMIT 100
+
+"mercado" casa com "mercadorias" no nm_cnae, entao o ILIKE ja traz
+4691500 (atacadista), 4711301 (hipermercados), 4711302
+(supermercados) e 4712100 (minimercados). O NOT EXISTS zera o vetor.
+
+Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
+ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas e'
+arbitrario e a empresa procurada pode ficar de fora.
 
 
 c_municipios
@@ -269,6 +336,74 @@ c_qualificacoes
 c_motivos
   cd_motivo_sit_cadastro  smallint (PK)
   motivo_sit_cadastro     varchar(255)
+
+=====================================================================
+FILTRO POR CIDADE - A EMPRESA PRECISA TER ESTABELECIMENTO NA CIDADE
+=====================================================================
+
+A listagem continua sendo UMA LINHA POR EMPRESA (matriz), mas o filtro de
+cidade NAO pode olhar so a sede. A rede pode ter a matriz em uma cidade e
+as lojas em outra:
+
+  KOCH HIPERMERCADO S/A (cnpj_basico 02831172)
+    matriz em TIJUCAS (SC), CNAE 4691500 (atacadista)
+    4 filiais em BALNEARIO DE PICARRAS (SC), CNAE 4711301 (varejista)
+
+Com `e.municipio IN (...picarras...)` a empresa some de "atacadistas de
+picarras". Com o semi-join abaixo ela aparece (as 4 filiais garantem a
+presenca na cidade) e a linha listada e' a matriz, com o municipio real
+dela (Tijucas).
+
+FORMA CERTA (semi-join por cnpj_basico):
+
+  AND e.cnpj_basico IN (
+      SELECT f.cnpj_basico FROM c_estabelecimentos f
+      WHERE f.municipio IN (
+          SELECT cd_municipio FROM c_municipios
+          WHERE municipio ILIKE '%PICARRAS%'
+      )
+  )
+
+FORMA ERRADA (EXISTS correlacionado - 10x mais lento):
+
+  AND EXISTS (SELECT 1 FROM c_estabelecimentos f
+              WHERE f.cnpj_basico = e.cnpj_basico
+                AND f.municipio IN (...))
+
+  Motivo: com o EXISTS o planner faz um Nested Loop por matriz candidata;
+  com o IN ele monta um hash dos cnpj_basico da cidade. Medido:
+  "atacadistas de picarras" = 0,3 s (IN) x 3,3 s (EXISTS).
+
+O EXISTS de nome fantasia (secao CODIGOS CONHECIDOS) NAO e' afetado:
+aquele usa idx_estab_nome_fantasia_gin_todos e e' barato.
+
+CUSTO (medido, cache quente) - o semi-join escala com o tamanho da cidade
+e com a popularidade da atividade:
+
+  atacadistas de picarras    0,3 s
+  supermercados de picarras  0,5 s
+  padarias de picarras       2 a 5 s
+  padarias de lages          6 s
+  padarias de curitiba      12 s
+  (filtro direto na matriz: 0,03 a 0,3 s nos mesmos casos)
+
+Por isso:
+  - cidade pequena/media + atividade especifica -> use o semi-join;
+  - capital ou metropole -> filtro direto na matriz (e.municipio IN ...);
+  - atividade muito comum (padaria, mercado, restaurante, posto,
+    farmacia) -> filtro direto na matriz;
+  - CONTAGEM PURA (COUNT sem GROUP BY) -> filtro direto na matriz;
+  - pergunta so com UF (e.uf = 'SC') -> filtro direto na matriz.
+
+Quando o semi-join e' usado, o texto da resposta deve dizer "empresas com
+estabelecimento em <cidade>", porque a coluna municipio exibe o municipio
+da matriz.
+
+INDICES ENVOLVIDOS:
+  idx_estabelecimentos_municipio (municipio)          -- lado da cidade
+  idx_estabelecimentos_cnpj_basico (cnpj_basico)      -- salto para a matriz
+  idx_estab_matriz_mun_cnae (municipio, cnae_principal) WHERE matriz
+                                                      -- filtro direto
 
 =====================================================================
 CODIGOS CONHECIDOS (use para interpretar a pergunta em PT-BR)
@@ -326,6 +461,10 @@ TRADUCAO DE LINGUAGEM NATURAL PARA CODIGO:
                                 (nome oficial, sem acento, pode ter "DE"
                                  no meio: Balneario Picarras esta gravado
                                  como BALNEARIO DE PICARRAS)
+                                Em LISTAGEM de empresa com cidade pequena
+                                 ou media, troque por e.cnpj_basico IN (SELECT
+                                 ... ) para pegar quem tem estabelecimento na
+                                 cidade. Ver secao FILTRO POR CIDADE.
   "micro empresa" / "ME"     -> WHERE porte_empresa = 1
   "pequeno porte" / "EPP"    -> WHERE porte_empresa = 3
   "demais" / "grande"        -> WHERE porte_empresa = 5
@@ -344,6 +483,10 @@ TRADUCAO DE LINGUAGEM NATURAL PARA CODIGO:
                                 (o nome fantasia pode estar SO na filial,
                                  nao na matriz. Por isso use EXISTS, nao
                                  e.nm_fantasia ILIKE direto)
+  "mercados KOCH"           -> filtro de CNAE (BUSCA SEMANTICA, com
+                               ILIKE '%mercado%') E EXISTS de fantasia
+                               ILIKE '%KOCH%', os dois com AND.
+                               Ver secao ATIVIDADE + NOME (MARCA).
 
 =====================================================================
 DICA CRITICA DE PERFORMANCE

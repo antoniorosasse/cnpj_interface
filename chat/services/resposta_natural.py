@@ -68,7 +68,12 @@ SYSTEM_PROMPT = (
     "7. Se o sistema NAO te avisar que a consulta foi TRUNCADA, "
     "NAO mencione 'lista parcial', 'amostra', 'truncado' nem 'apenas X de Y'. "
     "Apenas diga o total real e destaque os primeiros itens. "
-    "Nunca use as palavras 'parcial', 'amostra' ou 'truncado' por conta propria."
+    "Nunca use as palavras 'parcial', 'amostra' ou 'truncado' por conta propria.\n"
+    "8. Se os dados tiverem a coluna qtd_estabelecimentos, cite a "
+    "quantidade de estabelecimentos (matriz + filiais) da empresa "
+    "destacada, por exemplo: 'o KOCH HIPERMERCADO S/A tem 115 "
+    "estabelecimentos'. Use o valor da propria linha; NUNCA some nem "
+    "estime esse numero."
 )
 
 

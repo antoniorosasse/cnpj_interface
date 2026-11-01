@@ -197,6 +197,12 @@ class SystemPromptTests(TestCase):
         from chat.services.resposta_natural import SYSTEM_PROMPT
         # O prompt deve instruir explicitamente a NAO dizer "apenas 20"
         self.assertIn('NUNCA diga', SYSTEM_PROMPT)
+
+    def test_prompt_manda_citar_qtd_estabelecimentos(self):
+        from chat.services.resposta_natural import SYSTEM_PROMPT
+        # Listagens trazem qtd_estabelecimentos: o texto deve citar o numero
+        self.assertIn('qtd_estabelecimentos', SYSTEM_PROMPT)
+        self.assertIn('NUNCA some', SYSTEM_PROMPT)
         
 class PromptNaoMencionaParcialTests(TestCase):
     """Garante que _montar_user_prompt nao sugere 'parcial' quando nao truncado."""

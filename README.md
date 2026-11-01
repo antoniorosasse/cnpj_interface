@@ -310,12 +310,36 @@ read-only. Tem historico de conversas e contexto.
   existe no schema (ex: faturamento, numero de funcionarios)
   ### 1.1 Busca semântica (vetorial)
 
-  Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` pode gerar um SQL com a cláusula:
+  Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` gera um SQL com `ILIKE` **e** com a cláusula:
 
   ```sql
   ORDER BY embedding <=> %s::halfvec(384)
+  ```
 
-  O chat/services/embedding_service.py gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o %s antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
+  O `chat/services/embedding_service.py` gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o `%s` antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
+
+  **O vetor é apenas fallback do `ILIKE`**: a parte vetorial só devolve linhas quando o `ILIKE` não encontra nenhum CNAE, através de um `NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...)`. Sem esse guarda, o `UNION` mistura CNAEs "vizinhos" com o CNAE exato e o `LIMIT 100` enche de categorias erradas (ex: "supermercados de picarras" trazia 121 minimercados/mercearias junto com os 4 supermercados). O `sql_generator` rejeita e pede correção ao LLM quando o SQL usa `%s` sem esse `NOT EXISTS`.
+
+  **Atividade + nome (marca)**: quando a pergunta cita um tipo de negócio **e** um nome ("liste os mercados KOCH"), o SQL precisa dos **dois** filtros ligados por `AND`: o filtro de CNAE (`ILIKE '%mercado%'`) e o `EXISTS` de `nm_fantasia ILIKE '%KOCH%'`. Se o LLM descarta o filtro de CNAE, a query vira "qualquer empresa com o nome", o `LIMIT 100` corta a lista e a empresa certa não aparece (eram 100 KOCHs de outros ramos, sem o KOCH HIPERMERCADO S/A, CNAE 4691500). Pelo mesmo motivo, toda listagem com `LIMIT` deve ter `ORDER BY` (ex: `ORDER BY emp.razao_social`) para o corte ser determinístico. As regras estão no `SYSTEM_PROMPT` (regras 9 e 10) e na seção `ATIVIDADE + NOME (MARCA)` do `schema_context.py`.
+
+  **Filtro por cidade = "tem estabelecimento na cidade"**: em listagens, o filtro de cidade não pode olhar só a matriz. A rede pode ter a sede em uma cidade e as lojas em outra: o KOCH HIPERMERCADO S/A (`cnpj_basico` 02831172) tem a matriz em Tijucas (CNAE 4691500) e 4 filiais em Balneário de Picarras, então com `e.municipio IN (...picarras...)` a empresa desaparecia de "atacadistas de picarras". A regra 13 do `SYSTEM_PROMPT` e a seção `FILTRO POR CIDADE` do `schema_context.py` mandam usar semi-join por `cnpj_basico`:
+
+  ```sql
+  AND e.cnpj_basico IN (
+      SELECT f.cnpj_basico FROM c_estabelecimentos f
+      WHERE f.municipio IN (SELECT cd_municipio FROM c_municipios
+                            WHERE municipio ILIKE '%PICARRAS%'))
+  ```
+
+  O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atacadistas de picarras" = 0,3 s com o `IN` e 3,3 s com o `EXISTS` (o `IN` deixa o planner montar um hash dos `cnpj_basico` da cidade). O custo cresce com o tamanho da cidade **e** com a popularidade do CNAE (atacadistas de picarras 0,3 s; padarias de picarras 2-5 s; padarias de Lages 6 s; padarias de Curitiba 12 s, contra 0,03-0,3 s do filtro direto na matriz). Por isso a regra mantém o filtro direto em capitais/metrópoles, em atividades muito comuns e em contagens puras.
+
+
+  ```sql
+  (SELECT COUNT(*) FROM c_estabelecimentos x
+   WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos
+  ```
+
+  O `COUNT` usa a PK (`cnpj_basico` na frente), então é barato por linha (a listagem de "mercados KOCH" roda em ~100 ms). O `resposta_natural` cita o número no texto ("o KOCH HIPERMERCADO S/A tem 115 estabelecimentos") e o front-end mostra a coluna como **Estabelecimentos**. Na tabela, tanto o CNPJ quanto a razão social são links para `/empresa/<cnpj>/?next=/chat/` (regra 11 do `SYSTEM_PROMPT` e regra 8 do `resposta_natural`).
 
   Custo de disco: < 2 MB (apenas 1.359 CNAEs).
   Performance: ~30ms em produção.

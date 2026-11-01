@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 # do que o executor vai efetivamente buscar).
 MAX_ROWS_POR_QUERY = int(os.getenv('CHAT_SQL_MAX_ROWS', '1000'))
 
+# Opcao 1 da busca semantica: o vetor SO pode entrar como fallback do
+# ILIKE. Exige o NOT EXISTS que zera a parte vetorial quando o ILIKE
+# encontra algum CNAE (ver schema_context.py).
+REGEX_FALLBACK_VETOR = re.compile(
+    r'NOT\s+EXISTS\s*\([^)]*FROM\s+c_cnaes[^)]*ILIKE',
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 # ============================================================
 # PROMPTS
@@ -141,52 +149,66 @@ REGRAS DE OURO:
      EXISTS sozinho forca Nested Loop (~200ms).
    - O indice idx_estab_nome_fantasia_gin_todos (GIN, sem filtro de
      matriz) cobre a subquery do EXISTS.
+   - Se a pergunta cita NOME/MARCA + TIPO DE NEGOCIO (ex: "mercados
+     KOCH", "supermercados Koch em SC", "farmacias Sao Joao"),
+     aplique OS DOIS filtros com AND: o filtro de CNAE (regra 10) E
+     o EXISTS de nome. NUNCA descarte o filtro de atividade: sem ele
+     a query vira "qualquer empresa com o nome", o LIMIT 100 corta a
+     lista no meio e a empresa certa fica de fora. Exemplo "liste os
+     mercados KOCH":
+       WHERE e.cd_matriz_filial = 1
+         AND e.cnae_principal IN ( ... regra 10, ILIKE '%mercado%' ... )
+         AND EXISTS (
+           SELECT 1 FROM c_estabelecimentos sub
+           WHERE sub.cnpj_basico = e.cnpj_basico
+             AND sub.nm_fantasia ILIKE '%KOCH%'
+         )
+       ORDER BY emp.razao_social
+       LIMIT 100
+   - Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
+     ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas
+     e' arbitrario e a empresa procurada pode nao aparecer.
 
-10. BUSCA HIBRIDA DE CNAE (TEXTUAL + VETORIAL) - CRITICO:
+10. BUSCA DE CNAE (TEXTUAL + VETOR COMO FALLBACK) - CRITICO:
    - Quando a pergunta for sobre uma ATIVIDADE (ex: "confeitaria",
      "padarias de lages", "empresas de carpintaria", "energia solar"),
-     use SEMPRE a busca hibrida: ILIKE + UNION com o vetor.
+     monte a subquery de CNAE com ILIKE e use o vetor SOMENTE como
+     fallback (quando o ILIKE nao achar nenhum CNAE).
    - Extraia a palavra-chave (radical, sem plural) da pergunta:
      "padarias de lages"       -> padaria
      "oficinas mecanicas"      -> oficina mecanica
      "empresas de carpintaria" -> carpintaria
      "energia solar"           -> energia solar
-   - Monte a subquery assim:
+   - Monte a subquery SEMPRE assim:
      AND e.cnae_principal IN (
          SELECT cnae FROM c_cnaes
          WHERE nm_cnae ILIKE '%PALAVRA%'
          UNION
          SELECT cnae FROM (
              SELECT cnae FROM c_cnaes
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM c_cnaes
+                 WHERE nm_cnae ILIKE '%PALAVRA%'
+             )
              ORDER BY embedding <=> %s::halfvec(384)
              LIMIT 2
          ) sub
      )
+   - O NOT EXISTS e' OBRIGATORIO: ele zera a parte vetorial quando
+     o ILIKE encontra algum CNAE. Sem ele, o vetor entra junto com
+     o ILIKE e o LIMIT 100 da query externa enche de CNAEs "vizinhos"
+     de categorias diferentes. Exemplo real: "supermercados de
+     picarras" trazia 121 minimercados/mercearias (CNAE 4712100)
+     junto com os 4 supermercados (4711302).
    - O ILIKE pega os CNAEs que tem a palavra no nome (ex:
-     "padaria" esta em 1091102 e 4721102). O UNION com o vetor
-     pega os mais proximos semanticamente (ex: "energia solar"
-     nao esta no nome, mas o vetor traz "3511500").
-   - CRITICO - ORDER BY DE PRIORIDADE: como o UNION nao garante
-     ordem, e o LIMIT 100 pode encher de CNAE "parecido" (do
-     vetor) antes de chegar no CNAE exato (do ILIKE), SEMPRE
-     adicione um ORDER BY de prioridade:
-     ORDER BY
-         (e.cnae_principal IN (
-             SELECT cnae FROM c_cnaes
-             WHERE nm_cnae ILIKE '%PALAVRA%'
-         )) DESC,
-         e.cnpj_basico
-   - Isso forca o Postgres a trazer as empresas do CNAE EXATO
-     (ILIKE) antes das empresas do CNAE "parecido" (vetor).
-     Exemplo real: "padarias de lages" trazia Peixaria (do vetor)
-     nas primeiras posicoes porque o UNION nao tem ordem. Com o
-     ORDER BY de prioridade, padaria vem primeiro, e o LIMIT 100
-     enche de padaria (Peixaria so aparece se faltar padaria).
-   - NUNCA use so o vetor (LIMIT 1 sem ILIKE). Ex: "confeitaria"
-     so com vetor LIMIT 1 trouxe 1 empresa; com ILIKE + vetor
-     trouxe 299.
-   - NUNCA use so o ILIKE (sem vetor). Ex: "energia solar" nao
-     esta no nm_cnae, e o ILIKE nao acharia nada.
+     "padaria" esta em 1091102 e 4721102).
+   - O vetor so entra quando o ILIKE nao acha nada (ex: "energia
+     solar" nao esta no nome de nenhum CNAE, e o vetor traz
+     "3511500 Geracao de energia eletrica").
+   - NUNCA use so o vetor (sem ILIKE): "confeitaria" so com vetor
+     trouxe 1 empresa; com ILIKE trouxe 299.
+   - NUNCA remova o NOT EXISTS: sem ele o resultado mistura
+     categorias diferentes.
    - A subquery do vetor PRECISA estar em "SELECT cnae FROM (...)
      sub" (senao o Postgres da erro "ORDER BY invalido em UNION").
    - LIMIT 2 no vetor (nao 1, nao 5):
@@ -195,6 +217,9 @@ REGRAS DE OURO:
    - Se a pergunta NAO for sobre uma atividade/conceito (ex:
      "quantas empresas existem", "empresas do CNPJ 12345678"),
      NAO use a coluna embedding.
+   - Se a pergunta TAMBEM citar um NOME/MARCA (ex: "mercados KOCH"),
+     mantenha este filtro de CNAE junto com o EXISTS de nome, os
+     dois ligados por AND (ver regra 9).
 
 11. EXIBICAO DE NOME (RAZAO SOCIAL E NOME FANTASIA) - CRITICO:
    - Quando a pergunta for sobre "empresas", "empresas de X",
@@ -204,6 +229,16 @@ REGRAS DE OURO:
      JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
    - No SELECT, coloque a razao social ANTES do nome fantasia:
      SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia, c.nm_cnae
+   - Em LISTAGENS de empresas, traga tambem a QUANTIDADE DE
+     ESTABELECIMENTOS (matriz + filiais) da empresa:
+       (SELECT COUNT(*) FROM c_estabelecimentos x
+        WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos
+     Coloque essa coluna logo depois de e.nm_fantasia. O COUNT usa a
+     PK (cnpj_basico na frente), entao e' barato por linha, e mostra
+     o tamanho da rede (ex: KOCH HIPERMERCADO S/A tem 115
+     estabelecimentos em SC).
+     NAO use qtd_estabelecimentos em contagens agregadas
+     (COUNT/GROUP BY) nem em consultas que nao listam empresas.
    - Se a pergunta for sobre um CNAE especifico (ex: "quais CNAEs"),
      ai sim pode omitir razao_social (nao precisa do JOIN).
    - Exemplo CERTO:
@@ -238,7 +273,8 @@ REGRAS DE OURO:
    - A UNICA EXCECAO e' se a pergunta for uma CONTAGEM PURA
      (ex: "quantas MEIs existem", "quantas empresas ativas").
      Nesse caso, nao faca o JOIN c_municipios e retorne so o numero.
-   - Exemplo CERTO para "padarias de curitiba" (listagem):
+   - Exemplo CERTO para "padarias de curitiba" (listagem; Curitiba e'
+     capital, entao o filtro de cidade fica na matriz - ver regra 13):
      SELECT e.cnpj_basico, emp.razao_social, e.nm_fantasia,
             m.municipio AS municipio, e.uf, c.nm_cnae
      FROM c_estabelecimentos e
@@ -262,7 +298,89 @@ REGRAS DE OURO:
    - Exemplo CERTO para "quantas MEIs existem" (contagem):
      SELECT valor FROM c_estatisticas_totais WHERE categoria = 'mei' AND chave = 'S'
 
-13. LINK PARA DETALHE DA EMPRESA - CRITICO:
+13. FILTRO POR CIDADE = "TEM ESTABELECIMENTO NA CIDADE" - CRITICO:
+   - A linha da listagem continua sendo a MATRIZ (e.cd_matriz_filial = 1),
+     mas o filtro de CIDADE NAO pode olhar so a sede da empresa: ele
+     precisa achar a empresa que tem QUALQUER estabelecimento na cidade
+     (matriz ou filial).
+   - Motivo: a rede pode ter a matriz numa cidade e as lojas em outra.
+     Exemplo real: KOCH HIPERMERCADO S/A (cnpj_basico 02831172) tem a
+     matriz em Tijucas (SC) e 4 filiais em Balneario de Picarras. Com
+     "e.municipio IN (...picarras...)" a empresa NAO aparece em
+     "atacadistas de picarras", que e' exatamente o que o usuario
+     espera ver.
+   - Forma CORRETA (semi-join por cnpj_basico):
+       AND e.cnpj_basico IN (
+           SELECT f.cnpj_basico FROM c_estabelecimentos f
+           WHERE f.municipio IN (
+               SELECT cd_municipio FROM c_municipios
+               WHERE municipio ILIKE '%PICARRAS%'
+           )
+       )
+   - NUNCA use EXISTS correlacionado para o filtro de cidade:
+       AND EXISTS (SELECT 1 FROM c_estabelecimentos f
+                   WHERE f.cnpj_basico = e.cnpj_basico
+                     AND f.municipio IN (...))
+     Medido no banco real: "atacadistas de picarras" = 0,3 s com o IN e
+     3,3 s com o EXISTS. O IN deixa o planner montar um hash dos
+     cnpj_basico da cidade e sai ~10x mais rapido.
+   - O EXISTS da regra 9 (nome fantasia) CONTINUA valendo: sao coisas
+     diferentes (aquele usa o indice GIN de nm_fantasia e e' barato).
+   - CUSTO (medido no banco real, com cache quente): o semi-join cresce
+     com o tamanho da cidade E com a popularidade da atividade.
+     "atacadistas de picarras" = 0,3 s; "supermercados de picarras" =
+     0,5 s; "padarias de picarras" = 2 a 5 s; "padarias de lages" =
+     6 s; "padarias de curitiba" = 12 s. O filtro direto na matriz
+     leva 0,03 a 0,3 s em todos esses casos. Use o bom senso:
+       * CIDADE PEQUENA/MEDIA + atividade especifica: use o semi-join
+         (e' o caso do KOCH em Picarras).
+       * CAPITAL OU METROPOLE (Sao Paulo, Rio de Janeiro, Belo
+         Horizonte, Curitiba, Porto Alegre, Florianopolis, Salvador,
+         Recife, Fortaleza, Goiania, Manaus, Belem, Brasilia): use o
+         filtro direto na matriz (e.municipio IN (...)). La a rede
+         procurada quase sempre tem a matriz na propria capital e o
+         semi-join custa 10 s ou mais.
+       * ATIVIDADE MUITO COMUM (padaria, mercado, restaurante, posto,
+         farmacia, salao de beleza - centenas de milhares de matrizes
+         no Brasil): prefira o filtro direto na matriz, pelo mesmo
+         motivo de custo.
+   - CONTAGEM PURA (COUNT sem GROUP BY, ex: "quantas padarias tem em
+     curitiba") tambem usa o filtro direto na matriz: o semi-join nao
+     muda o numero de forma util e so custa tempo.
+   - Se a pergunta citar a UF (e.uf = 'SC') e NAO citar cidade,
+     continue usando o e.uf direto (sem semi-join).
+   - O texto da resposta deve falar "empresas com estabelecimento em
+     <cidade>", porque a linha listada mostra o municipio da MATRIZ
+     (que pode ser outra cidade).
+   - Exemplo COMPLETO para "liste os atacadistas de picarras" (cidade
+     pequena, atividade especifica -> vale o semi-join):
+     SELECT e.cnpj_basico,
+            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+            emp.razao_social, e.nm_fantasia,
+            (SELECT COUNT(*) FROM c_estabelecimentos x
+             WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos,
+            m.municipio AS municipio, e.uf, c.nm_cnae
+     FROM c_estabelecimentos e
+     JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+     JOIN c_cnaes c ON c.cnae = e.cnae_principal
+     LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+     WHERE e.cd_matriz_filial = 1
+       AND e.cnae_principal IN (
+           SELECT cnae FROM c_cnaes WHERE nm_cnae ILIKE '%atacadista%'
+       )
+       AND e.cnpj_basico IN (
+           SELECT f.cnpj_basico FROM c_estabelecimentos f
+           WHERE f.municipio IN (
+               SELECT cd_municipio FROM c_municipios
+               WHERE municipio ILIKE '%PICARRAS%'
+           )
+       )
+     ORDER BY emp.razao_social
+     LIMIT 100
+   - O semi-join NAO substitui o filtro de CNAE: os dois vao sempre
+     juntos, ligados por AND.
+
+14. LINK PARA DETALHE DA EMPRESA - CRITICO:
    - Quando a pergunta gerar uma LISTAGEM de empresas, SEMPRE
      inclua o CNPJ completo concatenado no SELECT, para o
      front-end criar o link de detalhe.
@@ -281,7 +399,8 @@ FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
   seletivo que CNAE.
 - Use subquery de municipio + subquery de CNAE, NUNCA JOIN c_empresas
   se a pergunta nao pedir razao_social/porte/natureza.
-- Exemplo CORRETO para "padarias de Lages":
+- Exemplo CORRETO para "padarias de Lages" (atividade muito comum ->
+  filtro de cidade na matriz, ver regra 13):
   SELECT e.cnpj_basico, e.nm_fantasia, c.nm_cnae
   FROM c_estabelecimentos e
   JOIN c_cnaes c ON e.cnae_principal = c.cnae
@@ -291,8 +410,17 @@ FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
     )
     AND e.cnae_principal IN (
         SELECT cnae FROM c_cnaes
-        ORDER BY embedding <=> %s::halfvec(384)
-        LIMIT 1
+        WHERE nm_cnae ILIKE '%PALAVRA%'
+        UNION
+        SELECT cnae FROM (
+            SELECT cnae FROM c_cnaes
+            WHERE NOT EXISTS (
+                SELECT 1 FROM c_cnaes
+                WHERE nm_cnae ILIKE '%PALAVRA%'
+            )
+            ORDER BY embedding <=> %s::halfvec(384)
+            LIMIT 2
+        ) sub
     )
   LIMIT 100
 - Exemplo ERRADO (nao faca):
@@ -433,6 +561,18 @@ def _limpar_sql(bruto: Optional[str]) -> str:
     return texto
 
 
+def _usa_fallback_vetor(sql: str) -> bool:
+    """
+    True se o SQL usa o vetor apenas como fallback do ILIKE.
+
+    Exige o NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...),
+    que anula a parte vetorial quando o ILIKE encontra algum CNAE.
+    Sem esse guarda, o vetor entra junto com o ILIKE e mistura
+    categorias diferentes no LIMIT 100.
+    """
+    return bool(REGEX_FALLBACK_VETOR.search(sql or ''))
+
+
 def _montar_user_prompt(pergunta: str, historico=None) -> str:
     """Monta o prompt do usuario combinando historico + pergunta atual."""
     partes = []
@@ -556,7 +696,30 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
             continue
 
         # --- injeta o vetor, se o SQL usar busca semantica ---
-        from .embedding_service import injetar_vetor
+        from .embedding_service import injetar_vetor, tem_placeholder
+
+        # Opcao 1: o vetor SO pode entrar como fallback do ILIKE.
+        # Se o SQL usa o vetor (%s) sem o NOT EXISTS, rejeita e pede
+        # correcao ao LLM (mesmo fluxo de retry do validador).
+        if tem_placeholder(validation.sql) and not _usa_fallback_vetor(validation.sql):
+            ultimo_erro = (
+                'Busca vetorial sem fallback: o vetor so pode ser usado '
+                'quando o ILIKE nao encontrar nenhum CNAE. Envolva a '
+                'subquery do embedding em '
+                'NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...).'
+            )
+            logger.warning(
+                'SQL com vetor sem fallback do ILIKE na tentativa %s',
+                tentativa,
+            )
+            user_prompt = (
+                f'{user_prompt}\n\n'
+                f'O SQL anterior foi rejeitado pelo gerador: {ultimo_erro}\n'
+                f'SQL rejeitado:\n{validation.sql}\n'
+                'Corrija e responda APENAS com o SQL, sem markdown.'
+            )
+            continue
+
         sql_com_vetor, erro_vetor = injetar_vetor(validation.sql, pergunta)
         if erro_vetor:
             return {

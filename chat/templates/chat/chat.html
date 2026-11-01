@@ -497,9 +497,13 @@
         html += `<div id="${idTabela}-canvas" class="mb-3" style="display:none;"></div>`;
 
         html += '<div class="tabela-wrapper"><table><thead><tr>';
+        // Cabecalhos mais legiveis para colunas conhecidas
+        const TITULOS_COLUNAS = {
+            cnpj_completo: 'CNPJ',
+            qtd_estabelecimentos: 'Estabelecimentos',
+        };
         for (const c of colunas) {
-            // Renomeia o cabecalho cnpj_completo para "CNPJ" (mais legivel)
-            const titulo = (c === 'cnpj_completo') ? 'CNPJ' : c;
+            const titulo = TITULOS_COLUNAS[c] || c;
             html += `<th>${escaparHtml(titulo)}</th>`;
         }
         html += '</tr></thead><tbody>';
@@ -520,6 +524,10 @@
                                   cnpjLimpo.slice(12,14);
                     }
                     html += `<td><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(cnpjFmt)}</a></td>`;
+                } else if (c === 'razao_social' && row[c] && row['cnpj_completo']) {
+                    // Razao social tambem leva para a pagina da empresa
+                    const cnpjLimpo = String(row['cnpj_completo']).replace(/\D/g, '');
+                    html += `<td><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(String(row[c]))}</a></td>`;
                 } else {
                     const vFmt = formatarValor(row[c]);
                     html += `<td>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
