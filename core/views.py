@@ -861,6 +861,7 @@ def detalhe_empresa(request, cnpj):
                     e.uf,
                     e.municipio,
                     mun.municipio AS municipio_descricao,
+                    e.nm_cidade_ext,
                     e.cd_pais,
                     p.pais AS pais_descricao,
                     

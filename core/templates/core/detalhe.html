@@ -320,7 +320,7 @@
                                 <th>Nome Fantasia</th>
                                 <th>Situação</th>
                                 <th>Endereço</th>
-                                <th>UF</th>
+                                <th>Município/UF</th>
                                 <th>Telefone</th>
                                 <th>Email</th>
                                 <th>Início</th>
@@ -347,7 +347,9 @@
                                     {% else %}<span class="badge bg-dark">{{ est.situacao_descricao }}</span>{% endif %}
                                 </td>
                                 <td>{{ est.tip_logradouro|default:"" }} {{ est.logradouro|default:"-" }}, {{ est.numero|default:"-" }} - {{ est.bairro|default:"-" }}</td>
-                                <td>{{ est.uf|default:"-" }}</td>
+                                <td>
+                                    {% if est.municipio_descricao %}{{ est.municipio_descricao }}{% elif est.nm_cidade_ext %}{{ est.nm_cidade_ext }}{% else %}-{% endif %}{% if est.uf %} / {{ est.uf }}{% endif %}
+                                </td>
                                 <td>
                                     {% if est.ddd_1 and est.tel_1 %}
                                         ({{ est.ddd_1 }}) {{ est.tel_1 }}
