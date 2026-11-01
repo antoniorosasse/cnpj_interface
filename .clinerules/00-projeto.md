@@ -48,7 +48,7 @@ atual: se algo mudar, atualize o arquivo correspondente.
 
     source venv/bin/activate
     python manage.py runserver 8002          # app em http://localhost:8002/
-    python manage.py test chat               # 170 testes em chat/tests/
+    python manage.py test chat               # 215 testes em chat/tests/ (+4 core)
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo
 
@@ -75,6 +75,13 @@ atual: se algo mudar, atualize o arquivo correspondente.
   keyset pagination (nunca OFFSET), indices parciais com
   `cd_matriz_filial = 1`, `ILIKE` (nunca `UPPER(col) LIKE`) e leitura de
   contagens em `c_estatisticas_totais`.
+- **Filtro por cidade em listagem de matrizes** usa semi-join
+  `e.cnpj_basico IN (SELECT ... FROM c_estabelecimentos ... municipio ILIKE
+  '%X%')` com `idx_estab_municipio_cnpj`. Nunca `= ANY(ARRAY(SELECT ...))`
+  (medido: 8,5 s em Lages e travou em Curitiba). O custo restante depende do
+  CNAE, nao do tamanho da cidade.
+- No texto natural, semi-join de cidade vira "empresas com estabelecimento em
+  X" (`extrair_cidade_semi_join`); a coluna `municipio` e a da matriz.
 - Novas funcionalidades de consulta seguem o padrao de `core/views.py`;
   formatacao de numeros fica em `core/templatetags/num_filters.py`.
 - Templates: `core/templates/core/`, `chat/templates/chat/`, base em
