@@ -39,7 +39,8 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templates/chat/
     |   |   +-- chat.html
     |   |   +-- historico.html
-    |   +-- tests/                  # 170 testes
+    |   +-- tests/                  # 218 testes
+    |   |   +-- test_embedding_service.py
     |   |   +-- test_integracao.py
     |   |   +-- test_models.py
     |   |   +-- test_mongo_models.py
@@ -48,7 +49,8 @@ que traduz perguntas em linguagem natural para SQL.
     |   |   +-- test_sql_generator.py
     |   |   +-- test_sql_validator.py
     |   +-- management/commands/
-    |   |   +-- limpar_conversas_antigas.py
+    |   |   +-- limpar_conversas_antigas.py   # Retencao do historico (padrao 30 dias)
+    |   |   +-- relatorio_acesso.py           # Logins + perguntas do chat (chat_logacesso)
     |   +-- models.py               # Conversa + Mensagem (Postgres)
     |   +-- mongo_models.py         # Conversa + Mensagem (MongoDB)
     |   +-- repo.py                 # Dispatcher (Mongo | Postgres)
@@ -306,7 +308,7 @@ O pipeline **é um RAG** (retrieval-augmented generation) — mas um RAG sobre
 vetorial no CNAE + execucao de SQL, e o que entra no prompt do LLM sao as
 **linhas recuperadas**, nao pedacos de texto de uma base vetorial. Detalhes na
 secao [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
-`docs/PROJETOS.md` (secao 7.1).
+`~/Projetos/docs/PROJETOS.md` (secao 7.1).
 
 ## Pipeline
 
@@ -353,6 +355,13 @@ O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atac
 
 Não troque o `IN` por `= ANY(ARRAY(SELECT ...))` tentando "otimizar": em Picarras fica 0,3 s (13x mais rápido), mas o planner perde a estimativa de linhas e o plano desanda (8,5 s em padarias de Lages na primeira execução e Curitiba não terminou nem em minutos).
 
+Custo de disco dos embeddings: < 2 MB (apenas 1.359 CNAEs).
+Performance da geração do vetor: ~30ms em produção.
+
+### Contagem de estabelecimentos por empresa
+
+Quando a listagem mostra quantos estabelecimentos cada empresa tem, o SQL usa
+uma subconsulta correlacionada:
 
 ```sql
 (SELECT COUNT(*) FROM c_estabelecimentos x
@@ -360,9 +369,6 @@ Não troque o `IN` por `= ANY(ARRAY(SELECT ...))` tentando "otimizar": em Picarr
 ```
 
 O `COUNT` usa a PK (`cnpj_basico` na frente), então é barato por linha (a listagem de "mercados KOCH" roda em ~100 ms). O `resposta_natural` cita o número no texto ("o KOCH HIPERMERCADO S/A tem 115 estabelecimentos") e o front-end mostra a coluna como **Estabelecimentos**. Na tabela, tanto o CNPJ quanto a razão social são links para `/empresa/<cnpj>/?next=/chat/` (regra 11 do `SYSTEM_PROMPT` e regra 8 do `resposta_natural`).
-
-Custo de disco: < 2 MB (apenas 1.359 CNAEs).
-Performance: ~30ms em produção.
 
 ### 1.2 RAG — o que é recuperado e o que vai no prompt
 
@@ -483,6 +489,7 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 | GET | `/chat/conversa/<id>/` | Abre conversa |
 | POST | `/chat/nova/` | Nova conversa |
 | POST | `/chat/deletar/<id>/` | Deleta conversa |
+| POST | `/chat/limpar/` | (legado) limpa a conversa da sessao |
 | GET | `/chat/health/deep/` | Health check profundo do chat |
 | GET/POST | `/accounts/login/` | Login |
 | POST | `/accounts/logout/` | Logout |
@@ -509,10 +516,12 @@ e nao passa pelo ORM.
 
 # Testes
 
-    python manage.py test chat
+    python manage.py test chat       # 218 testes do chat
+    python manage.py test core       # 4 testes do core
 
-Roda **170 testes** em `chat/tests/`:
+Roda **218 testes** em `chat/tests/` (+ 4 em `core/tests.py`):
 
+- `test_embedding_service.py` - geracao de vetor, sinonimos e substituicao do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
 - `test_mongo_models.py` - funcoes pymongo (`chat_conversas`)
 - `test_sql_generator.py` - geracao de SQL + retry + historico
@@ -530,6 +539,7 @@ e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
 Ver `.env.example` para a lista completa. As principais:
 
 - `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` - Django padrao
+- `CSRF_TRUSTED_ORIGINS` - origens confiaveis para POST (producao: os dois subdominios)
 - `DJANGO_DB_*` - banco `django_internal`
 - `PG_*` - banco `bancocnpj` (dados da RFB)
 - `CHAT_PG_*` - usuario read-only `chat_ia`
@@ -539,6 +549,8 @@ Ver `.env.example` para a lista completa. As principais:
 - `MONGO_*` - conexao MongoDB (host, porta, db, user, password)
 - `DEEPSEEK_API_KEY` - chave da API do chat
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrao: `deepseek-chat`)
+- `CHAT_DEEPSEEK_BASE_URL` - endpoint compativel OpenAI (padrao: `https://api.deepseek.com`)
+- `AS400_*` - conexao com o IBM i (`AS400_JDBC_JAR` aponta pro `lib/jt400.jar`; usada pelo `testar_simple.py` e pelas conexoes de `core/conexoes.py`)
 
 # Deploy
 

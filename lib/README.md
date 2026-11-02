@@ -12,3 +12,7 @@ Para baixar:
 1. Acesse https://jt400.sourceforge.net/
 2. Baixe o arquivo `jt400.jar` (versao mais recente)
 3. Coloque exatamente nesta pasta: `lib/jt400.jar`
+
+O caminho absoluto precisa estar no `.env`:
+
+    AS400_JDBC_JAR=/caminho/absoluto/para/lib/jt400.jar

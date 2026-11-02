@@ -48,7 +48,7 @@ atual: se algo mudar, atualize o arquivo correspondente.
 
     source venv/bin/activate
     python manage.py runserver 8002          # app em http://localhost:8002/
-    python manage.py test chat               # 215 testes em chat/tests/ (+4 core)
+    python manage.py test chat               # 218 testes em chat/tests/ (+4 core)
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo
 
