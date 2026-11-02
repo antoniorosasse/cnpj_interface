@@ -301,6 +301,13 @@ O tempo de resposta tipico e:
 Traduz perguntas em portugues pra SQL e executa no banco, em modo
 read-only. Tem historico de conversas e contexto.
 
+O pipeline **e' um RAG** (retrieval-augmented generation) — mas um RAG sobre
+**dados estruturados**, nao sobre documentos: a recuperacao acontece por busca
+vetorial no CNAE + execucao de SQL, e o que entra no prompt do LLM sao as
+**linhas recuperadas**, nao pedacos de texto de uma base vetorial. Detalhes na
+secao [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
+`docs/PROJETOS.md` (secao 7.1).
+
 ## Pipeline
 
     Pergunta (PT-BR)
@@ -318,43 +325,75 @@ read-only. Tem historico de conversas e contexto.
 - Passa o historico da conversa como contexto (ultimas 10 mensagens)
 - Pode responder `RECUSAR: <motivo>` quando a pergunta pede dado que nao
   existe no schema (ex: faturamento, numero de funcionarios)
-  ### 1.1 Busca semântica (vetorial)
 
-  Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` gera um SQL com `ILIKE` **e** com a cláusula:
+### 1.1 Busca semântica (vetorial)
 
-  ```sql
-  ORDER BY embedding <=> %s::halfvec(384)
-  ```
+Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` gera um SQL com `ILIKE` **e** com a cláusula:
 
-  O `chat/services/embedding_service.py` gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o `%s` antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
+```sql
+ORDER BY embedding <=> %s::halfvec(384)
+```
 
-  **O vetor é apenas fallback do `ILIKE`**: a parte vetorial só devolve linhas quando o `ILIKE` não encontra nenhum CNAE, através de um `NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...)`. Sem esse guarda, o `UNION` mistura CNAEs "vizinhos" com o CNAE exato e o `LIMIT 100` enche de categorias erradas (ex: "supermercados de picarras" trazia 121 minimercados/mercearias junto com os 4 supermercados). O `sql_generator` rejeita e pede correção ao LLM quando o SQL usa `%s` sem esse `NOT EXISTS`.
+O `chat/services/embedding_service.py` gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o `%s` antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
 
-  **Atividade + nome (marca)**: quando a pergunta cita um tipo de negócio **e** um nome ("liste os mercados KOCH"), o SQL precisa dos **dois** filtros ligados por `AND`: o filtro de CNAE (`ILIKE '%mercado%'`) e o `EXISTS` de `nm_fantasia ILIKE '%KOCH%'`. Se o LLM descarta o filtro de CNAE, a query vira "qualquer empresa com o nome", o `LIMIT 100` corta a lista e a empresa certa não aparece (eram 100 KOCHs de outros ramos, sem o KOCH HIPERMERCADO S/A, CNAE 4691500). Pelo mesmo motivo, toda listagem com `LIMIT` deve ter `ORDER BY` (ex: `ORDER BY emp.razao_social`) para o corte ser determinístico. As regras estão no `SYSTEM_PROMPT` (regras 9 e 10) e na seção `ATIVIDADE + NOME (MARCA)` do `schema_context.py`.
+**O vetor é apenas fallback do `ILIKE`**: a parte vetorial só devolve linhas quando o `ILIKE` não encontra nenhum CNAE, através de um `NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...)`. Sem esse guarda, o `UNION` mistura CNAEs "vizinhos" com o CNAE exato e o `LIMIT 100` enche de categorias erradas (ex: "supermercados de picarras" trazia 121 minimercados/mercearias junto com os 4 supermercados). O `sql_generator` rejeita e pede correção ao LLM quando o SQL usa `%s` sem esse `NOT EXISTS`.
 
-  **Filtro por cidade = "tem estabelecimento na cidade"**: em listagens, o filtro de cidade não pode olhar só a matriz. A rede pode ter a sede em uma cidade e as lojas em outra: o KOCH HIPERMERCADO S/A (`cnpj_basico` 02831172) tem a matriz em Tijucas (CNAE 4691500) e 4 filiais em Balneário de Picarras, então com `e.municipio IN (...picarras...)` a empresa desaparecia de "atacadistas de picarras". A regra 13 do `SYSTEM_PROMPT` e a seção `FILTRO POR CIDADE` do `schema_context.py` mandam usar semi-join por `cnpj_basico`:
+**Atividade + nome (marca)**: quando a pergunta cita um tipo de negócio **e** um nome ("liste os mercados KOCH"), o SQL precisa dos **dois** filtros ligados por `AND`: o filtro de CNAE (`ILIKE '%mercado%'`) e o `EXISTS` de `nm_fantasia ILIKE '%KOCH%'`. Se o LLM descarta o filtro de CNAE, a query vira "qualquer empresa com o nome", o `LIMIT 100` corta a lista e a empresa certa não aparece (eram 100 KOCHs de outros ramos, sem o KOCH HIPERMERCADO S/A, CNAE 4691500). Pelo mesmo motivo, toda listagem com `LIMIT` deve ter `ORDER BY` (ex: `ORDER BY emp.razao_social`) para o corte ser determinístico. As regras estão no `SYSTEM_PROMPT` (regras 9 e 10) e na seção `ATIVIDADE + NOME (MARCA)` do `schema_context.py`.
 
-  ```sql
-  AND e.cnpj_basico IN (
+**Filtro por cidade = "tem estabelecimento na cidade"**: em listagens, o filtro de cidade não pode olhar só a matriz. A rede pode ter a sede em uma cidade e as lojas em outra: o KOCH HIPERMERCADO S/A (`cnpj_basico` 02831172) tem a matriz em Tijucas (CNAE 4691500) e 4 filiais em Balneário de Picarras, então com `e.municipio IN (...picarras...)` a empresa desaparecia de "atacadistas de picarras". A regra 13 do `SYSTEM_PROMPT` e a seção `FILTRO POR CIDADE` do `schema_context.py` mandam usar semi-join por `cnpj_basico`:
+
+```sql
+AND e.cnpj_basico IN (
       SELECT f.cnpj_basico FROM c_estabelecimentos f
       WHERE f.municipio IN (SELECT cd_municipio FROM c_municipios
                             WHERE municipio ILIKE '%PICARRAS%'))
-  ```
+```
 
-  O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atacadistas de picarras" = 0,3 s com o `IN` e 3,3 s com o `EXISTS` (o `IN` deixa o planner montar um hash dos `cnpj_basico` da cidade). O semi-join agora usa o índice `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (criado com `CREATE INDEX CONCURRENTLY` em 31/10/2026: 38,5M linhas, 1,1 GB, ~1min44s; `maintenance_work_mem=1GB`), e os 632 mil `cnpj_basico` de Curitiba saem num `Index Only Scan` em ~165 ms. Com ele os tempos caíram para cerca de metade (atacadistas de picarras 0,3 s; supermercados de picarras 0,3-0,9 s; padarias de picarras 4-6 s; padarias de Lages 4-5 s; padarias de Curitiba 5-7 s, contra 0,01-0,2 s do filtro direto na matriz). O gargalo que sobrou é o CNAE, não a cidade: `ILIKE '%padaria%'` casa com 3 CNAEs e o planner varre as ~405 mil matrizes de padaria do Brasil uma vez por CNAE (~1,7 s cada). Por isso a regra mantém o filtro direto em capitais/metrópoles, em atividades muito comuns e em contagens puras.
+O `EXISTS` correlacionado para a cidade é proibido: medido no banco real, "atacadistas de picarras" = 0,3 s com o `IN` e 3,3 s com o `EXISTS` (o `IN` deixa o planner montar um hash dos `cnpj_basico` da cidade). O semi-join agora usa o índice `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (criado com `CREATE INDEX CONCURRENTLY` em 31/10/2026: 38,5M linhas, 1,1 GB, ~1min44s; `maintenance_work_mem=1GB`), e os 632 mil `cnpj_basico` de Curitiba saem num `Index Only Scan` em ~165 ms. Com ele os tempos caíram para cerca de metade (atacadistas de picarras 0,3 s; supermercados de picarras 0,3-0,9 s; padarias de picarras 4-6 s; padarias de Lages 4-5 s; padarias de Curitiba 5-7 s, contra 0,01-0,2 s do filtro direto na matriz). O gargalo que sobrou é o CNAE, não a cidade: `ILIKE '%padaria%'` casa com 3 CNAEs e o planner varre as ~405 mil matrizes de padaria do Brasil uma vez por CNAE (~1,7 s cada). Por isso a regra mantém o filtro direto em capitais/metrópoles, em atividades muito comuns e em contagens puras.
 
 Não troque o `IN` por `= ANY(ARRAY(SELECT ...))` tentando "otimizar": em Picarras fica 0,3 s (13x mais rápido), mas o planner perde a estimativa de linhas e o plano desanda (8,5 s em padarias de Lages na primeira execução e Curitiba não terminou nem em minutos).
 
 
-  ```sql
-  (SELECT COUNT(*) FROM c_estabelecimentos x
+```sql
+(SELECT COUNT(*) FROM c_estabelecimentos x
    WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos
-  ```
+```
 
-  O `COUNT` usa a PK (`cnpj_basico` na frente), então é barato por linha (a listagem de "mercados KOCH" roda em ~100 ms). O `resposta_natural` cita o número no texto ("o KOCH HIPERMERCADO S/A tem 115 estabelecimentos") e o front-end mostra a coluna como **Estabelecimentos**. Na tabela, tanto o CNPJ quanto a razão social são links para `/empresa/<cnpj>/?next=/chat/` (regra 11 do `SYSTEM_PROMPT` e regra 8 do `resposta_natural`).
+O `COUNT` usa a PK (`cnpj_basico` na frente), então é barato por linha (a listagem de "mercados KOCH" roda em ~100 ms). O `resposta_natural` cita o número no texto ("o KOCH HIPERMERCADO S/A tem 115 estabelecimentos") e o front-end mostra a coluna como **Estabelecimentos**. Na tabela, tanto o CNPJ quanto a razão social são links para `/empresa/<cnpj>/?next=/chat/` (regra 11 do `SYSTEM_PROMPT` e regra 8 do `resposta_natural`).
 
-  Custo de disco: < 2 MB (apenas 1.359 CNAEs).
-  Performance: ~30ms em produção.
+Custo de disco: < 2 MB (apenas 1.359 CNAEs).
+Performance: ~30ms em produção.
+
+### 1.2 RAG — o que é recuperado e o que vai no prompt
+
+O chat **é um RAG**, mas um RAG sobre **dados estruturados**, não sobre
+documentos. A recuperação acontece em quatro pontos, e cada um entra no pipeline
+num lugar diferente:
+
+| Fonte | Classe | O que recupera | Onde entra |
+|---|---|---|---|
+| `schema_context.py` | **KB fixa** (escrita à mão) | DDL real, tamanhos, códigos de porte/situação, índices e regras de performance | direto no `SYSTEM_PROMPT` do `sql_generator`, em **toda** pergunta |
+| `embedding_service.py` + pgvector | vetorial (`<=>`, cosseno) | até **2 CNAEs** vizinhos do termo, com `halfvec(384)` (Braza) | **dentro do SQL**, como filtro `cnae_principal IN (...)` — e só quando o `ILIKE` não acha nenhum CNAE |
+| `sql_executor.py` | SQL (a consulta em si) | as linhas que a consulta devolveu (até `CHAT_SQL_MAX_ROWS`, padrão 1000) | as **20 primeiras** (`LIMITE_LINHAS`) viram `Dados (JSON)` no prompt do `resposta_natural`, junto do **total real** e do aviso de truncamento |
+| histórico da conversa | memória | as últimas 10 interações (`MAX_CONTEXTO`, até 20 mensagens) | no prompt do `sql_generator`, para continuidade ("e dessas em SC?") |
+
+**Por que isso é RAG:** a geração final não responde de memória — ela recebe o
+resultado da recuperação e é obrigada a usá-lo (`"Responda APENAS com base nos
+dados fornecidos"`, `"NUNCA invente números"`), com temperatura `0.2`,
+`max_tokens` 300 e `fallback` sem LLM (`_fallback_texto`) quando a chamada falha.
+O efeito é o de RAG clássico: menos alucinação e resposta rastreável até a linha
+do banco (o SQL executado fica visível na tela e em `chat_logacesso`).
+
+**O que não é RAG aqui** (decisão registrada, não esquecimento):
+
+- O **schema não é recuperado por similaridade**: `SCHEMA_CONTEXT` é fixo
+  (decisão de 12/10/2026 — previsibilidade e custo de token).
+- O **vetor não vai para o prompt**: ele vira filtro SQL (`<=>`), então o LLM
+  nunca "lê" os CNAEs vizinhos; quem define o contexto é a consulta executada.
+  E o vetor é **fallback** do `ILIKE`, nunca o caminho principal.
+- Não há base de documentos/chunks nem framework de RAG (LangChain, LlamaIndex
+  etc.): são serviços próprios (~250 linhas em `embedding_service.py`) + pgvector
+  0.8.1.
 
 ### 2. `sql_validator`
 
