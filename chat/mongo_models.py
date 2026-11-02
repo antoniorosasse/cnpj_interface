@@ -57,7 +57,11 @@ COLECAO = 'chat_conversas'
 # ============================================================
 
 def _get_collection() -> Collection:
-    """Retorna a collection chat_conversas (singleton via ConexaoMongoDB)."""
+    """Retorna a collection de conversas.
+
+    Em producao/dev e' chat_conversas; durante testes e' chat_conversas_test,
+    para que a suite nunca apague o historico real.
+    """
     import sys
     mongo = ConexaoMongoDB()
     db = mongo.get_database()

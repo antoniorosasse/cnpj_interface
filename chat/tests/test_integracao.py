@@ -13,8 +13,11 @@ Roda com os dois backends:
     python manage.py test chat.tests.test_integracao                 # Postgres
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # Mongo
 
-ATENCAO: quando roda no Mongo, APAGA a collection chat_conversas
-antes/depois. Nao rodar com dados reais.
+Isolamento no Mongo: em testes, mongo_models._get_collection() troca a
+collection para chat_conversas_test (sufixo _test, ver mongo_models.py),
+entao as conversas reais de desenvolvimento em chat_conversas NAO sao
+tocadas. _limpar_backend() apaga apenas chat_conversas_test antes/depois
+de cada teste.
 
 Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
@@ -141,7 +144,9 @@ class IntegracaoBaseTests(TestCase):
     def _limpar_backend(self):
         """Limpa o backend ativo (so conversas do usuario de teste)."""
         if repo.backend_ativo() == 'mongo':
-            # No Mongo, apaga TUDO (nao tem isolamento por usuario no teste)
+            # No Mongo apaga tudo da collection de teste (chat_conversas_test):
+            # nao ha isolamento por usuario. O sufixo _test vem de
+            # mongo_models._get_collection(), entao o historico real fica intacto.
             mm._get_collection().delete_many({})
         else:
             # No Postgres, apaga so do usuario de teste

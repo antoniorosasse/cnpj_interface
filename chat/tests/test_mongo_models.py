@@ -2,12 +2,10 @@
 """
 Testes das funcoes de acesso ao MongoDB (chat/mongo_models.py).
 
-Usa o Mongo real (collection chat_conversas) e limpa antes/depois
-de cada teste.
-
-ATENCAO: estes testes APAGAM todos os documentos da collection
-'chat_conversas' no banco configurado. Nao rodar com dados reais
-sem um banco de teste separado.
+Usa o Mongo real, mas em testes mongo_models._get_collection() aponta
+para a collection chat_conversas_test (sufixo _test): o historico real de
+desenvolvimento em chat_conversas NAO e apagado. A collection de teste e
+limpa antes/depois de cada teste.
 
 Roda com:
     python manage.py test chat.tests.test_mongo_models
@@ -24,7 +22,7 @@ from chat import mongo_models as mm
 
 
 def _limpar_collection():
-    """Apaga todos os documentos da collection chat_conversas."""
+    """Apaga todos os documentos da collection de teste (chat_conversas_test)."""
     mm._get_collection().delete_many({})
 
 
@@ -48,6 +46,25 @@ class MongoModelsBaseTests(TestCase):
 
     def tearDown(self):
         _limpar_collection()
+
+
+# ============================================================
+# Isolamento da suite (nunca tocar o historico real)
+# ============================================================
+
+class IsolamentoCollectionTests(MongoModelsBaseTests):
+    """Garante que a suite escreve em chat_conversas_test, nunca em chat_conversas."""
+
+    def test_get_collection_usa_sufixo_test_durante_os_testes(self):
+        nome = mm._get_collection().name
+        self.assertTrue(
+            nome.endswith('_test'),
+            f'a suite deveria usar uma collection com sufixo _test, veio {nome}',
+        )
+        self.assertEqual(nome, mm.COLECAO + '_test')
+
+    def test_historico_real_nao_e_a_collection_dos_testes(self):
+        self.assertNotEqual(mm._get_collection().name, mm.COLECAO)
 
 
 # ============================================================
