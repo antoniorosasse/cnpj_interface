@@ -1,7 +1,30 @@
 # CNPJ Interface
 
-Consulta de empresas da Receita Federal (dados publicos de CNPJ) + Chat IA
+Consulta de empresas da Receita Federal (dados públicos de CNPJ) + Chat IA
 que traduz perguntas em linguagem natural para SQL.
+
+## Índice
+
+- [Stack](#stack)
+- [Estrutura](#estrutura)
+- [Como rodar local](#como-rodar-local)
+- [Requisitos de dados](#requisitos-de-dados)
+- [Consulta de CNPJ](#consulta-de-cnpj)
+  - [O que dá pra buscar](#o-que-dá-pra-buscar)
+  - [O que aparece no detalhe da empresa](#o-que-aparece-no-detalhe-da-empresa)
+  - [Estatísticas (`/estatisticas/`)](#estatísticas-estatisticas)
+  - [Performance](#performance)
+- [Chat IA](#chat-ia)
+  - [Pipeline](#pipeline)
+  - [Endpoints do chat](#endpoints-do-chat)
+- [Endpoints (todos)](#endpoints-todos)
+- [Bancos de dados](#bancos-de-dados)
+- [Testes](#testes)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Deploy](#deploy)
+- [Ambiente](#ambiente)
+- [Scripts de manutenção](#scripts-de-manutenção)
+- [Repositórios relacionados](#repositórios-relacionados)
 
 ## Stack
 
@@ -11,7 +34,7 @@ que traduz perguntas em linguagem natural para SQL.
 - MongoDB 8 (backend alternativo do chat, via `CHAT_USE_MONGO=1`)
 - psycopg2-binary, pymongo
 - DeepSeek (chat IA via `openai` SDK)
-- Gunicorn + systemd (producao)
+- Gunicorn + systemd (produção)
 
 ## Estrutura
 
@@ -78,7 +101,7 @@ Pre-requisitos:
 
 - Python 3.13
 - PostgreSQL 15 rodando em `localhost:5432`
-- MongoDB 8 rodando em `localhost:27017` (so se for usar `CHAT_USE_MONGO=1`)
+- MongoDB 8 rodando em `localhost:27017` (só se for usar `CHAT_USE_MONGO=1`)
 
 Passos:
 
@@ -92,13 +115,13 @@ Passos:
 
 Acessa em http://localhost:8002/
 
-Observacoes:
+Observações:
 
 - O projeto assume **dois bancos PostgreSQL**: `django_internal` (auth,
   sessions, admin, chat) e `bancocnpj` (dados da RFB). Ambos precisam
   existir antes do `migrate`.
-- O `.env.example` tem todas as variaveis. Sem `DEEPSEEK_API_KEY`, o chat
-  nao funciona (mas o resto sim).
+- O `.env.example` tem todas as variáveis. Sem `DEEPSEEK_API_KEY`, o chat
+  não funciona (mas o resto sim).
 
   
 ## Requisitos de dados
@@ -133,90 +156,90 @@ texto que o LLM lê para gerar SQL.
 # Consulta de CNPJ
 
 A parte principal do projeto: consulta de empresas da Receita Federal,
-com filtros avancados, paginacao rapida e detalhamento completo de cada
+com filtros avançados, paginação rápida e detalhamento completo de cada
 empresa.
 
-## O que da pra buscar
+## O que dá pra buscar
 
-A pagina inicial (`/`) lista empresas (matrizes) com filtros combinaveis:
+A página inicial (`/`) lista empresas (matrizes) com filtros combináveis:
 
 | Filtro | O que aceita | Exemplo |
 |---|---|---|
-| Razao social | Texto parcial (case-insensitive) | `MORAIS` |
+| Razão social | Texto parcial (case-insensitive) | `MORAIS` |
 | Nome fantasia | Texto parcial (case-insensitive) | `MERCADO` |
-| CNPJ | 8 digitos (basico) ou 14 (completo) | `12345678` ou `12345678000199` |
+| CNPJ | 8 dígitos (básico) ou 14 (completo) | `12345678` ou `12345678000199` |
 | UF | 2 letras | `SP` |
-| Situacao | Nula, Ativa, Suspensa, Inapta, Baixada | `ATIVA` |
+| Situação | Nula, Ativa, Suspensa, Inapta, Baixada | `ATIVA` |
 | Simples | S ou N | `S` |
 | MEI | S ou N | `S` |
 
-### Ordenacao
+### Ordenação
 
 A lista pode ser ordenada por:
 
-- **CNPJ** (padrao) - mais rapido
-- **Razao social** - usa INNER JOIN com `c_empresas`
+- **CNPJ** (padrão) - mais rápido
+- **Razão social** - usa INNER JOIN com `c_empresas`
 - **Nome fantasia** - mesmo esquema
 
-### Paginacao
+### Paginação
 
-Usa **keyset pagination** (nao OFFSET). Isso significa que a pagina 5000
-carrega tao rapido quanto a pagina 1, mesmo com 38 milhoes de linhas.
+Usa **keyset pagination** (não OFFSET). Isso significa que a página 5000
+carrega tão rápido quanto a página 1, mesmo com 38 milhões de linhas.
 
-O botao "Proxima" passa o ultimo CNPJ/razao da pagina atual como ponto de
-partida. O botao "Anterior" faz o mesmo, ao contrario. A contagem total
-usa a tabela de metadados `c_estatisticas_totais` quando nao ha filtros,
-e cache de 15min com timeout de 800ms quando ha filtros combinados.
+O botão "Próxima" passa o último CNPJ/razão da página atual como ponto de
+partida. O botão "Anterior" faz o mesmo, ao contrário. A contagem total
+usa a tabela de metadados `c_estatisticas_totais` quando não há filtros,
+e cache de 15min com timeout de 800ms quando há filtros combinados.
 
 ## O que aparece no detalhe da empresa
 
-A pagina `/empresa/<cnpj>/` mostra **tudo** que a Receita publica sobre
-aquela empresa. Dividido em secoes:
+A página `/empresa/<cnpj>/` mostra **tudo** que a Receita pública sobre
+aquela empresa. Dividido em seções:
 
-### Identificacao
+### Identificação
 
 - CNPJ formatado (`00.000.000/0000-00`)
-- Razao social
+- Razão social
 - Nome fantasia
 - Tipo: **MATRIZ** ou **FILIAL**
 
 ### Dados cadastrais
 
-- **Natureza juridica** - codigo + descricao (ex: `206-2 - Sociedade Empresaria Limitada`)
-- **Porte** - ME (Micro Empresa), EPP (Empresa de Pequeno Porte), Demais, ou Nao informado
+- **Natureza jurídica** - código + descrição (ex: `206-2 - Sociedade Empresaria Limitada`)
+- **Porte** - ME (Micro Empresa), EPP (Empresa de Pequeno Porte), Demais, ou Não informado
 - **Capital social** - em R$
 - **Data de abertura** (`dt_ini`)
-- **Qualificacao do responsavel** - codigo
+- **Qualificação do responsável** - código
 
-### Situacao cadastral
+### Situação cadastral
 
-- **Situacao** - Ativa, Suspensa, Inapta, Baixada, Nula
-- **Data da situacao** (`dt_sit_cadastro`)
-- **Motivo** - codigo + descricao (ex: `01 - Extincao por Encerramento de Liquidacao`)
+- **Situação** - Ativa, Suspensa, Inapta, Baixada, Nula
+- **Data da situação** (`dt_sit_cadastro`)
+- **Motivo** - código + descrição (ex: `01 - Extincao por Encerramento de Liquidacao`)
 
 ### Simples Nacional e MEI
 
 Dois cards lado a lado:
 
-- **Simples Nacional**: status (SIM/NAO), data de opcao, data de exclusao
-- **MEI**: status (SIM/NAO), data de opcao, data de exclusao
+- **Simples Nacional**: status (SIM/NAO), data de opção, data de exclusão
+- **MEI**: status (SIM/NAO), data de opção, data de exclusão
 
-### Atividade economica (CNAE)
+### Atividade econômica (CNAE)
 
-- **CNAE principal** - codigo + descricao
-- **CNAE secundarios** - lista de codigos separados por virgula
+- **CNAE principal** - código + descrição
+- **CNAE secundários** - lista de códigos separados por vírgula
 
-### Endereco e contato
+### Endereço e contato
 
-- Logradouro (tipo + nome), numero, complemento, bairro
+- Logradouro (tipo + nome), número, complemento, bairro
 - **CEP**
-- **Municipio** - codigo IBGE + nome
+- **Município** - código IBGE + nome
 - **UF**
-- **Pais** - codigo + nome (Brasil, na maioria)
+- **País** - código + nome (Brasil, na maioria)
 - **Telefone 1** e **Telefone 2** - formatados com DDD
 - **Fax**
 - **Email**
-- **Situacao especial** + data (se houver)
+- **Situação especial** + data (se houver)
 
 ### Estabelecimentos (matriz + filiais)
 
@@ -225,55 +248,55 @@ Tabela com **todos** os estabelecimentos daquela empresa:
 - CNPJ completo de cada um
 - Tipo (Matriz / Filial)
 - Nome fantasia
-- Situacao cadastral
-- Endereco resumido
+- Situação cadastral
+- Endereço resumido
 - UF
 - Telefone
 - Email
 - Data de abertura
 - CNAE principal
 
-A matriz aparece destacada (linha azul). As filiais vem em seguida,
+A matriz aparece destacada (linha azul). As filiais vêm em seguida,
 ordenadas por `cnpj_ordem`.
 
-### Socios
+### Sócios
 
-Tabela com todos os socios:
+Tabela com todos os sócios:
 
-- **Nome** (ou razao social, se for PJ)
-- **Tipo** - PF (Pessoa Fisica), PJ (Pessoa Juridica) ou Estrangeiro
-- **CPF/CNPJ** - descaracterizado pela RFB (so os 6 digitos do meio)
-- **Qualificacao** - codigo + descricao (ex: `49 - Socio-Administrador`)
+- **Nome** (ou razão social, se for PJ)
+- **Tipo** - PF (Pessoa Física), PJ (Pessoa Jurídica) ou Estrangeiro
+- **CPF/CNPJ** - descaracterizado pela RFB (só os 6 dígitos do meio)
+- **Qualificação** - código + descrição (ex: `49 - Socio-Administrador`)
 - **Data de entrada** na sociedade
-- **Faixa etaria** - 0-12, 13-20, ..., 81+ anos
-- **Pais** (se estrangeiro)
-- **Representante legal** (se houver) - nome + qualificacao
+- **Faixa etária** - 0-12, 13-20, ..., 81+ anos
+- **País** (se estrangeiro)
+- **Representante legal** (se houver) - nome + qualificação
 
-## Estatisticas (`/estatisticas/`)
+## Estatísticas (`/estatisticas/`)
 
-Pagina com visao agregada da base inteira:
+Página com visão agregada da base inteira:
 
 - **Totais**: matrizes, ativas, inaptas, baixadas, suspensas, nulas, UFs
 - **Top 10 UFs** - com percentual
-- **Distribuicao por situacao** - com percentual
-- **Distribuicao por porte** - ME, EPP, Demais, Nao informado
-- **Top 10 naturezas juridicas** - codigo + descricao
-- **Top 10 CNAEs** - codigo + descricao
+- **Distribuição por situação** - com percentual
+- **Distribuição por porte** - ME, EPP, Demais, Não informado
+- **Top 10 naturezas jurídicas** - código + descrição
+- **Top 10 CNAEs** - código + descrição
 - **Optantes Simples / MEI** - total
-- **Empresas por ano de abertura** - ultimos 15 anos (com barra de progresso)
-- **Top 10 municipios** - codigo IBGE + nome + UF
-- **Total de socios** + empresas com socios
+- **Empresas por ano de abertura** - últimos 15 anos (com barra de progresso)
+- **Top 10 municípios** - código IBGE + nome + UF
+- **Total de sócios** + empresas com sócios
 
-Os dados vem da tabela `c_estatisticas_totais`, populada pela stored
-procedure `sp_recalcular_estatisticas_totais()`. Superusuario pode
-disparar o recalculo pelo botao na propria pagina.
+Os dados vêm da tabela `c_estatisticas_totais`, populada pela stored
+procedure `sp_recalcular_estatisticas_totais()`. Superusuário pode
+disparar o recálculo pelo botão na própria página.
 
 ## Performance
 
 A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
 
-- **Indices parciais** com `WHERE cd_matriz_filial = 1` (matrizes sao ~10% da tabela)
-- **Indice de cidade** `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (1,1 GB, sem filtro de matriz, cobre sede e filial) para o semi-join "tem estabelecimento na cidade" do chat. Criado sem bloquear a tabela:
+- **Índices parciais** com `WHERE cd_matriz_filial = 1` (matrizes são ~10% da tabela)
+- **Índice de cidade** `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (1,1 GB, sem filtro de matriz, cobre sede e filial) para o semi-join "tem estabelecimento na cidade" do chat. Criado sem bloquear a tabela:
 
       psql -h localhost -p 5432 -U arosasse -d bancocnpj -v ON_ERROR_STOP=1 <<'SQL'
       SET maintenance_work_mem = '1GB';
@@ -284,31 +307,31 @@ A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
 
   (38,5M linhas em ~1min44s. `CONCURRENTLY` exige autocommit: nada de `psql -1`/`BEGIN`.)
 - **Keyset pagination** em vez de OFFSET
-- **Tabela de metadados** `c_estatisticas_totais` pra contagens instantaneas
-- **ILIKE** em vez de `UPPER(col) LIKE` (aproveita indices GIN trigram)
-- **Timeout de seguranca** de 10s em ordenacoes por nome fantasia
+- **Tabela de metadados** `c_estatisticas_totais` pra contagens instantâneas
+- **ILIKE** em vez de `UPPER(col) LIKE` (aproveita índices GIN trigram)
+- **Timeout de segurança** de 10s em ordenações por nome fantasia
 - **Fast-count** com timeout de 800ms e cache de 15min em filtros combinados
 
-O tempo de resposta tipico e:
+O tempo de resposta típico é:
 
-- Primeira pagina sem filtro: ~5ms (le da tabela de metadados)
-- Paginas seguintes (keyset): ~200ms
-- Estatisticas: ~5ms (le da tabela de metadados)
+- Primeira página sem filtro: ~5ms (lê da tabela de metadados)
+- Páginas seguintes (keyset): ~200ms
+- Estatísticas: ~5ms (lê da tabela de metadados)
 - Recálculo completo: ~15-30s
 
 ---
 
 # Chat IA
 
-Traduz perguntas em portugues pra SQL e executa no banco, em modo
-read-only. Tem historico de conversas e contexto.
+Traduz perguntas em português pra SQL e executa no banco, em modo
+read-only. Tem histórico de conversas e contexto.
 
 O pipeline **é um RAG** (retrieval-augmented generation) — mas um RAG sobre
-**dados estruturados**, nao sobre documentos: a recuperacao acontece por busca
-vetorial no CNAE + execucao de SQL, e o que entra no prompt do LLM sao as
-**linhas recuperadas**, nao pedacos de texto de uma base vetorial. Detalhes na
-secao [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
-`~/Projetos/docs/PROJETOS.md` (secao 7.1).
+**dados estruturados**, não sobre documentos: a recuperação acontece por busca
+vetorial no CNAE + execução de SQL, e o que entra no prompt do LLM são as
+**linhas recuperadas**, não pedaços de texto de uma base vetorial. Detalhes na
+seção [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
+`~/Projetos/docs/PROJETOS.md` (seção 7.1).
 
 ## Pipeline
 
@@ -321,12 +344,12 @@ secao [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
 
 ### 1. `sql_generator`
 
-- Monta prompt com o **schema real** do banco (tabelas, colunas, tamanhos, codigos)
+- Monta prompt com o **schema real** do banco (tabelas, colunas, tamanhos, códigos)
 - Chama o DeepSeek via `llm_client.gerar_resposta()`
-- Retenta ate `max_tentativas` se o SQL vier invalido
-- Passa o historico da conversa como contexto (ultimas 10 mensagens)
-- Pode responder `RECUSAR: <motivo>` quando a pergunta pede dado que nao
-  existe no schema (ex: faturamento, numero de funcionarios)
+- Retenta até `max_tentativas` se o SQL vier inválido
+- Passa o histórico da conversa como contexto (últimas 10 mensagens)
+- Pode responder `RECUSAR: <motivo>` quando a pergunta pede dado que não
+  existe no schema (ex: faturamento, número de funcionários)
 
 ### 1.1 Busca semântica (vetorial)
 
@@ -405,36 +428,36 @@ do banco (o SQL executado fica visível na tela e em `chat_logacesso`).
 sobre dados estruturados e, abaixo de cada resposta, um rodapé mostra a
 procedência: `RAG · 12.345 linha(s) recuperada(s) pelo SQL, 20 enviada(s) ao
 modelo`, com `· resultado truncado pelo LIMIT` quando for o caso. O número de
-linhas enviadas vem de `LIMITE_LINHAS` (a view passa como `linhas_no_prompt`),
+linhas enviadas vêm de `LIMITE_LINHAS` (a view passa como `linhas_no_prompt`),
 então não há "20" duplicado no HTML/JS. Sem linha recuperada (pergunta recusada)
 o rodapé não aparece — não existe geração ancorada para exibir. A lógica está em
 `renderRodapeRag()` no `chat/templates/chat/chat.html`.
 
 ### 2. `sql_validator`
 
-Aplica **4 camadas de seguranca**:
+Aplica **4 camadas de segurança**:
 
-1. **So permite SELECT** - bloqueia DDL/DML (DROP, INSERT, UPDATE, DELETE, etc)
-2. **Nao permite multiplas queries** - bloqueia `;` fora de strings
+1. **Só permite SELECT** - bloqueia DDL/DML (DROP, INSERT, UPDATE, DELETE, etc)
+2. **Não permite múltiplas queries** - bloqueia `;` fora de strings
 3. **Forca LIMIT** - garante que nenhuma query retorne mais que `DEFAULT_MAX_ROWS` (1000);
-   exceto em agregacoes (GROUP BY ou COUNT/SUM/AVG/MIN/MAX), que nao ganham LIMIT
-4. **Bloqueia funcoes perigosas** - `pg_sleep`, `dblink`, `pg_read_file`, etc
+   exceto em agregações (GROUP BY ou COUNT/SUM/AVG/MIN/MAX), que não ganham LIMIT
+4. **Bloqueia funções perigosas** - `pg_sleep`, `dblink`, `pg_read_file`, etc
 
 ### 3. `sql_executor`
 
-- Conecta no Postgres como usuario read-only (`chat_ia`, so tem `GRANT SELECT`)
-- `SET LOCAL statement_timeout` por query (`CHAT_SQL_TIMEOUT`, padrao 10s)
-- Limita linhas com `CHAT_SQL_MAX_ROWS` (padrao: 1000)
-- Fecha conexao sempre (`finally`)
+- Conecta no Postgres como usuário read-only (`chat_ia`, só tem `GRANT SELECT`)
+- `SET LOCAL statement_timeout` por query (`CHAT_SQL_TIMEOUT`, padrão 10s)
+- Limita linhas com `CHAT_SQL_MAX_ROWS` (padrão: 1000)
+- Fecha conexão sempre (`finally`)
 - Detecta truncamento (busca `max_rows + 1` linhas)
 
 ### 4. `resposta_natural`
 
 - Recebe pergunta + colunas + rows + flag `truncado` (e o `sql` executado)
 - Gera 1-3 frases em PT-BR citando o total real
-- Se falhar, cai num fallback simples (nunca levanta excecao)
+- Se falhar, cai num fallback simples (nunca levanta exceção)
 - **Filtro por cidade (semi-join):** quando o SQL filtra com
-  `e.cnpj_basico IN (SELECT ... FROM c_estabelecimentos ... municipio ILIKE
+  `e.cnpj_basico IN (SELECT ... FROM c_estabelecimentos ... município ILIKE
   '%X%')`, `extrair_cidade_semi_join()` descobre a cidade e o prompt avisa o
   LLM de que a lista é de **empresas com estabelecimento em X** (qualquer
   filial), não "sediadas em X". Sem esse aviso o texto citava a coluna
@@ -443,18 +466,18 @@ Aplica **4 camadas de seguranca**:
   coluna `municipio` é a própria cidade pedida.
 
 
-### 5. Persistencia (Repository pattern)
+### 5. Persistência (Repository pattern)
 
-Backend alternavel via `CHAT_USE_MONGO` no `.env`:
+Backend alternável via `CHAT_USE_MONGO` no `.env`:
 
 - `CHAT_USE_MONGO=0` -> Postgres (`django_internal`, ORM)
 - `CHAT_USE_MONGO=1` -> MongoDB (`bancocnpj.chat_conversas`, pymongo)
 
-O dispatcher fica em `chat/repo.py`. As views chamam `repo.*` e nao sabem
-qual backend esta ativo. Retencao: comando `limpar_conversas_antigas`
-(padrao: 30 dias).
+O dispatcher fica em `chat/repo.py`. As views chamam `repo.*` e não sabem
+qual backend está ativo. Retenção: comando `limpar_conversas_antigas`
+(padrão: 30 dias).
 
-### Retry automatico
+### Retry automático
 
 Se o Postgres rejeitar o SQL por coluna/tabela inexistente, o
 `chat_api_view` faz **1 retry** passando a mensagem de erro pro LLM
@@ -462,13 +485,13 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 
 ## Endpoints do chat
 
-| Metodo | URL | O que faz |
+| Método | URL | O que faz |
 |---|---|---|
-| GET | `/chat/` | Pagina do chat |
+| GET | `/chat/` | Página do chat |
 | POST | `/chat/api/` | Endpoint AJAX (pergunta -> SQL -> resultado) |
-| GET | `/chat/historico/` | Lista as conversas do usuario |
-| GET | `/chat/conversa/<id>/` | Abre uma conversa especifica |
-| POST | `/chat/nova/` | Comeca conversa nova |
+| GET | `/chat/historico/` | Lista as conversas do usuário |
+| GET | `/chat/conversa/<id>/` | Abre uma conversa específica |
+| POST | `/chat/nova/` | Começa conversa nova |
 | POST | `/chat/deletar/<id>/` | Deleta uma conversa |
 | GET | `/chat/health/deep/` | Health check profundo (Mongo + Postgres) |
 
@@ -476,20 +499,20 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 
 # Endpoints (todos)
 
-| Metodo | URL | O que faz |
+| Método | URL | O que faz |
 |---|---|---|
 | GET | `/` | Lista de empresas |
-| GET | `/busca-rapida/` | Busca rapida via AJAX (JSON) |
+| GET | `/busca-rapida/` | Busca rápida via AJAX (JSON) |
 | GET | `/empresa/<cnpj>/` | Detalhe da empresa |
-| GET | `/estatisticas/` | Estatisticas gerais |
+| GET | `/estatisticas/` | Estatísticas gerais |
 | POST | `/estatisticas/recalcular/` | Recalcula `c_estatisticas_totais` (superuser) |
 | GET | `/chat/` | Chat IA |
 | POST | `/chat/api/` | API do chat |
-| GET | `/chat/historico/` | Historico de conversas |
+| GET | `/chat/historico/` | Histórico de conversas |
 | GET | `/chat/conversa/<id>/` | Abre conversa |
 | POST | `/chat/nova/` | Nova conversa |
 | POST | `/chat/deletar/<id>/` | Deleta conversa |
-| POST | `/chat/limpar/` | (legado) limpa a conversa da sessao |
+| POST | `/chat/limpar/` | (legado) limpa a conversa da sessão |
 | GET | `/chat/health/deep/` | Health check profundo do chat |
 | GET/POST | `/accounts/login/` | Login |
 | POST | `/accounts/logout/` | Logout |
@@ -512,7 +535,7 @@ O `CNPJRouter` (`core/routers.py`) decide qual usar:
 - Todo o resto -> `default`
 
 O MongoDB (opcional, via `CHAT_USE_MONGO=1`) fica em `bancocnpj.chat_conversas`
-e nao passa pelo ORM.
+e não passa pelo ORM.
 
 # Testes
 
@@ -521,59 +544,59 @@ e nao passa pelo ORM.
 
 Roda **218 testes** em `chat/tests/` (+ 4 em `core/tests.py`):
 
-- `test_embedding_service.py` - geracao de vetor, sinonimos e substituicao do `%s` no SQL
+- `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
-- `test_mongo_models.py` - funcoes pymongo (`chat_conversas`)
-- `test_sql_generator.py` - geracao de SQL + retry + historico
-- `test_sql_validator.py` - 4 camadas de seguranca + agregacao sem LIMIT
-- `test_sql_executor.py` - execucao + timeout + truncamento
-- `test_resposta_natural.py` - geracao de texto (com mock do LLM)
+- `test_mongo_models.py` - funções pymongo (`chat_conversas`)
+- `test_sql_generator.py` - geração de SQL + retry + histórico
+- `test_sql_validator.py` - 4 camadas de segurança + agregação sem LIMIT
+- `test_sql_executor.py` - execução + timeout + truncamento
+- `test_resposta_natural.py` - geração de texto (com mock do LLM)
 - `test_integracao.py` - fluxo fim-a-fim (roda nos 2 backends)
 
 Os testes usam mock do DeepSeek e do `psycopg2.connect`. **`test_mongo_models`
 e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
-`chat_conversas`** - nao rodar com dados reais.
+`chat_conversas`** - não rodar com dados reais.
 
-# Variaveis de ambiente
+# Variáveis de ambiente
 
 Ver `.env.example` para a lista completa. As principais:
 
-- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` - Django padrao
-- `CSRF_TRUSTED_ORIGINS` - origens confiaveis para POST (producao: os dois subdominios)
+- `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` - Django padrão
+- `CSRF_TRUSTED_ORIGINS` - origens confiáveis para POST (produção: os dois subdomínios)
 - `DJANGO_DB_*` - banco `django_internal`
 - `PG_*` - banco `bancocnpj` (dados da RFB)
-- `CHAT_PG_*` - usuario read-only `chat_ia`
-- `CHAT_SQL_TIMEOUT` - timeout por query (padrao: 10s)
-- `CHAT_SQL_MAX_ROWS` - limite de linhas (padrao: 1000)
-- `CHAT_USE_MONGO` - `0` = Postgres (padrao), `1` = MongoDB
-- `MONGO_*` - conexao MongoDB (host, porta, db, user, password)
+- `CHAT_PG_*` - usuário read-only `chat_ia`
+- `CHAT_SQL_TIMEOUT` - timeout por query (padrão: 10s)
+- `CHAT_SQL_MAX_ROWS` - limite de linhas (padrão: 1000)
+- `CHAT_USE_MONGO` - `0` = Postgres (padrão), `1` = MongoDB
+- `MONGO_*` - conexão MongoDB (host, porta, db, user, password)
 - `DEEPSEEK_API_KEY` - chave da API do chat
-- `CHAT_DEEPSEEK_MODEL` - modelo (padrao: `deepseek-chat`)
-- `CHAT_DEEPSEEK_BASE_URL` - endpoint compativel OpenAI (padrao: `https://api.deepseek.com`)
-- `AS400_*` - conexao com o IBM i (`AS400_JDBC_JAR` aponta pro `lib/jt400.jar`; usada pelo `testar_simple.py` e pelas conexoes de `core/conexoes.py`)
+- `CHAT_DEEPSEEK_MODEL` - modelo (padrão: `deepseek-chat`)
+- `CHAT_DEEPSEEK_BASE_URL` - endpoint compatível OpenAI (padrão: `https://api.deepseek.com`)
+- `AS400_*` - conexão com o IBM i (`AS400_JDBC_JAR` aponta pro `lib/jt400.jar`; usada pelo `testar_simple.py` e pelas conexões de `core/conexoes.py`)
 
 # Deploy
 
-Na maquina NoteNeto:
+Na máquina NoteNeto:
 
     ./deploy.sh cnpj
 
 # Ambiente
 
 - **Local:** http://localhost:8002
-- **Producao:** https://cnpj.arosasse.tech
+- **Produção:** https://cnpj.arosasse.tech
 - **Chat isolado:** https://chat.arosasse.tech
 
-# Scripts de manutencao
+# Scripts de manutenção
 
 Os scripts `cnpj_project/atualizar_dt_ini_*.py` atualizam a coluna `dt_ini`
-da tabela `c_estabelecimentos` a partir de arquivos Parquet. Sao
-executados pontualmente, nao fazem parte do runtime da aplicacao.
+da tabela `c_estabelecimentos` a partir de arquivos Parquet. São
+executados pontualmente, não fazem parte do runtime da aplicação.
 
-O script `testar_simple.py` testa as conexoes com AS/400, PostgreSQL e
+O script `testar_simple.py` testa as conexões com AS/400, PostgreSQL e
 MongoDB de uma vez.
 
-# Repositorios relacionados
+# Repositórios relacionados
 
 - [ProjetoCargaDados](https://github.com/antoniorosasse/ProjetoCargaDados) - carrega os dados que este projeto consulta
 - [as400_interface](https://github.com/antoniorosasse/as400_interface)
