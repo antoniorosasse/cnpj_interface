@@ -301,7 +301,7 @@ O tempo de resposta tipico e:
 Traduz perguntas em portugues pra SQL e executa no banco, em modo
 read-only. Tem historico de conversas e contexto.
 
-O pipeline **e' um RAG** (retrieval-augmented generation) — mas um RAG sobre
+O pipeline **é um RAG** (retrieval-augmented generation) — mas um RAG sobre
 **dados estruturados**, nao sobre documentos: a recuperacao acontece por busca
 vetorial no CNAE + execucao de SQL, e o que entra no prompt do LLM sao as
 **linhas recuperadas**, nao pedacos de texto de uma base vetorial. Detalhes na
