@@ -416,6 +416,15 @@ class ChatViewTests(IntegracaoBaseTests):
         conversas = repo.listar_conversas(user=self.user)
         self.assertEqual(len(conversas), 1)
 
+    def test_chat_view_explica_o_rag_na_tela(self):
+        """A pagina diz que a resposta vem das linhas recuperadas (RAG) e
+        recebe o LIMITE_LINHAS do resposta_natural, sem duplicar o numero."""
+        resp = self.client.get(reverse('chat:chat'))
+        self.assertContains(resp, 'RAG sobre dados')
+        self.assertContains(resp, 'linhas que a consulta')
+        self.assertContains(resp, 'const linhasNoPrompt = 20;')
+        self.assertContains(resp, 'renderRodapeRag')
+
     def test_chat_view_limpa_conversas_vazias_antigas(self):
         """Se tem 2 vazias, a view mantem so a atual."""
         cid_antiga = repo.criar_conversa(user=self.user, titulo='antiga vazia')

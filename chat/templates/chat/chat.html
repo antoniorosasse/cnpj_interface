@@ -147,6 +147,20 @@
         margin-bottom: 12px;
     }
 
+    /* Rodape de procedencia: quantas linhas foram recuperadas pelo SQL e
+       quantas foram enviadas ao modelo (etapa de geracao do RAG) */
+    .resposta-natural .rodape-rag {
+        margin-top: 10px;
+        padding-top: 7px;
+        border-top: 1px dashed #bae6fd;
+        font-size: .72rem;
+        color: #475569;
+    }
+    .resposta-natural .rodape-rag .bi {
+        margin-right: 5px;
+        color: #0369a1;
+    }
+
     /* <details> do SQL executado (fechado por padrao) */
     details.sql-detalhe {
         margin-top: 8px;
@@ -248,7 +262,10 @@
             <i class="bi bi-chat-dots-fill"></i> Chat IA — Análise de CNPJ
         </h1>
         <small class="text-muted">
-            Pergunte em português. O sistema gera SQL, valida e executa em modo somente-leitura.
+            Pergunte em português. O sistema gera SQL, valida e executa em modo
+            somente-leitura — e responde com um <strong>RAG sobre dados
+            estruturados</strong>: o texto sai só das linhas que a consulta
+            recuperou, nunca da memória do modelo.
         </small>
     </div>
 </div>
@@ -343,6 +360,10 @@
     // Mapa: idTabela -> {colunas, rows}. Populado por renderTabela().
     const tabelaStore = {};
 
+    // Quantas linhas do resultado vao no prompt do resposta_natural
+    // (LIMITE_LINHAS, vindo da view). Se mudar la, muda aqui sozinho.
+    const linhasNoPrompt = {{ linhas_no_prompt }};
+
     function getCookie(name) {
         const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
         return m ? decodeURIComponent(m.pop()) : '';
@@ -383,9 +404,24 @@
 
     // Renderiza o texto natural gerado pelo LLM (1-3 frases).
     // Se vazio, devolve string vazia (nada e renderizado).
-    function renderRespostaTexto(texto) {
+    // Rodape de procedencia do RAG: deixa explicito que o texto saiu das
+    // linhas recuperadas pelo SQL, nao da memoria do modelo.
+    function renderRodapeRag(totalLinhas, truncado) {
+        const total = Number(totalLinhas);
+        // Sem linhas nao ha geracao ancorada (ex: pergunta recusada) -> sem rodape
+        if (!isFinite(total) || total <= 0) return '';
+        const enviadas = Math.min(total, linhasNoPrompt);
+        const fmt = function (n) { return n.toLocaleString('pt-BR'); };
+        let txt = `RAG · ${fmt(total)} linha(s) recuperada(s) pelo SQL, `
+            + `${fmt(enviadas)} enviada(s) ao modelo`;
+        if (truncado) txt += ' · resultado truncado pelo LIMIT';
+        return `<div class="rodape-rag"><i class="bi bi-diagram-3"></i>${escaparHtml(txt)}</div>`;
+    }
+
+    function renderRespostaTexto(texto, meta) {
         if (!texto || !String(texto).trim()) return '';
-        return `<div class="resposta-natural">${escaparHtml(texto)}</div>`;
+        const rodape = meta ? renderRodapeRag(meta.linhas, meta.truncado) : '';
+        return `<div class="resposta-natural">${escaparHtml(texto)}${rodape}</div>`;
     }
 
     // Renderiza o SQL dentro de um <details> fechado por padrao.
@@ -421,7 +457,10 @@
                     const a = mensagensIniciais[i];
 
                     // 1) Texto natural (se houver), senao cai pro comportamento antigo
-                    const textoNatural = renderRespostaTexto(a.resposta_texto);
+                    const textoNatural = renderRespostaTexto(a.resposta_texto, {
+                        linhas: a.total_linhas,
+                        truncado: a.truncado,
+                    });
                     if (textoNatural) {
                         html += textoNatural;
                     } else {
@@ -749,7 +788,10 @@
             }
 
             // 2) Texto natural do assistant (com fallback pro SQL bruto)
-            const textoNatural = renderRespostaTexto(dados.resposta_texto);
+            const textoNatural = renderRespostaTexto(dados.resposta_texto, {
+                linhas: dados.total_linhas,
+                truncado: dados.truncado,
+            });
             if (textoNatural) {
                 threadEl.insertAdjacentHTML('beforeend', textoNatural);
             } else {

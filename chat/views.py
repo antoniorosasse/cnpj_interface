@@ -27,7 +27,11 @@ from django.views.decorators.http import require_POST
 
 from .services.sql_generator import gerar_sql
 from .services.sql_executor import executar_sql
-from .services.resposta_natural import gerar_texto_resposta, extrair_cidade_semi_join
+from .services.resposta_natural import (
+    LIMITE_LINHAS,
+    gerar_texto_resposta,
+    extrair_cidade_semi_join,
+)
 #from chat.models import Conversa, Mensagem
 from . import repo
 from .models import LogAcesso
@@ -189,6 +193,10 @@ def chat_view(request):
         'conversa_id_atual': _conversa_id(conversa),
         'conversas': conversas,
         'mensagens_json': json.dumps(mensagens_json, default=str),
+        # Quantas linhas do resultado o resposta_natural manda pro prompt.
+        # Vai pro template pra nota de RAG mostrar numeros reais, sem
+        # duplicar o 20 no HTML/JS.
+        'linhas_no_prompt': LIMITE_LINHAS,
     })
 
 
