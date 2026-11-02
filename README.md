@@ -395,6 +395,15 @@ do banco (o SQL executado fica visível na tela e em `chat_logacesso`).
   etc.): são serviços próprios (~250 linhas em `embedding_service.py`) + pgvector
   0.8.1.
 
+**Na tela (o RAG visível):** o subtítulo do chat diz que a resposta é um RAG
+sobre dados estruturados e, abaixo de cada resposta, um rodapé mostra a
+procedência: `RAG · 12.345 linha(s) recuperada(s) pelo SQL, 20 enviada(s) ao
+modelo`, com `· resultado truncado pelo LIMIT` quando for o caso. O número de
+linhas enviadas vem de `LIMITE_LINHAS` (a view passa como `linhas_no_prompt`),
+então não há "20" duplicado no HTML/JS. Sem linha recuperada (pergunta recusada)
+o rodapé não aparece — não existe geração ancorada para exibir. A lógica está em
+`renderRodapeRag()` no `chat/templates/chat/chat.html`.
+
 ### 2. `sql_validator`
 
 Aplica **4 camadas de seguranca**:
