@@ -1,0 +1,220 @@
+<!-- cnpj_interface/chat/templates/admin/chat/logacesso/change_list.html -->
+<!-- Painel de resumo acima da lista de logs. Dados montados em chat/admin.py
+     (LogAcessoAdmin.changelist_view) a partir de chat/relatorio.py. -->
+{% extends "admin/change_list.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .painel-log { background: var(--body-bg, #fff); border: 1px solid var(--hairline-color, #e0e0e0);
+                  border-radius: 6px; padding: 14px 16px; margin-bottom: 18px; }
+    .painel-log h2 { margin: 0; font-size: 1rem; }
+    .painel-log h3 { margin: 0 0 6px; font-size: .85rem; text-transform: uppercase;
+                     letter-spacing: .03em; color: var(--body-quiet-color, #666); }
+    .painel-topo { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline;
+                   justify-content: space-between; margin-bottom: 12px; }
+    .painel-periodos { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: .85rem; }
+    .painel-periodos a { padding: 3px 9px; border: 1px solid var(--hairline-color, #ddd);
+                         border-radius: 12px; text-decoration: none; }
+    .painel-periodos a.atual { background: var(--primary, #417690); border-color: var(--primary, #417690);
+                               color: #fff; font-weight: 600; }
+    .painel-desde { color: var(--body-quiet-color, #666); }
+    .painel-cartoes { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+    .painel-cartoes .cartao { flex: 1 1 150px; border: 1px solid var(--hairline-color, #e0e0e0);
+                              border-radius: 6px; padding: 10px 12px; background: var(--darkened-bg, #f8f8f8); }
+    .painel-cartoes .valor { display: block; font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+    .painel-cartoes .rotulo { font-size: .78rem; color: var(--body-quiet-color, #666); }
+    .painel-grade { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 14px; }
+    .painel-grade > .bloco { flex: 1 1 300px; min-width: 260px; }
+    .painel-log .bloco { margin-bottom: 14px; }
+    .painel-log table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    .painel-log th, .painel-log td { padding: 4px 8px; border-bottom: 1px solid var(--hairline-color, #eee);
+                                     text-align: left; }
+    .painel-log th { font-weight: 600; color: var(--body-quiet-color, #666); }
+    .painel-log td.num, .painel-log th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .painel-log .vazio { color: var(--body-quiet-color, #888); font-style: italic; }
+    .painel-log pre { background: #1f2430; color: #e6e6e6; padding: 10px 12px; border-radius: 6px;
+                      overflow-x: auto; font-size: .8rem; line-height: 1.45; margin: 6px 0 14px;
+                      white-space: pre-wrap; word-break: break-word; }
+    .painel-log .cmd-topo { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .painel-log .ajuda { font-size: .8rem; color: var(--body-quiet-color, #666); margin: 2px 0 0; }
+    .painel-log .ua { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="painel-log">
+  <div class="painel-topo">
+    <h2>Resumo do log de acesso</h2>
+    <div class="painel-periodos">
+      <span>Período:</span>
+      {% for p in links_periodo %}
+        <a href="{{ p.url }}"{% if p.atual %} class="atual"{% endif %}>{{ p.dias }} dia{{ p.dias|pluralize }}</a>
+      {% endfor %}
+      <span class="painel-desde">desde {{ resumo.desde|date:"d/m/Y H:i" }}</span>
+    </div>
+  </div>
+
+  <div class="painel-cartoes">
+    <div class="cartao">
+      <span class="valor">{{ resumo.total }}</span>
+      <span class="rotulo">evento{{ resumo.total|pluralize }} no período</span>
+    </div>
+    <div class="cartao">
+      <span class="valor">{{ resumo.usuarios.logaram }}</span>
+      <span class="rotulo">usuário{{ resumo.usuarios.logaram|pluralize }} logado{{ resumo.usuarios.logaram|pluralize }}</span>
+    </div>
+    <div class="cartao">
+      <span class="valor">{{ resumo.usuarios.perguntaram }}</span>
+      <span class="rotulo">usuário{{ resumo.usuarios.perguntaram|pluralize }} que perguntou ao chat</span>
+    </div>
+    <div class="cartao">
+      <span class="valor">{{ resumo.usuarios.viram_empresas }}</span>
+      <span class="rotulo">logado{{ resumo.usuarios.viram_empresas|pluralize }} que viu empresas</span>
+    </div>
+  </div>
+
+  <div class="painel-grade">
+    <div class="bloco">
+      <h3>Totais por tipo</h3>
+      <table>
+        <thead>
+          <tr><th>Tipo</th><th class="num">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for t in totais %}
+            <tr><td>{{ t.rotulo }}</td><td class="num">{{ t.total }}</td></tr>
+          {% empty %}
+            <tr><td colspan="2" class="vazio">Sem registros no período.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="bloco">
+      <h3>Top IPs</h3>
+      <table>
+        <thead>
+          <tr><th>Perguntas no chat</th><th class="num">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for ip in resumo.top_ips_chat %}
+            <tr><td>{{ ip.ip }}</td><td class="num">{{ ip.total }}</td></tr>
+          {% empty %}
+            <tr><td colspan="2" class="vazio">Sem IPs registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <table style="margin-top: 8px;">
+        <thead>
+          <tr><th>Acessos a empresas</th><th class="num">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for ip in resumo.top_ips_empresas %}
+            <tr><td>{{ ip.ip }}</td><td class="num">{{ ip.total }}</td></tr>
+          {% empty %}
+            <tr><td colspan="2" class="vazio">Sem IPs registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="bloco">
+    <h3>Por dia</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          {% for tipo in tipos_presentes %}<th class="num">{{ tipo }}</th>{% endfor %}
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas_dia %}
+          <tr>
+            <td>{{ linha.dia|date:"d/m/Y" }}</td>
+            {% for valor in linha.celulas %}<td class="num">{{ valor }}</td>{% endfor %}
+            <td class="num"><strong>{{ linha.total }}</strong></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="vazio">Sem registros no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bloco">
+    <h3>Últimos logins no período</h3>
+    <table>
+      <thead>
+        <tr><th>Quando</th><th>Usuário</th><th>IP</th><th>Navegador</th></tr>
+      </thead>
+      <tbody>
+        {% for log in resumo.ultimos_logins %}
+          <tr>
+            <td>{{ log.criado_em|date:"d/m H:i" }}</td>
+            <td>{{ log.usuario.username|default:"(anônimo)" }}</td>
+            <td>{{ log.ip|default:"-" }}</td>
+            <td class="ua" title="{{ log.user_agent }}">{{ log.user_agent|default:"-"|truncatechars:40 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="vazio">Nenhum login registrado no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="painel-log" id="comandos-log">
+  <div class="painel-topo">
+    <h2>Comandos (copiar e colar)</h2>
+    <span class="ajuda">Esta tela não executa comando: copie o texto e rode no terminal.</span>
+  </div>
+  {% for cmd in comandos %}
+    <div class="cmd">
+      <div class="cmd-topo">
+        <div>
+          <strong>{{ cmd.titulo }}</strong>
+          <p class="ajuda">{{ cmd.descricao }}</p>
+        </div>
+        <button type="button" class="button" data-copiar="{{ cmd.id }}">Copiar</button>
+      </div>
+      <pre id="{{ cmd.id }}">{{ cmd.codigo }}</pre>
+    </div>
+  {% endfor %}
+
+  <script>
+    (function () {
+      function copiar(texto) {
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(texto);
+        }
+        // Fallback para contexto sem HTTPS
+        var area = document.createElement('textarea');
+        area.value = texto;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand('copy'); } catch (e) { /* ignora */ }
+        document.body.removeChild(area);
+        return Promise.resolve();
+      }
+
+      document.addEventListener('click', function (evento) {
+        var botao = evento.target.closest('[data-copiar]');
+        if (!botao) { return; }
+        var alvo = document.getElementById(botao.dataset.copiar);
+        if (!alvo) { return; }
+        copiar(alvo.innerText).then(function () {
+          var original = botao.textContent;
+          botao.textContent = 'Copiado!';
+          setTimeout(function () { botao.textContent = original; }, 1500);
+        });
+      });
+    })();
+  </script>
+</div>
+
+{{ block.super }}
+{% endblock %}

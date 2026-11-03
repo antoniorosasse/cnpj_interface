@@ -8,6 +8,7 @@ que traduz perguntas em linguagem natural para SQL.
 - [Stack](#stack)
 - [Estrutura](#estrutura)
 - [Como rodar local](#como-rodar-local)
+- [Acesso de demonstração](#acesso-de-demonstração)
 - [Requisitos de dados](#requisitos-de-dados)
 - [Consulta de CNPJ](#consulta-de-cnpj)
   - [O que dá pra buscar](#o-que-dá-pra-buscar)
@@ -19,6 +20,7 @@ que traduz perguntas em linguagem natural para SQL.
   - [Endpoints do chat](#endpoints-do-chat)
 - [Endpoints (todos)](#endpoints-todos)
 - [Bancos de dados](#bancos-de-dados)
+- [Log de acesso (`chat_logacesso`)](#log-de-acesso-chat_logacesso)
 - [Testes](#testes)
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Deploy](#deploy)
@@ -73,7 +75,7 @@ que traduz perguntas em linguagem natural para SQL.
     |   |   +-- test_sql_validator.py
     |   +-- management/commands/
     |   |   +-- limpar_conversas_antigas.py   # Retencao do historico (padrao 30 dias)
-    |   |   +-- relatorio_acesso.py           # Logins + perguntas do chat (chat_logacesso)
+    |   |   +-- relatorio_acesso.py           # Logins, chat e empresas (chat_logacesso)
     |   +-- models.py               # Conversa + Mensagem (Postgres)
     |   +-- mongo_models.py         # Conversa + Mensagem (MongoDB)
     |   +-- repo.py                 # Dispatcher (Mongo | Postgres)
@@ -123,7 +125,32 @@ Observações:
 - O `.env.example` tem todas as variáveis. Sem `DEEPSEEK_API_KEY`, o chat
   não funciona (mas o resto sim).
 
-  
+## Acesso de demonstração
+
+O projeto está publicado como portfólio: `cnpj.arosasse.tech` (consulta de
+empresas, **aberta**) e `chat.arosasse.tech` (chat IA, **exige login**).
+
+Conta de demonstração:
+
+| Usuário | Senha |
+|---|---|
+| `demo` | `demo` |
+
+- A **consulta de CNPJ não pede login** — o `@login_required` está só no app
+  `chat` (`chat/views.py`).
+- A tela de login (`/accounts/login/`) mostra um aviso com essas credenciais e
+  um botão **Preencher com demo** (`templates/registration/login.html`).
+- `demo` é um usuário comum (`is_staff=False`, `is_superuser=False`), **sem
+  acesso ao `/admin`**.
+- O chat só executa SQL em **modo somente-leitura** (validador de 4 camadas +
+  transação read-only). O que a conta `demo` pode fazer é criar e apagar as
+  **próprias conversas** — como todos os visitantes compartilham o mesmo
+  usuário, o histórico da sidebar é comum a eles.
+- O aviso aparece em qualquer host que sirva `/accounts/login/` e **não** é
+  condicionado ao host `chat.` de propósito: em local o chat roda na mesma
+  porta da consulta (`localhost:8002`), e a condição esconderia o aviso
+  justamente no ambiente de teste.
+
 ## Requisitos de dados
 
 Este projeto **não inclui os dados da Receita Federal**. O banco
@@ -537,12 +564,103 @@ O `CNPJRouter` (`core/routers.py`) decide qual usar:
 O MongoDB (opcional, via `CHAT_USE_MONGO=1`) fica em `bancocnpj.chat_conversas`
 e não passa pelo ORM.
 
+# Log de acesso (`chat_logacesso`)
+
+Tabela única de auditoria (em `default` / `django_internal`): `chat.LogAcesso`
+em `chat/models.py`. No admin é **somente leitura** (ninguém cria, edita ou
+apaga), com filtro por tipo/data, busca por IP e navegação por data. A lista
+(`/admin/chat/logacesso/`) abre com um **painel de resumo** — ver "Painel na
+tela do admin" abaixo.
+
+| Tipo | Gravado por | Quando |
+|---|---|---|
+| `login` | `chat/signals.py` | login bem-sucedido (signal `user_logged_in`) |
+| `chat_pergunta` | `chat/views.py` | pergunta enviada no chat |
+| `empresas_lista` | `core/log_acesso.py` | abertura da lista (`/`) |
+| `empresas_detalhe` | `core/log_acesso.py` | abertura do detalhe (`/empresa/<cnpj>/`) |
+
+Cada linha guarda `usuario` (nullable), `ip`, `user_agent` (300 chars),
+`detalhe` (até 500 chars — filtros usados na lista ou o CNPJ consultado) e
+`criado_em`.
+
+**IP**: vem do `X-Forwarded-For` do Nginx, mas do **último** valor do header.
+O Nginx usa `$proxy_add_x_forwarded_for`, que **anexa** o IP real no fim — o
+primeiro elemento é o que o visitante mandou e pode ser forjado (testado em
+prod: um `X-Forwarded-For: 203.0.113.77` inventado virava o IP do registro).
+Premissa: um único proxy confiável na frente do gunicorn; se entrar CDN, o
+último elemento passa a ser o IP do CDN. Mesma regra em `chat/signals.py`
+(`_pegar_ip`), usada no `login` e no `chat_pergunta`.
+
+**Usuário**: a consulta de empresas é **pública**, então o evento fica com
+`usuario = NULL` quando não há sessão autenticada. O log nunca "inventa" quem
+acessou — quem identifica o visitante é IP + user agent.
+
+**Sessão entre subdomínios** (`SESSION_COOKIE_DOMAIN`): em produção o `.env` do
+servidor define `.arosasse.tech` (aplicado em 03/11/2026), e o login feito em um
+subdomínio passa a valer nos outros. Consequência: quem loga no chat aparece
+autenticado na consulta e o evento é gravado com o usuário real (`demo`) em vez de
+anônimo. Localmente a variável fica **vazia** (cookie por host) — com domínio fixo
+o navegador recusa o cookie em `localhost` e o login local para de funcionar. O
+`CSRF_COOKIE_DOMAIN` continua **por host**, de propósito (token CSRF compartilhado
+amplia a superfície de ataque sem necessidade). Rollback: apagar a linha do `.env`
+e `systemctl restart cnpj.service`.
+
+**Decisão registrada**: *não* atribuir visitas anônimas ao usuário `demo`
+automaticamente. O `demo` só aparece no log quando alguém está **de fato**
+logado (sessão compartilhada). Carimbar `demo` em todo mundo zeraria a métrica
+de IPs distintos e faria o relatório dizer "1 usuário" para sempre — parece
+auditoria, mas não é.
+
+**Deduplicação**: `core/log_acesso.py` grava no máximo um evento por
+`(tipo, IP, detalhe)` a cada **10 minutos** (chave no cache), pra paginação,
+F5 e robôs não inflarem a tabela. Falha de log nunca derruba a consulta
+(`try/except` + `logger.exception`), e a janela é liberada pra nova tentativa.
+
+Relatório:
+
+    python manage.py relatorio_acesso                  # últimos 7 dias
+    python manage.py relatorio_acesso --dias 30
+    python manage.py relatorio_acesso --tipo empresas_lista
+
+Mostra totais por tipo, evolução por dia, usuários distintos e top 10 IPs
+(chat e empresas). Os números vêm de `chat/relatorio.py::resumo_acesso`, a
+mesma função que alimenta o painel do admin — comando e tela não divergem.
+
+## Painel na tela do admin
+
+`/admin/chat/logacesso/` (superusuário) mostra, **antes** da lista de
+registros, um painel com:
+
+- cartões: eventos no período, usuários que logaram, que perguntaram ao chat e
+  logados que viram empresas;
+- totais por tipo, top 10 IPs (perguntas no chat / acessos a empresas);
+- tabela por dia (uma coluna por tipo presente + total);
+- **últimos logins** do período linha a linha: data/hora, usuário, IP e
+  navegador (o que o antigo `manage.py shell -c "..."` imprimia);
+- bloco **Comandos (copiar e colar)** com o relatório (servidor e local) e o
+  shell de últimos logins (servidor e local), cada um com botão **Copiar**.
+
+A tela **não executa** comando nenhum — só mostra o texto (executar shell via
+HTTP seria execução remota de código com sessão de superusuário).
+
+Período: links de **1 / 7 / 30 / 90 dias** (padrão: 7). Eles montam
+`?criado_em__gte=<data com offset>`, lookup que o próprio `ChangeList` aceita e
+aplica na lista — painel e tabela mostram o mesmo período, e os filtros/busca
+já ativos na URL são preservados. **Não** usar um parâmetro próprio (ex.:
+`?dias=90`): o admin só aceita lookups válidos e responde `302 ...?e=1`
+descartando o filtro.
+
+Arquivos: `chat/relatorio.py` (consultas), `chat/admin.py`
+(`LogAcessoAdmin.changelist_view` + `_comandos`) e
+`chat/templates/admin/chat/logacesso/change_list.html` (markup/estilo).
+Testes em `chat/tests/test_admin_log.py`.
+
 # Testes
 
-    python manage.py test chat       # 218 testes do chat
-    python manage.py test core       # 4 testes do core
+    python manage.py test chat       # 245 testes do chat
+    python manage.py test core       # 14 testes do core
 
-Roda **218 testes** em `chat/tests/` (+ 4 em `core/tests.py`):
+Roda **245 testes** em `chat/tests/` (+ 14 em `core/tests.py`) = 259 no total:
 
 - `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
@@ -552,6 +670,9 @@ Roda **218 testes** em `chat/tests/` (+ 4 em `core/tests.py`):
 - `test_sql_executor.py` - execução + timeout + truncamento
 - `test_resposta_natural.py` - geração de texto (com mock do LLM)
 - `test_integracao.py` - fluxo fim-a-fim (roda nos 2 backends)
+- `test_signals.py` - extração de IP do `X-Forwarded-For` (login/pergunta)
+- `test_admin_log.py` - `resumo_acesso`, comando `relatorio_acesso` e painel do admin
+- `core/tests.py` - template do detalhe (município/UF) + log de acesso das páginas de empresas
 
 Os testes usam mock do DeepSeek e do `psycopg2.connect`. **`test_mongo_models`
 e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
@@ -563,6 +684,8 @@ Ver `.env.example` para a lista completa. As principais:
 
 - `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` - Django padrão
 - `CSRF_TRUSTED_ORIGINS` - origens confiáveis para POST (produção: os dois subdomínios)
+- `SESSION_COOKIE_DOMAIN` - domínio do cookie de sessão (produção: `.arosasse.tech`;
+  vazio = cookie por host, obrigatório para o login funcionar em `localhost`)
 - `DJANGO_DB_*` - banco `django_internal`
 - `PG_*` - banco `bancocnpj` (dados da RFB)
 - `CHAT_PG_*` - usuário read-only `chat_ia`

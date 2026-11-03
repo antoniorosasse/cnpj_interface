@@ -2,28 +2,32 @@
 """
 Imprime um relatorio dos logs de acesso (chat.LogAcesso).
 
+Cobre eventos do chat e da consulta de empresas:
+  login, chat_pergunta, empresas_lista, empresas_detalhe.
+
+Os numeros vem de chat/relatorio.py (resumo_acesso), a mesma funcao que
+alimenta o painel do admin (/admin/chat/logacesso/) - comando e tela mostram
+sempre a mesma coisa.
+
 Uso:
     python manage.py relatorio_acesso                 # ultimos 7 dias
     python manage.py relatorio_acesso --dias 30
     python manage.py relatorio_acesso --tipo login
     python manage.py relatorio_acesso --tipo chat_pergunta
+    python manage.py relatorio_acesso --tipo empresas_lista
     python manage.py relatorio_acesso --dias 1        # so hoje
 
 Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand
-from django.db.models import Count
-from django.db.models.functions import TruncDate
-from django.utils import timezone
 
 from chat.models import LogAcesso
+from chat.relatorio import resumo_acesso
 
 
 class Command(BaseCommand):
-    help = 'Relatorio de logs de acesso (logins + perguntas no chat)'
+    help = 'Relatorio de logs de acesso (login, chat e consulta de empresas)'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -34,7 +38,7 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             '--tipo',
-            choices=[LogAcesso.TIPO_LOGIN, LogAcesso.TIPO_CHAT_PERGUNTA],
+            choices=[valor for valor, _ in LogAcesso.TIPO_CHOICES],
             default=None,
             help='Filtra por tipo (padrao: todos)',
         )
@@ -43,11 +47,7 @@ class Command(BaseCommand):
         dias = options['dias']
         tipo_filtro = options['tipo']
 
-        desde = timezone.now() - timedelta(days=dias)
-
-        qs = LogAcesso.objects.filter(criado_em__gte=desde)
-        if tipo_filtro:
-            qs = qs.filter(tipo=tipo_filtro)
+        resumo = resumo_acesso(dias=dias, tipo=tipo_filtro)
 
         # ----- Cabecalho -----
         self.stdout.write('=' * 60)
@@ -59,13 +59,8 @@ class Command(BaseCommand):
 
         # ----- Totais por tipo -----
         self.stdout.write('--- Totais por tipo ---')
-        por_tipo = (
-            qs.values('tipo')
-            .annotate(total=Count('id'))
-            .order_by('-total')
-        )
-        if por_tipo:
-            for row in por_tipo:
+        if resumo['total_por_tipo']:
+            for row in resumo['total_por_tipo']:
                 self.stdout.write(f'  {row["tipo"]:20s} {row["total"]:>6}')
         else:
             self.stdout.write('  (sem registros no periodo)')
@@ -73,60 +68,41 @@ class Command(BaseCommand):
 
         # ----- Por dia -----
         self.stdout.write('--- Por dia ---')
-        por_dia = (
-            qs.annotate(dia=TruncDate('criado_em'))
-            .values('dia', 'tipo')
-            .annotate(total=Count('id'))
-            .order_by('dia', 'tipo')
-        )
-        dias_dict: dict = {}
-        for row in por_dia:
-            dia = row['dia']
-            dias_dict.setdefault(dia, {})
-            dias_dict[dia][row['tipo']] = row['total']
-
-        if dias_dict:
-            self.stdout.write(f'  {"data":12s} {"login":>8s} {"pergunta":>10s}')
-            for dia in sorted(dias_dict.keys()):
-                login = dias_dict[dia].get(LogAcesso.TIPO_LOGIN, 0)
-                pergunta = dias_dict[dia].get(LogAcesso.TIPO_CHAT_PERGUNTA, 0)
-                self.stdout.write(f'  {dia.strftime("%Y-%m-%d"):12s} {login:>8d} {pergunta:>10d}')
+        if resumo['por_dia']:
+            # Colunas apenas para os tipos que apareceram no periodo
+            tipos_presentes = resumo['tipos_presentes']
+            self.stdout.write(
+                '  ' + f'{"data":12s}' + ''.join(f'{tipo:>20s}' for tipo in tipos_presentes)
+            )
+            for dia in resumo['dias_ordenados']:
+                linha = '  ' + f'{dia.strftime("%Y-%m-%d"):12s}'
+                for tipo in tipos_presentes:
+                    linha += f'{resumo["por_dia"][dia].get(tipo, 0):>20d}'
+                self.stdout.write(linha)
         else:
             self.stdout.write('  (sem registros no periodo)')
         self.stdout.write('')
 
         # ----- Usuarios distintos -----
         self.stdout.write('--- Usuarios distintos ---')
-        usuarios_login = (
-            LogAcesso.objects
-            .filter(tipo=LogAcesso.TIPO_LOGIN, criado_em__gte=desde)
-            .values('usuario')
-            .distinct()
-            .count()
-        )
-        usuarios_pergunta = (
-            LogAcesso.objects
-            .filter(tipo=LogAcesso.TIPO_CHAT_PERGUNTA, criado_em__gte=desde)
-            .values('usuario')
-            .distinct()
-            .count()
-        )
-        self.stdout.write(f'  Usuarios que logaram:       {usuarios_login}')
-        self.stdout.write(f'  Usuarios que perguntaram:   {usuarios_pergunta}')
+        self.stdout.write(f'  Usuarios que logaram:       {resumo["usuarios"]["logaram"]}')
+        self.stdout.write(f'  Usuarios que perguntaram:   {resumo["usuarios"]["perguntaram"]}')
+        self.stdout.write(f'  Logados que viram empresas: {resumo["usuarios"]["viram_empresas"]}')
         self.stdout.write('')
 
         # ----- Top IPs (pergunta) -----
         self.stdout.write('--- Top 10 IPs (perguntas no chat) ---')
-        top_ips = (
-            LogAcesso.objects
-            .filter(tipo=LogAcesso.TIPO_CHAT_PERGUNTA, criado_em__gte=desde)
-            .exclude(ip__isnull=True)
-            .values('ip')
-            .annotate(total=Count('id'))
-            .order_by('-total')[:10]
-        )
-        if top_ips:
-            for row in top_ips:
+        if resumo['top_ips_chat']:
+            for row in resumo['top_ips_chat']:
+                self.stdout.write(f'  {row["ip"]:20s} {row["total"]:>6}')
+        else:
+            self.stdout.write('  (sem IPs registrados)')
+        self.stdout.write('')
+
+        # ----- Top IPs (empresas) -----
+        self.stdout.write('--- Top 10 IPs (acessos a empresas) ---')
+        if resumo['top_ips_empresas']:
+            for row in resumo['top_ips_empresas']:
                 self.stdout.write(f'  {row["ip"]:20s} {row["total"]:>6}')
         else:
             self.stdout.write('  (sem IPs registrados)')
