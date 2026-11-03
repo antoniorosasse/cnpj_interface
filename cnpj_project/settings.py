@@ -28,6 +28,22 @@ CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
 ]
 
+# ==================== SESSAO (dominio do cookie) ====================
+# Ausente/vazio = cookie por host (padrao do Django).
+#
+# Em PRODUCAO vale '.arosasse.tech': o login feito em um subdominio passa a
+# valer nos outros (chat.arosasse.tech <-> cnpj.arosasse.tech). Efeito: quem
+# loga no chat aparece autenticado na consulta de empresas, e o log grava o
+# usuario real em vez de anonimo.
+#
+# ATENCAO: NAO fixe o dominio aqui. Com dominio fixo o navegador recusa o
+# cookie em localhost e o login local para de funcionar (o valor fica no
+# .env do servidor).
+#
+# CSRF_COOKIE_DOMAIN continua por host, de proposito: compartilhar o token
+# CSRF entre subdominios amplia a superficie de ataque sem necessidade.
+SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', '').strip() or None
+
 # ==================== APPS ====================
 INSTALLED_APPS = [
     'django.contrib.admin',

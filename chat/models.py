@@ -78,11 +78,16 @@ class Mensagem(models.Model):
 
 class LogAcesso(models.Model):
     """
-    Registro de eventos de acesso/uso do chat.
+    Registro de eventos de acesso/uso do chat e da consulta de empresas.
 
-    Tipos (por enquanto):
-      - 'login':          alguem logou (signal user_logged_in)
-      - 'chat_pergunta':  alguem enviou uma pergunta no chat
+    Tipos:
+      - 'login':             alguem logou (signal user_logged_in)
+      - 'chat_pergunta':     alguem enviou uma pergunta no chat
+      - 'empresas_lista':    alguem abriu a lista de empresas (/)
+      - 'empresas_detalhe':  alguem abriu o detalhe de uma empresa
+
+    Os dois ultimos sao gravados a partir do app 'core' (core/log_acesso.py).
+    A pagina de empresas e' publica: sem login, usuario fica nulo.
 
     Fica no banco 'default' (django_internal, Postgres), independente
     do backend de persistencia do chat (Postgres ORM ou MongoDB).
@@ -90,9 +95,13 @@ class LogAcesso(models.Model):
 
     TIPO_LOGIN = 'login'
     TIPO_CHAT_PERGUNTA = 'chat_pergunta'
+    TIPO_EMPRESAS_LISTA = 'empresas_lista'
+    TIPO_EMPRESAS_DETALHE = 'empresas_detalhe'
     TIPO_CHOICES = [
         (TIPO_LOGIN, 'Login'),
         (TIPO_CHAT_PERGUNTA, 'Pergunta no chat'),
+        (TIPO_EMPRESAS_LISTA, 'Lista de empresas'),
+        (TIPO_EMPRESAS_DETALHE, 'Detalhe de empresa'),
     ]
 
     usuario = models.ForeignKey(

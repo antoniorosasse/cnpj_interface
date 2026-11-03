@@ -21,16 +21,37 @@
                     {% csrf_token %}
                     <div class="mb-3">
                         <label class="form-label">Usuário</label>
-                        <input type="text" name="username" class="form-control" required autofocus>
+                        <input type="text" name="username" id="id_username" class="form-control" required autofocus>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Senha</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <input type="password" name="password" id="id_password" class="form-control" required>
                     </div>
                     <button type="submit" class="btn btn-primary w-100">Entrar</button>
                 </form>
+
+                <div class="alert alert-secondary small mt-3 mb-0">
+                    <i class="bi bi-unlock"></i> <strong>Acesso de demonstração</strong><br>
+                    Para conhecer o <strong>Chat com IA · Empresas</strong>, use o
+                    usuário <code>demo</code> e a senha <code>demo</code>.
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2 py-0 d-block"
+                            id="btn-demo">
+                        <i class="bi bi-magic"></i> Preencher com demo
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Preenche os campos com a conta de demonstracao (usuario/senha "demo").
+    // O botao existe so pra facilitar a vida de quem visita o portfolio.
+    document.getElementById('btn-demo').addEventListener('click', function () {
+        document.getElementById('id_username').value = 'demo';
+        document.getElementById('id_password').value = 'demo';
+    });
+</script>
 {% endblock %}

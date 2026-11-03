@@ -10,6 +10,12 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.views.decorators.http import require_POST
 
+from core.log_acesso import (
+    TIPO_DETALHE_EMPRESA,
+    TIPO_LISTA_EMPRESAS,
+    registrar_acesso,
+)
+
 import time
 import logging
 
@@ -110,6 +116,29 @@ def lista_empresas(request):
         last_cnpj = ''
         last_razao = ''
         last_fantasia = ''
+
+    # ============================================================
+    # 1.1 LOG DE ACESSO (lista de empresas)
+    # Nunca quebra a consulta; deduplicado por 10 min no core/log_acesso.py
+    # ============================================================
+    filtros_usados = [
+        f'{campo}={valor}'
+        for campo, valor in (
+            ('razao_social', razao_social),
+            ('nome_fantasia', nome_fantasia),
+            ('cnpj', cnpj),
+            ('uf', uf),
+            ('situacao', situacao),
+            ('simples', simples),
+            ('mei', mei),
+        )
+        if valor
+    ]
+    registrar_acesso(
+        request,
+        TIPO_LISTA_EMPRESAS,
+        '; '.join(filtros_usados) if filtros_usados else 'sem filtros',
+    )
     
     conn = None
     empresas = []
@@ -710,6 +739,9 @@ def buscar_empresas_rapido(request):
 
 def detalhe_empresa(request, cnpj):
     """Detalhe de uma empresa - COM TODAS AS INFORMAÇÕES"""
+    # Log de acesso (detalhe da empresa) - nunca quebra a consulta
+    registrar_acesso(request, TIPO_DETALHE_EMPRESA, f'cnpj={cnpj[:20]}')
+
     next_url = request.GET.get('next', '')
     
     conn = None

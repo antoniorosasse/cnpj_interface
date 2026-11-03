@@ -31,8 +31,11 @@ def _pegar_ip(request):
     xff = request.META.get('HTTP_X_FORWARDED_FOR')
     if xff:
         # X-Forwarded-For pode ter varios IPs separados por virgula.
-        # O primeiro e' o cliente real.
-        return xff.split(',')[0].strip()
+        # O Nginx usa `$proxy_add_x_forwarded_for` (ANEXA o IP real no fim),
+        # entao o ULTIMO elemento e' o cliente - o primeiro e' o que o
+        # visitante mandou e pode ser forjado. Mesma regra de
+        # core/log_acesso.py::pegar_ip.
+        return xff.split(',')[-1].strip()
     return request.META.get('REMOTE_ADDR')
 
 
