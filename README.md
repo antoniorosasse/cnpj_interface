@@ -97,6 +97,26 @@ que traduz perguntas em linguagem natural para SQL.
     +-- requirements.txt
     +-- testar_simple.py            # Testa conexoes (AS/400, PG, Mongo)
 
+## Front-end (tema e CSS)
+
+- Bootstrap 5.3 via CDN (`core/templates/core/base.html`), com tema claro/escuro
+  nativo (`data-bs-theme`) alternado pelo botão da navbar. A escolha fica em
+  `localStorage['sistema-tema']`; `?tema=dark|light` força o tema pela URL e o
+  script do `<head>` aplica antes do CSS (sem flash branco).
+- `static/css/sistema.css` concentra a linguagem visual das tabelas
+  (`.sis-tabela`, `.sis-thead`, `.sis-pill`, `.sis-num`, `.sis-cnpj`) e a
+  transformação de tabela em cartões no celular (`.tabela-cards`), que usa o
+  `data-label` de cada `<td>`: o mesmo markup serve desktop e mobile, sem
+  tabela duplicada. As cores saem das variáveis do Bootstrap
+  (`--bs-*-bg-subtle`, `--bs-border-color`, `--bs-tertiary-bg`), então o tema
+  escuro não precisa de CSS próprio.
+- O chat (`chat/templates/chat/chat.html`) segue a mesma regra: o `<style>` do
+  template não tem cor fixa (só variáveis `--bs-*`) e a tabela de resultados é
+  gerada em JS com `class="table sis-tabela"` + `thead.sis-thead`, além do
+  `data-label` de cada célula. Foi o que corrigiu o cabeçalho "apagado" no tema
+  escuro (antes o `th` tinha `background: #f3f4f6` fixo e o texto herdado era
+  claro).
+
 ## Como rodar local
 
 Pre-requisitos:

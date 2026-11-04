@@ -312,8 +312,8 @@
             <div class="card-body">
                 {% if estabelecimentos %}
                 <div class="table-responsive">
-                    <table class="table table-striped table-hover table-sm">
-                        <thead class="table-dark">
+                    <table class="table table-hover sis-tabela tabela-cards">
+                        <thead class="sis-thead">
                             <tr>
                                 <th>CNPJ</th>
                                 <th>Tipo</th>
@@ -329,37 +329,37 @@
                         </thead>
                         <tbody>
                             {% for est in estabelecimentos %}
-                            <tr {% if est.cd_matriz_filial == 1 %}class="table-primary"{% endif %}>
-                                <td><code>{{ est.cnpj_completo|slice:"0:2" }}.{{ est.cnpj_completo|slice:"2:5" }}.{{ est.cnpj_completo|slice:"5:8" }}/{{ est.cnpj_completo|slice:"8:12" }}-{{ est.cnpj_completo|slice:"12:14" }}</code></td>
-                                <td>
+                            <tr{% if est.cd_matriz_filial == 1 %} class="sis-linha-matriz"{% endif %}>
+                                <td class="sis-cnpj" data-label="CNPJ">{{ est.cnpj_completo|slice:"0:2" }}.{{ est.cnpj_completo|slice:"2:5" }}.{{ est.cnpj_completo|slice:"5:8" }}/{{ est.cnpj_completo|slice:"8:12" }}-{{ est.cnpj_completo|slice:"12:14" }}</td>
+                                <td data-label="Tipo">
                                     {% if est.tipo == 'MATRIZ' %}
-                                        <span class="badge bg-primary">Matriz</span>
+                                        <span class="badge sis-pill bg-primary-subtle text-primary-emphasis">Matriz</span>
                                     {% else %}
-                                        <span class="badge bg-secondary">Filial</span>
+                                        <span class="badge sis-pill bg-secondary-subtle text-secondary-emphasis">Filial</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ est.nm_fantasia|default:"-"|truncatechars:30 }}</td>
-                                <td>
-                                    {% if est.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
-                                    {% elif est.situacao_descricao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
-                                    {% elif est.situacao_descricao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
-                                    {% elif est.situacao_descricao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
-                                    {% else %}<span class="badge bg-dark">{{ est.situacao_descricao }}</span>{% endif %}
+                                <td data-label="Fantasia">{{ est.nm_fantasia|default:"-"|truncatechars:30 }}</td>
+                                <td data-label="Situação">
+                                    {% if est.situacao_descricao == 'ATIVA' %}<span class="badge sis-pill bg-success-subtle text-success-emphasis">Ativa</span>
+                                    {% elif est.situacao_descricao == 'INAPTA' %}<span class="badge sis-pill bg-danger-subtle text-danger-emphasis">Inapta</span>
+                                    {% elif est.situacao_descricao == 'SUSPENSA' %}<span class="badge sis-pill bg-warning-subtle text-warning-emphasis">Suspensa</span>
+                                    {% elif est.situacao_descricao == 'BAIXADA' %}<span class="badge sis-pill bg-secondary-subtle text-secondary-emphasis">Baixada</span>
+                                    {% else %}<span class="badge sis-pill bg-secondary-subtle text-secondary-emphasis">{{ est.situacao_descricao }}</span>{% endif %}
                                 </td>
-                                <td>{{ est.tip_logradouro|default:"" }} {{ est.logradouro|default:"-" }}, {{ est.numero|default:"-" }} - {{ est.bairro|default:"-" }}</td>
-                                <td>
+                                <td data-label="Endereço">{{ est.tip_logradouro|default:"" }} {{ est.logradouro|default:"-" }}, {{ est.numero|default:"-" }} - {{ est.bairro|default:"-" }}</td>
+                                <td data-label="Município/UF">
                                     {% if est.municipio_descricao %}{{ est.municipio_descricao }}{% elif est.nm_cidade_ext %}{{ est.nm_cidade_ext }}{% else %}-{% endif %}{% if est.uf %} / {{ est.uf }}{% endif %}
                                 </td>
-                                <td>
+                                <td class="sis-num" data-label="Telefone">
                                     {% if est.ddd_1 and est.tel_1 %}
                                         ({{ est.ddd_1 }}) {{ est.tel_1 }}
                                     {% else %}
                                         -
                                     {% endif %}
                                 </td>
-                                <td>{{ est.email|default:"-"|truncatechars:25 }}</td>
-                                <td>{{ est.data_abertura|date:"d/m/Y"|default:"-" }}</td>
-                                <td>{{ est.cnae_principal|default:"-" }}</td>
+                                <td data-label="Email"><span class="d-inline-block text-truncate align-bottom" style="max-width: 11rem" title="{{ est.email|default:"-" }}">{{ est.email|default:"-"|truncatechars:25 }}</span></td>
+                                <td class="sis-num" data-label="Início">{{ est.data_abertura|date:"d/m/Y"|default:"-" }}</td>
+                                <td data-label="CNAE">{{ est.cnae_principal|default:"-" }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -384,8 +384,8 @@
             <div class="card-body">
                 {% if socios %}
                 <div class="table-responsive">
-                    <table class="table table-striped table-hover table-sm">
-                        <thead class="table-dark">
+                    <table class="table table-hover sis-tabela tabela-cards">
+                        <thead class="sis-thead">
                             <tr>
                                 <th>#</th>
                                 <th>Nome / Razão Social</th>
@@ -401,24 +401,24 @@
                         <tbody>
                             {% for socio in socios %}
                             <tr>
-                                <td>{{ forloop.counter }}</td>
-                                <td><strong>{{ socio.nome }}</strong></td>
-                                <td>
-                                    {% if socio.id_tipo_socio == 1 %}<span class="badge bg-success">PJ</span>
-                                    {% elif socio.id_tipo_socio == 2 %}<span class="badge bg-primary">PF</span>
-                                    {% elif socio.id_tipo_socio == 3 %}<span class="badge bg-warning">Estrangeiro</span>
-                                    {% else %}<span class="badge bg-secondary">Outro</span>{% endif %}
+                                <td data-label="#">{{ forloop.counter }}</td>
+                                <td data-label="Nome"><strong>{{ socio.nome }}</strong></td>
+                                <td data-label="Tipo">
+                                    {% if socio.id_tipo_socio == 1 %}<span class="badge sis-pill bg-success-subtle text-success-emphasis">PJ</span>
+                                    {% elif socio.id_tipo_socio == 2 %}<span class="badge sis-pill bg-primary-subtle text-primary-emphasis">PF</span>
+                                    {% elif socio.id_tipo_socio == 3 %}<span class="badge sis-pill bg-warning-subtle text-warning-emphasis">Estrangeiro</span>
+                                    {% else %}<span class="badge sis-pill bg-secondary-subtle text-secondary-emphasis">Outro</span>{% endif %}
                                 </td>
-                                <td>{{ socio.cnpj_cpf|default:"-" }}</td>
-                                <td>{{ socio.qualificacao_descricao|default:"-" }}</td>
-                                <td>{{ socio.data_entrada|date:"d/m/Y"|default:"-" }}</td>
-                                <td>{{ socio.faixa_etaria_descricao|default:"-" }}</td>
-                                <td>{{ socio.pais_socio|default:"Brasil" }}</td>
-                                <td>
+                                <td class="sis-num" data-label="CPF/CNPJ">{{ socio.cnpj_cpf|default:"-" }}</td>
+                                <td data-label="Qualificação">{{ socio.qualificacao_descricao|default:"-" }}</td>
+                                <td class="sis-num" data-label="Entrada">{{ socio.data_entrada|date:"d/m/Y"|default:"-" }}</td>
+                                <td data-label="Faixa Etária">{{ socio.faixa_etaria_descricao|default:"-" }}</td>
+                                <td data-label="País">{{ socio.pais_socio|default:"Brasil" }}</td>
+                                <td data-label="Representante">
                                     {% if socio.nome_representante %}
                                         {{ socio.nome_representante }}
                                         {% if socio.qualificacao_representante %}
-                                            <br><small class="text-muted">{{ socio.qualificacao_representante }}</small>
+                                            <br><small class="text-body-secondary">{{ socio.qualificacao_representante }}</small>
                                         {% endif %}
                                     {% else %}
                                         -

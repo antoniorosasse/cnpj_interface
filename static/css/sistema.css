@@ -1,0 +1,124 @@
+/* ============================================================
+   sistema.css - linguagem visual comum aos modulos do sistema
+   Traduz para Bootstrap 5.3 a mesma estetica do spike Tailwind:
+   tabela densa, cabecalho discreto, pills suaves e numeros alinhados.
+   O tema (claro/escuro) vem de data-bs-theme - nao ha CSS por tema aqui.
+   ============================================================ */
+
+:root {
+    --sis-fs-xs: .6875rem;          /* 11px: cabecalho de tabela, pills */
+    --sis-fs-sm: .8125rem;          /* 13px: corpo de tabela densa */
+    --sis-tracking: .04em;
+}
+
+/* ---------- tabela ---------- */
+.table.sis-tabela {
+    font-size: var(--sis-fs-sm);
+    margin-bottom: 0;
+}
+
+/* cabecalho: 11px em caixa alta, discreto (substitui o table-dark) */
+.table.sis-tabela > thead.sis-thead > tr > th {
+    font-size: var(--sis-fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--sis-tracking);
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+    background-color: var(--bs-tertiary-bg);
+    border-bottom: 1px solid var(--bs-border-color);
+    padding: .5rem .75rem;
+}
+
+.table.sis-tabela > tbody > tr > td {
+    padding: .5rem .75rem;
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+    vertical-align: top;
+}
+
+/* so as colunas de texto longo quebram em qualquer ponto */
+.table.sis-tabela > tbody > tr > td[data-label="Endereço"],
+.table.sis-tabela > tbody > tr > td[data-label="CNAE"] {
+    overflow-wrap: anywhere;
+}
+
+/* valores longos (CNAE secundario, endereco) quebram em vez de vazar */
+.card-body dd { overflow-wrap: anywhere; }
+.card-body .col-md-6 > .table.table-sm > tbody > tr > td { overflow-wrap: anywhere; }
+
+.table.sis-tabela > tbody > tr:last-child > td {
+    border-bottom: 0;
+}
+
+/* linha da matriz: tinta suave no lugar do table-primary */
+.table.sis-tabela > tbody > tr.sis-linha-matriz {
+    --bs-table-bg: var(--bs-primary-bg-subtle);
+    --bs-table-color: var(--bs-body-color);
+}
+
+/* numeros alinhados (telefone, data) e CNPJ em monoespaco */
+.sis-num { font-variant-numeric: tabular-nums; }
+
+.sis-cnpj {
+    font-family: var(--bs-font-monospace);
+    font-size: var(--sis-fs-xs);
+    white-space: nowrap;
+}
+
+/* pills suaves: usa as cores subtle que o Bootstrap 5.3 ja tem nos 2 temas */
+.sis-pill {
+    font-size: var(--sis-fs-xs);
+    font-weight: 600;
+    padding: .15rem .5rem;
+    border-radius: 50rem;
+    line-height: 1.4;
+}
+
+/* ---------- mobile: a tabela vira cartoes (sem duplicar markup) ---------- */
+@media (max-width: 767.98px) {
+    .tabela-cards > thead { display: none; }
+
+    .tabela-cards,
+    .tabela-cards > tbody,
+    .tabela-cards > tbody > tr,
+    .tabela-cards > tbody > tr > td {
+        display: block;
+        width: 100%;
+    }
+
+    .tabela-cards > tbody > tr {
+        border: 1px solid var(--bs-border-color);
+        border-radius: .75rem;
+        margin-bottom: .75rem;
+        padding: .5rem .75rem;
+        background-color: var(--bs-body-bg);
+    }
+
+    .tabela-cards > tbody > tr.sis-linha-matriz {
+        border-color: var(--bs-primary-border-subtle);
+        background-color: var(--bs-primary-bg-subtle);
+    }
+
+    .tabela-cards > tbody > tr > td {
+        border: 0;
+        padding: .25rem 0;
+        display: flex;
+        gap: .75rem;
+        justify-content: space-between;
+        align-items: baseline;
+        text-align: right;
+    }
+
+    /* rotulo do campo, vindo do atributo data-label de cada td */
+    .tabela-cards > tbody > tr > td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 40%;
+        text-align: left;
+        font-size: var(--sis-fs-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: var(--sis-tracking);
+        color: var(--bs-secondary-color);
+    }
+
+    .tabela-cards > tbody > tr > td:empty { display: none; }
+}

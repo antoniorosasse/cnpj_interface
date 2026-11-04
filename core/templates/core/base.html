@@ -5,9 +5,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#212529">
     <title>{% block title %}Sistema CNPJ{% endblock %}</title>
+    <script>
+    /* Tema claro/escuro: aplica ANTES do CSS carregar para nao piscar.
+       Chave unica do sistema: 'sistema-tema' (menu_interface usa 'menu-theme'
+       e sera unificado nela na Fase 3).
+       data-theme = nossos estilos; data-bs-theme = componentes Bootstrap 5.3. */
+    (function () {
+        /* ?tema=dark|light forca o tema (usado em teste/print); senao vale o localStorage */
+        var q = new URLSearchParams(window.location.search).get('tema');
+        var t = (q === 'dark' || q === 'light') ? q : localStorage.getItem('sistema-tema');
+        if (t !== 'dark' && t !== 'light') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-bs-theme', t);
+    })();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="{% static 'css/sistema.css' %}?v=1">
     <style>
         .text-uppercase {
             text-transform: uppercase;
@@ -85,6 +103,9 @@
                     {% endif %}
                 </ul>
             </div>
+            <button type="button" id="btn-tema" class="btn btn-sm btn-outline-light ms-2" aria-label="Alternar tema claro/escuro">
+                <i class="bi bi-moon-stars" id="icone-tema"></i>
+            </button>
         </div>
     </nav>
 
@@ -102,13 +123,33 @@
         {% endblock %}
     </div>
 
-    <footer class="mt-5 py-3 bg-light">
-        <div class="container text-center text-muted small">
+    <footer class="mt-5 py-3 bg-body-tertiary">
+        <div class="container text-center text-body-secondary small">
             <p class="mb-0">Sistema CNPJ - Consulta de Empresas</p>
         </div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    /* Botao de tema (aplica junto com data-bs-theme para o Bootstrap escurecer sozinho) */
+    (function () {
+        var html = document.documentElement;
+        var btn = document.getElementById('btn-tema');
+        var icone = document.getElementById('icone-tema');
+        if (!btn) { return; }
+        function pinta(t) {
+            html.setAttribute('data-theme', t);
+            html.setAttribute('data-bs-theme', t);
+            if (icone) { icone.className = t === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
+        }
+        pinta(html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+        btn.addEventListener('click', function () {
+            var novo = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('sistema-tema', novo);
+            pinta(novo);
+        });
+    })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
