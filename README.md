@@ -99,7 +99,7 @@ que traduz perguntas em linguagem natural para SQL.
 
 ## Front-end (tema e CSS)
 
-- Bootstrap 5.3 via CDN (`core/templates/core/base.html`), com tema claro/escuro
+- Bootstrap **5.3.8** via CDN (`core/templates/core/base.html`), com tema claro/escuro
   nativo (`data-bs-theme`) alternado pelo botão da navbar. A escolha fica em
   `localStorage['sistema-tema']`; `?tema=dark|light` força o tema pela URL e o
   script do `<head>` aplica antes do CSS (sem flash branco).
