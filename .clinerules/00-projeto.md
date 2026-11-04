@@ -43,12 +43,17 @@ atual: se algo mudar, atualize o arquivo correspondente.
   `repo_postgres.py` ou `repo_mongo.py`. **Toda mudanca de modelo deve ser
   feita nos dois backends** (`models.py` + `mongo_models.py` +
   `repo_*.py`) e coberta por teste nos dois modos.
+- Log de acesso (`chat.LogAcesso`, tabela `chat_logacesso`): as consultas ficam
+  em `chat/relatorio.py::resumo_acesso`, usadas pelo comando
+  `manage.py relatorio_acesso` e pelo painel de `/admin/chat/logacesso/`.
+  Nao duplique esse SQL: mudou a metrica, muda ali. A tela **nao executa**
+  comando nenhum (so mostra o texto para copiar).
 
 ## Comandos do projeto
 
     source venv/bin/activate
     python manage.py runserver 8002          # app em http://localhost:8002/
-    python manage.py test chat               # 218 testes em chat/tests/ (+4 core)
+    python manage.py test chat               # 245 testes em chat/tests/ (+14 core)
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo
 
