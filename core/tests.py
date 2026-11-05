@@ -1,4 +1,5 @@
 """Testes do app core (pagina de detalhe da empresa e log de acesso)."""
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ from core.log_acesso import (
     pegar_ip,
     registrar_acesso,
 )
+from core.maps import montar_maps_nome_url, montar_maps_url
 from chat.models import LogAcesso
 
 
@@ -187,4 +189,274 @@ class LogAcessoEmpresasTests(SimpleTestCase):
         tipos = [valor for valor, _ in LogAcesso.TIPO_CHOICES]
         self.assertIn('empresas_lista', tipos)
         self.assertIn('empresas_detalhe', tipos)
+
+
+class GoogleMapsUrlTests(SimpleTestCase):
+    """
+    Link do Google Maps (core/maps.py). O pino de c_ceps e do CEP (a media do
+    trecho que ele cobre; no CEP generico, o centroide do municipio), entao o
+    numero do imovel manda: com rua + numero o link vai em texto (sem CEP; e
+    sem bairro no CEP generico, que cobre o municipio inteiro). Sem numero,
+    usa a coordenada do CEP. A URL api=1&query= e publica, sem chave.
+    """
+
+    BASE = 'https://www.google.com/maps/search/?api=1&query='
+
+    @staticmethod
+    def _estab(**extra):
+        base = {
+            'logradouro': 'RUA AR 3',
+            'numero': '119',
+            'bairro': 'ARUANA II',
+            'municipio_descricao': 'GOIANIA',
+            'uf': 'GO',
+            'cep': '74740300',
+            'latitude': None,
+            'longitude': None,
+            'generico': False,
+        }
+        base.update(extra)
+        return base
+
+    def test_sem_numero_usa_pino_do_cep(self):
+        """Sem numero o texto nao posiciona: o pino do CEP e o melhor que ha."""
+        url = montar_maps_url(self._estab(numero='S/N',
+                                         latitude=Decimal('-16.692071'),
+                                         longitude=Decimal('-49.201760')))
+        self.assertEqual(url, self.BASE + '-16.692071,-49.201760')
+
+    def test_rua_com_numero_prefere_endereco_ao_pino_do_cep(self):
+        """Caso do Posto Prudente (Joinville/SC): pino do CEP ~1,2 km fora do numero.
+
+        c_ceps.89204251 = -26.286121,-48.850077 (media do trecho da Rua Blumenau
+        na America); o numero 3011 fica em Santo Antonio, -26.274944,-48.851272.
+        """
+        url = montar_maps_url(self._estab(logradouro='BLUMENAU',
+                                         tip_logradouro='RUA',
+                                         numero='3011',
+                                         bairro='SANTO ANTONIO',
+                                         municipio_descricao='JOINVILLE',
+                                         uf='SC',
+                                         cep='89204251',
+                                         latitude=Decimal('-26.286121'),
+                                         longitude=Decimal('-48.850077')))
+        self.assertEqual(
+            url,
+            self.BASE + 'RUA+BLUMENAU%2C+3011%2C+SANTO+ANTONIO%2C+JOINVILLE%2C+SC%2C+Brasil'
+        )
+
+    def test_cep_generico_usa_endereco_mesmo_com_coordenada(self):
+        """CEP do municipio inteiro: coordenada e centroide, bairro/CEP sao ruido.
+
+        'RUA AR 3, 119, ARUANA II, GOIANIA, GO, 74740300' nao resolve no Maps;
+        'RUA AR 3, 119, GOIANIA, GO' resolve.
+        """
+        url = montar_maps_url(self._estab(latitude=Decimal('-27.387229'),
+                                          longitude=Decimal('-51.782812'),
+                                          generico=True))
+        self.assertEqual(url, self.BASE + 'RUA+AR+3%2C+119%2C+GOIANIA%2C+GO%2C+Brasil')
+        self.assertNotIn('-27.387229', url)
+        self.assertNotIn('ARUANA', url)
+        self.assertNotIn('74740300', url)
+
+    def test_cep_generico_sem_endereco_usa_coordenada(self):
+        url = montar_maps_url({'latitude': Decimal('-27.387229'),
+                               'longitude': Decimal('-51.782812'),
+                               'generico': True})
+        self.assertEqual(url, self.BASE + '-27.387229,-51.782812')
+
+    def test_sem_coordenada_monta_endereco(self):
+        """Sem coordenada: endereco completo, sem CEP (com rua o CEP atrapalha)."""
+        url = montar_maps_url(self._estab())
+        self.assertEqual(
+            url,
+            self.BASE + 'RUA+AR+3%2C+119%2C+ARUANA+II%2C+GOIANIA%2C+GO%2C+Brasil'
+        )
+
+    def test_cep_so_entra_quando_nao_ha_rua_e_vai_formatado(self):
+        url = montar_maps_url({'cep': '74740-300'})
+        self.assertEqual(url, self.BASE + '74740-300')
+
+    def test_numero_sem_numero_nao_entra_na_busca(self):
+        url = montar_maps_url(self._estab(numero='S/N'))
+        self.assertNotIn('S%2FN', url)
+        self.assertIn('GOIANIA', url)
+
+    def test_apenas_cep_ainda_gera_link(self):
+        url = montar_maps_url({'cep': '74740300'})
+        self.assertEqual(url, self.BASE + '74740-300')
+
+    def test_endereco_no_exterior_nao_acrescenta_brasil(self):
+        url = montar_maps_url({
+            'logradouro': 'AV CORRIENTES',
+            'numero': '1234',
+            'nm_cidade_ext': 'BUENOS AIRES',
+        })
+        self.assertEqual(url, self.BASE + 'AV+CORRIENTES%2C+1234%2C+BUENOS+AIRES')
+
+    def test_coordenada_fora_do_brasil_e_ignorada(self):
+        url = montar_maps_url(self._estab(latitude=Decimal('40.712800'),
+                                         longitude=Decimal('-74.006000')))
+        self.assertNotIn('40.712800', url)
+        self.assertIn('GOIANIA', url)
+
+    def test_sem_coordenada_e_sem_endereco_retorna_vazio(self):
+        self.assertEqual(montar_maps_url({}), '')
+        self.assertEqual(montar_maps_url(None), '')
+
+    def test_coordenada_invalida_nao_quebra(self):
+        url = montar_maps_url(self._estab(latitude='x', longitude='y'))
+        self.assertIn('GOIANIA', url)
+
+
+class GoogleMapsNomeUrlTests(SimpleTestCase):
+    """Segundo link, que busca pelo nome (core/maps.py).
+
+    Serve para o caso em que o endereco fiscal da Receita diverge do cadastro
+    do Google: Condor Auto Posto Atuba (CNPJ 01.184.650/0001-05), Receita
+    'RODOVIA BR-116, 850, ATUBA, COLOMBO/PR, CEP 83413-000'. O CEP 83413-000 e
+    do bairro Maua em Colombo e o Maps cadastra o posto em 'BR-116, 87 -
+    Atuba, Curitiba/PR': o link por endereco cai a 1,8 km e o link pelo nome
+    ('CONDOR AUTO POSTO ATUBA LTDA, COLOMBO, PR, Brasil') acerta o pino.
+    """
+
+    BASE = 'https://www.google.com/maps/search/?api=1&query='
+
+    def test_usa_nome_fantasia_antes_da_razao_social(self):
+        url = montar_maps_nome_url({
+            'nm_fantasia': 'KOMPRAO KOCH ATACADISTA',
+            'razao_social': 'KOCH HIPERMERCADO S/A',
+            'municipio_descricao': 'TIJUCAS',
+            'uf': 'SC',
+        })
+        self.assertEqual(
+            url, self.BASE + 'KOMPRAO+KOCH+ATACADISTA%2C+TIJUCAS%2C+SC%2C+Brasil'
+        )
+
+    def test_sem_fantasia_usa_razao_social(self):
+        """Condor: nm_fantasia vazio, o nome que acha o ponto e a razao social."""
+        url = montar_maps_nome_url({
+            'nm_fantasia': None,
+            'razao_social': 'CONDOR AUTO POSTO ATUBA LTDA',
+            'municipio_descricao': 'COLOMBO',
+            'uf': 'PR',
+        })
+        self.assertEqual(
+            url, self.BASE + 'CONDOR+AUTO+POSTO+ATUBA+LTDA%2C+COLOMBO%2C+PR%2C+Brasil'
+        )
+
+    def test_sem_municipio_nao_gera_link(self):
+        """Nome sozinho e ambiguo: sem municipio nao ha segundo link."""
+        self.assertEqual(montar_maps_nome_url({'razao_social': 'PADARIA CENTRAL'}), '')
+
+    def test_sem_nome_nao_gera_link(self):
+        self.assertEqual(montar_maps_nome_url({'nm_fantasia': ' ', 'razao_social': None,
+                                               'municipio_descricao': 'COLOMBO'}), '')
+        self.assertEqual(montar_maps_nome_url(None), '')
+
+    def test_endereco_no_exterior_usa_cidade(self):
+        url = montar_maps_nome_url({
+            'razao_social': 'EMPRESA EXEMPLO',
+            'nm_cidade_ext': 'BUENOS AIRES',
+        })
+        self.assertEqual(url, self.BASE + 'EMPRESA+EXEMPLO%2C+BUENOS+AIRES')
+
+
+class GoogleMapsTemplateTests(SimpleTestCase):
+    """Coluna Mapa na tabela de estabelecimentos e botao no card da matriz."""
+
+    @staticmethod
+    def _render(estabelecimentos, empresa=None):
+        dados_empresa = {
+            'razao_social': 'KOCH HIPERMERCADO S/A',
+            'cnpj_completo': '02831172000190',
+            'municipio_descricao': 'TIJUCAS',
+            'uf': 'SC',
+        }
+        dados_empresa.update(empresa or {})
+        return render_to_string('core/detalhe.html', {
+            'empresa': dados_empresa,
+            'estabelecimentos': estabelecimentos,
+            'socios': [],
+            'total_socios': 0,
+            'total_filiais': 0,
+            'total_estabelecimentos': len(estabelecimentos),
+            'next_url': '/chat/',
+        })
+
+    @staticmethod
+    def _filial(**extra):
+        base = {
+            'cnpj_completo': '02831172000270',
+            'cnpj_ordem': '0002',
+            'cnpj_dv': '70',
+            'cd_matriz_filial': 2,
+            'tipo': 'FILIAL',
+            'nm_fantasia': 'KOCH PICARRAS',
+            'situacao_descricao': 'ATIVA',
+            'logradouro': 'AVENIDA DAS FLORES',
+            'numero': '100',
+            'bairro': 'CENTRO',
+            'uf': 'SC',
+            'data_abertura': None,
+            'cnae_principal': '4711301',
+        }
+        base.update(extra)
+        return base
+
+    def test_cabecalho_tem_coluna_mapa(self):
+        html = self._render([self._filial()])
+        self.assertIn('data-label="Mapa"', html)
+
+    def test_linha_com_coordenada_mostra_link_em_nova_aba(self):
+        html = self._render([self._filial(
+            maps_url='https://www.google.com/maps/search/?api=1&query=-26.9,-48.7'
+        )])
+        self.assertIn('query=-26.9,-48.7', html)
+        self.assertIn('target="_blank"', html)
+        self.assertIn('rel="noopener"', html)
+
+    def test_linha_sem_link_nao_mostra_icone(self):
+        html = self._render([self._filial(maps_url='')])
+        self.assertNotIn('google.com/maps', html)
+
+    def test_card_da_matriz_mostra_botao(self):
+        html = self._render(
+            [self._filial()],
+            empresa={'maps_url': 'https://www.google.com/maps/search/?api=1&query=-26.9,-48.7'},
+        )
+        self.assertIn('Abrir no Google Maps', html)
+
+    def test_card_sem_link_nao_mostra_botao(self):
+        html = self._render([self._filial()], empresa={'maps_url': ''})
+        self.assertNotIn('Abrir no Google Maps', html)
+
+    def test_card_mostra_busca_pelo_nome(self):
+        """Segundo botao: usado quando o endereco fiscal cai no lugar errado."""
+        html = self._render(
+            [self._filial()],
+            empresa={
+                'maps_url': 'https://www.google.com/maps/search/?api=1&query=-26.9,-48.7',
+                'maps_nome_url': 'https://www.google.com/maps/search/?api=1&query=CONDOR',
+            },
+        )
+        self.assertIn('Buscar pelo nome', html)
+        self.assertIn('query=CONDOR', html)
+
+    def test_card_sem_nome_nao_mostra_busca_pelo_nome(self):
+        html = self._render(
+            [self._filial()],
+            empresa={'maps_url': 'https://www.google.com/maps/search/?api=1&query=-26.9,-48.7'},
+        )
+        self.assertNotIn('Buscar pelo nome', html)
+
+    def test_linha_mostra_busca_pelo_nome(self):
+        html = self._render([self._filial(
+            maps_url='https://www.google.com/maps/search/?api=1&query=-26.9,-48.7',
+            maps_nome_url='https://www.google.com/maps/search/?api=1&query=KOCH+PICARRAS',
+        )])
+        self.assertIn('Buscar pelo nome no Google Maps', html)
+        self.assertIn('query=KOCH+PICARRAS', html)
+
+
 

@@ -240,6 +240,23 @@
                                 <th>País</th>
                                 <td>{{ empresa.pais_descricao|default:"Brasil" }}</td>
                             </tr>
+                            {% if empresa.maps_url or empresa.maps_nome_url %}
+                            <tr>
+                                <th>Mapa</th>
+                                <td>
+                                    {% if empresa.maps_url %}
+                                    <a href="{{ empresa.maps_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-geo-alt-fill"></i> Abrir no Google Maps
+                                    </a>
+                                    {% endif %}
+                                    {% if empresa.maps_nome_url %}
+                                    <a href="{{ empresa.maps_nome_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Se o pino do endereço não estiver no lugar certo, busque pelo nome">
+                                        <i class="bi bi-search"></i> Buscar pelo nome
+                                    </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
                         </table>
                     </div>
                     <div class="col-md-6">
@@ -325,6 +342,7 @@
                                 <th>Email</th>
                                 <th>Início</th>
                                 <th>CNAE Principal</th>
+                                <th>Mapa</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -360,6 +378,20 @@
                                 <td data-label="Email"><span class="d-inline-block text-truncate align-bottom" style="max-width: 11rem" title="{{ est.email|default:"-" }}">{{ est.email|default:"-"|truncatechars:25 }}</span></td>
                                 <td class="sis-num" data-label="Início">{{ est.data_abertura|date:"d/m/Y"|default:"-" }}</td>
                                 <td data-label="CNAE">{{ est.cnae_principal|default:"-" }}</td>
+                                <td class="text-center text-nowrap" data-label="Mapa">
+                                    {% if est.maps_url %}
+                                        <a href="{{ est.maps_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="Abrir no Google Maps">
+                                            <i class="bi bi-geo-alt-fill"></i>
+                                        </a>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                    {% if est.maps_nome_url %}
+                                        <a href="{{ est.maps_nome_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Buscar pelo nome no Google Maps">
+                                            <i class="bi bi-search"></i>
+                                        </a>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>

@@ -15,6 +15,7 @@ from core.log_acesso import (
     TIPO_LISTA_EMPRESAS,
     registrar_acesso,
 )
+from core.maps import montar_maps_nome_url, montar_maps_url
 
 import time
 import logging
@@ -812,6 +813,9 @@ def detalhe_empresa(request, cnpj):
                     e.uf,
                     e.municipio,
                     mun.municipio AS municipio_descricao,
+                    cc.latitude,
+                    cc.longitude,
+                    cc.generico,
                     
                     -- Contato
                     e.ddd_1,
@@ -849,6 +853,7 @@ def detalhe_empresa(request, cnpj):
                 LEFT JOIN c_municipios mun ON e.municipio = mun.cd_municipio
                 LEFT JOIN c_paises p ON e.cd_pais = p.cd_pais
                 LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                LEFT JOIN c_ceps cc ON cc.cep = e.cep
                 WHERE e.cnpj_basico = %s
                 AND e.cd_matriz_filial = 1
             """
@@ -893,6 +898,9 @@ def detalhe_empresa(request, cnpj):
                     e.uf,
                     e.municipio,
                     mun.municipio AS municipio_descricao,
+                    cc.latitude,
+                    cc.longitude,
+                    cc.generico,
                     e.nm_cidade_ext,
                     e.cd_pais,
                     p.pais AS pais_descricao,
@@ -921,12 +929,27 @@ def detalhe_empresa(request, cnpj):
                 LEFT JOIN c_motivos m ON e.motivo_sit_cadastro = m.cd_motivo_sit_cadastro
                 LEFT JOIN c_municipios mun ON e.municipio = mun.cd_municipio
                 LEFT JOIN c_paises p ON e.cd_pais = p.cd_pais
+                LEFT JOIN c_ceps cc ON cc.cep = e.cep
                 WHERE e.cnpj_basico = %s
                 ORDER BY e.cnpj_ordem, e.cnpj_dv
             """
             cur.execute(sql_filiais, [cnpj_basico])
             estabelecimentos = cur.fetchall()
             total_filiais = len([e for e in estabelecimentos if e['cd_matriz_filial'] == 2])
+
+            # Link do Google Maps: coordenada do CEP (c_ceps) ou endereco em texto
+            # (CEP generico, que cobre o municipio inteiro, usa o endereco).
+            # O segundo link busca pelo nome: o endereco fiscal da Receita as
+            # vezes diverge do Maps e so o nome acha o ponto (ver core/maps.py).
+            empresa['maps_url'] = montar_maps_url(empresa)
+            empresa['maps_nome_url'] = montar_maps_nome_url(empresa)
+            for est in estabelecimentos:
+                # A razao social vem de c_empresas (uma por cnpj_basico): as
+                # filiais so trazem nm_fantasia na consulta delas.
+                if not est.get('razao_social'):
+                    est['razao_social'] = empresa.get('razao_social')
+                est['maps_url'] = montar_maps_url(est)
+                est['maps_nome_url'] = montar_maps_nome_url(est)
             
             # ============================================================
             # 3. SÓCIOS (COM TODAS AS INFORMAÇÕES)
