@@ -27,6 +27,7 @@ TABELAS E TAMANHOS (use para decidir se vale JOIN)
   c_simples             ~30.300.000 linhas   GIGANTE
   c_socios              ~18.900.000 linhas   GRANDE
   c_municipios          ~5.570 linhas        LOOKUP
+  c_ceps                ~1.260.000 linhas    LOOKUP (CEP -> coordenada)
   c_cnaes               ~1.360 linhas        LOOKUP
   c_paises              ~260 linhas          LOOKUP
   c_naturezas           ~90 linhas           LOOKUP
@@ -110,6 +111,46 @@ c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
     idx_estabelecimentos_uf_sit (uf, cd_sit_cadastro)
     idx_estab_nome_fantasia_gin_todos (nm_fantasia) GIN trigram, SEM filtro
       de matriz - use para buscar nome fantasia em matriz OU filial
+
+=====================================================================
+c_ceps  (~1.26M linhas) -- coordenada e nome do logradouro por CEP
+=====================================================================
+
+  cep             varchar(8) PRIMARY KEY  (CEP so com os 8 digitos, sem hifen)
+  logradouro      varchar(150)
+  bairro          varchar(100)
+  id_municipio    integer                 (codigo IBGE; ver c_municipios)
+  nome_municipio  varchar(100)
+  uf              varchar(2)
+  latitude        numeric(9,6)            (no Brasil e negativa)
+  longitude       numeric(9,6)            (no Brasil e negativa)
+  fonte           varchar(10)             (tbl_cep | geocep | bq)
+  generico        boolean                 (true = CEP do municipio inteiro)
+  atualizado_em   timestamp
+
+  JOIN: c_estabelecimentos.cep = c_ceps.cep  (os dois em 8 digitos)
+
+  Uso tipico (link do Google Maps, ~97,5% dos estabelecimentos tem coordenada):
+    SELECT e.cnpj_basico, e.cep, cc.latitude, cc.longitude, cc.generico
+      FROM c_estabelecimentos e
+      LEFT JOIN c_ceps cc ON cc.cep = e.cep
+     WHERE e.cnpj_basico = '02831172'
+
+  Aviso: longitude negativa no Brasil. Inverter lat/lon poe o ponto no
+  oceano. Nao use c_ceps para filtrar por cidade (use c_municipios) -
+  ela serve para coordenada e nome do logradouro do CEP.
+  A coordenada e do CEP, nao do numero (media do trecho que o CEP cobre):
+  numa rua longa erra por quilometros - o CEP 89204-251 (Rua Blumenau,
+  Joinville/SC) fica ~1,2 km do numero 3011, que e em Santo Antonio enquanto
+  o CEP aponta para a America. Por isso o link do Maps usa o endereco em
+  texto quando o estabelecimento tem rua + numero, e a coordenada so quando
+  o numero e vazio, "SN" ou "S/N".
+  generico = true quando o Correios nao associa logradouro ao CEP (ele cobre
+  o municipio inteiro, ex.: 89669-000 Ipira/SC): nesse caso a coordenada e o
+  centroide da area do municipio e cai no interior, e o texto vai sem bairro
+  e sem CEP (bairro e CEP sao do municipio inteiro - na Receita vem "CENTRO"
+  para tudo). Sao 10.218 CEPs assim (~24% dos estabelecimentos).
+  Carregada por: ProjetoCargaDados -> manage.py carregar_ceps
 
 =====================================================================
 c_simples  (~30.3M linhas) -- optantes Simples/MEI

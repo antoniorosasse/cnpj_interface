@@ -13,6 +13,8 @@ que traduz perguntas em linguagem natural para SQL.
 - [Consulta de CNPJ](#consulta-de-cnpj)
   - [O que dá pra buscar](#o-que-dá-pra-buscar)
   - [O que aparece no detalhe da empresa](#o-que-aparece-no-detalhe-da-empresa)
+    - [Link do Google Maps](#link-do-google-maps)
+    - [Buscar pelo nome (segundo link)](#buscar-pelo-nome-segundo-link)
   - [Estatísticas (`/estatisticas/`)](#estatísticas-estatisticas)
   - [Performance](#performance)
 - [Chat IA](#chat-ia)
@@ -50,6 +52,7 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templatetags/
     |   |   +-- num_filters.py      # Filtros de formatacao de numero
     |   +-- conexoes.py             # Conexoes (AS/400, PG, Mongo)
+    |   +-- maps.py                 # Links do Google Maps (endereco + busca pelo nome)
     |   +-- routers.py              # CNPJRouter (default vs postgres)
     |   +-- urls.py
     |   +-- views.py                # lista, detalhe, estatisticas
@@ -64,7 +67,7 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templates/chat/
     |   |   +-- chat.html
     |   |   +-- historico.html
-    |   +-- tests/                  # 218 testes
+    |   +-- tests/                  # 245 testes
     |   |   +-- test_embedding_service.py
     |   |   +-- test_integracao.py
     |   |   +-- test_models.py
@@ -192,6 +195,9 @@ Passos:
 3. Rodar `CALL sp_recalcular_estatisticas_totais();` no `bancocnpj`
    (ou usar o botão em `/estatisticas/recalcular/`) para popular a
    tabela `c_estatisticas_totais` (contagens instantâneas).
+4. Carregar a `c_ceps` (coordenada/nome por CEP) pelo `ProjetoCargaDados`
+   (`manage.py carregar_ceps`) — é o que habilita o link do Google Maps.
+   Sem ela a página funciona, mas o mapa cai para o endereço em texto.
 
 O schema completo das tabelas (colunas, tipos, códigos, índices
 relevantes) fica em `chat/services/schema_context.py` — é o mesmo
@@ -242,6 +248,67 @@ e cache de 15min com timeout de 800ms quando há filtros combinados.
 
 A página `/empresa/<cnpj>/` mostra **tudo** que a Receita pública sobre
 aquela empresa. Dividido em seções:
+
+### Link do Google Maps
+
+Cada estabelecimento (e o card da matriz) tem um atalho para o Google Maps. A
+URL `maps/search/?api=1&query=` é montada por `core/maps.py:montar_maps_url`:
+não precisa de chave de API e não faz chamada externa no request — usa só o que
+já veio do banco. A ordem é:
+
+1. **rua + número → endereço em texto** (`logradouro, número, bairro, município,
+   UF`). O pino de `c_ceps` é do **CEP**, não do número: é a média do trecho que
+   o CEP cobre, e numa rua longa isso erra por quilômetros (Rua Blumenau, 3011,
+   Joinville/SC: o CEP 89204-251 aponta para a América, o número fica em Santo
+   Antônio, ~1,2 km fora);
+2. **sem número (ou sem rua) → coordenada `lat,lon`** com 6 casas da `c_ceps`
+   (texto sem número não posiciona nada, o pino do CEP é o melhor que há);
+3. **sem coordenada → endereço em texto**.
+
+O CEP não entra no texto quando há rua: com o CEP na busca o Google não acha a
+rua, e sem hífen ele ainda lê `89204251` como número de porta. Ele só aparece
+(formatado, `74740-300`) quando não há logradouro nenhum. Medido na base: 90,1%
+dos 38,5 milhões de estabelecimentos têm rua + número e passam pelo texto; 9,9%
+(3,8 milhões, número `S/N`, `SN`, `0`) ficam no pino do CEP, que é o que tem
+coordenada.
+
+**CEP genérico** (`c_ceps.generico = true`): em município pequeno o Correios
+usa um único CEP para a cidade inteira (o `xxxxx-000`, ex.: `89669-000`
+Ipira/SC serve 809 estabelecimentos em 208 logradouros, a maioria rural). A
+coordenada desse CEP é o centroide da área do município, então o pino cai no
+mato. Nesse caso o texto perde também o **bairro** (na Receita vem "CENTRO"
+para tudo) e fica `logradouro, número, município, UF` — testado com o Maps:
+`RUA QUINZE DE AGOSTO, 123, CENTRO, IPIRA, SC, 89669000, Brasil` **não**
+resolve; `RUA QUINZE DE AGOSTO, 123, IPIRA, SC` resolve. São 10.218 CEPs
+assim no país, o que alcança 24% dos estabelecimentos da base (9,3 milhões, em
+5.356 municípios).
+
+### Buscar pelo nome (segundo link)
+
+Ao lado do link por endereço existe um segundo botão, **Buscar pelo nome**,
+montado por `core/maps.py:montar_maps_nome_url` (`nm_fantasia`, senão a razão
+social, + município + UF). Ele existe porque o endereço da Receita é **fiscal**
+e às vezes não corresponde ao cadastro do Google — e aí não há texto de
+endereço que posicione certo.
+
+Caso medido (Condor Auto Posto Atuba, `01.184.650/0001-05`, Colombo/PR):
+
+| O que | Valor |
+|---|---|
+| Receita | `RODOVIA BR-116, 850, ATUBA, COLOMBO/PR, CEP 83413-000` |
+| Link por endereço | Google devolve `BR-116, 850 - **Mauá**, Colombo - PR, 83413-000` — o CEP 83413-000 é do bairro Mauá, **1,76 km** do Atuba |
+| POI no Google | `Condor Auto Posto Atuba — BR-116, 87 - Atuba, **Curitiba**/PR, 83411-380` (outro município, outro número) |
+| Link pelo nome | `CONDOR AUTO POSTO ATUBA LTDA, COLOMBO, PR, Brasil` → **0 m** do POI |
+
+Foram testados 12 formatos de endereço para esse CNPJ (`RODOVIA`/`BR-116`,
+com/sem CEP, com/sem Brasil, traço antes do bairro, "Regis Bittencourt"): todos
+caem em Mauá ou numa lista. Só o nome acha o ponto.
+
+O segundo link é **aditivo** — o link por endereço não mudou. Medido em 8
+casos: fundir nome+endereço numa query única piorou 3 (Laguna Náutica 10 m →
+653 m, KM Log → 11,5 km, Tijucas fantasia → 884 m), e o nome sozinho cai em
+"Resultados" na maioria (Posto Prudente/Joinville a 2 km). Por isso ele é um
+botão separado, e só aparece quando há nome e município.
 
 ### Identificação
 
@@ -678,9 +745,9 @@ Testes em `chat/tests/test_admin_log.py`.
 # Testes
 
     python manage.py test chat       # 245 testes do chat
-    python manage.py test core       # 14 testes do core
+    python manage.py test core       # 39 testes do core
 
-Roda **245 testes** em `chat/tests/` (+ 14 em `core/tests.py`) = 259 no total:
+Roda **245 testes** em `chat/tests/` (+ 39 em `core/tests.py`) = 284 no total:
 
 - `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
@@ -692,7 +759,7 @@ Roda **245 testes** em `chat/tests/` (+ 14 em `core/tests.py`) = 259 no total:
 - `test_integracao.py` - fluxo fim-a-fim (roda nos 2 backends)
 - `test_signals.py` - extração de IP do `X-Forwarded-For` (login/pergunta)
 - `test_admin_log.py` - `resumo_acesso`, comando `relatorio_acesso` e painel do admin
-- `core/tests.py` - template do detalhe (município/UF) + log de acesso das páginas de empresas
+- `core/tests.py` - template do detalhe (município/UF), links do Maps (endereço e busca pelo nome) + log de acesso das páginas de empresas
 
 Os testes usam mock do DeepSeek e do `psycopg2.connect`. **`test_mongo_models`
 e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
