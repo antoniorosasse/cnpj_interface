@@ -16,11 +16,59 @@ from core.log_acesso import (
     registrar_acesso,
 )
 from core.maps import montar_maps_nome_url, montar_maps_url
+from core.proximidade import (
+    LIMITE_PAGINA,
+    PAGINA_ALEM_DO_FIM,
+    PAGINA_SEM_TABELA,
+    RAIO_MAX_KM,
+    RAIO_MIN_KM,
+    RAIO_PADRAO_KM,
+    buscar_proximos,
+    cursor_do_token,
+    cursor_para_pagina,
+    hist_de_texto,
+    hist_para_texto,
+    km_para_texto,
+    resolver_origem,
+    token_cursor,
+)
+from core.telefone import montar_whatsapp
 
+import math
 import time
 import logging
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
+
+
+def consultar_com_salto(cur, conn, sql, params, offset, log=None):
+    """
+    Executa a consulta da pagina aplicando o OFFSET do salto "Ir para".
+
+    Keyset nao pula N paginas, entao o salto absoluto usa OFFSET - e OFFSET
+    so e barato quando a ordenacao sai do indice. Com filtros que exigem
+    bitmap scan + Sort o salto estoura o `statement_timeout` de 8 s (ver a
+    view). Nesse caso a consulta e repetida SEM o OFFSET (a transacao e
+    desfeita, o que tambem devolve o plano padrao) e a tela mostra a primeira
+    pagina com aviso, em vez de ficar vazia com um numero de pagina que nao
+    abriu.
+
+    Devolve (linhas, recusou_o_salto).
+    """
+    if not offset:
+        cur.execute(sql, params)
+        return cur.fetchall(), False
+
+    try:
+        cur.execute(sql + " OFFSET %s", list(params) + [offset])
+        return cur.fetchall(), False
+    except Exception as e:
+        if log:
+            log.info("Salto por OFFSET recusado (offset=%s): %s", offset, e)
+        conn.rollback()
+        cur.execute(sql, params)
+        return cur.fetchall(), True
 
 
 def get_postgres_connection():
@@ -80,10 +128,23 @@ SITUACOES = {
     'BAIXADA': 8,
 }
 
+# Rotulos do select de situacao (lista de empresas e /proximidade/), na ordem
+# em que aparecem na tela.
+SITUACOES_ROTULOS = [
+    ('ATIVA', 'Ativa'),
+    ('NULA', 'Nula'),
+    ('SUSPENSA', 'Suspensa'),
+    ('INAPTA', 'Inapta'),
+    ('BAIXADA', 'Baixada'),
+]
+
 
 def lista_empresas(request):
     """
-    Lista empresas - COM ORDENAÇÃO POR CNPJ, RAZÃO SOCIAL, NOME FANTASIA
+    Lista empresas - ordenacao por CNPJ ou RAZAO SOCIAL (keyset)
+
+    Filtros: razao social, nome fantasia (texto livre), CNPJ, UF, cidade
+    (codigo TOM em c_municipios_geo), situacao, Simples e MEI.
     Otimizado com CTE MATERIALIZED para ordenação por razão social
     """
     aviso = None
@@ -98,7 +159,12 @@ def lista_empresas(request):
     situacao = request.GET.get('situacao', '').strip().upper()
     simples = request.GET.get('simples', '').strip()
     mei = request.GET.get('mei', '').strip()
+    municipio = request.GET.get('municipio', '').strip()
     ordem = request.GET.get('ordem', 'cnpj')
+    # A ordenacao por nome fantasia foi removida: o keyset por nm_fantasia
+    # nunca foi confiavel (NULLS FIRST/DESC trocavam a ordem entre paginas).
+    if ordem not in ('cnpj', 'razao_social'):
+        ordem = 'cnpj'
    
     try:
         page = int(request.GET.get('page', 1))
@@ -108,7 +174,6 @@ def lista_empresas(request):
     limit = 20
     last_cnpj = request.GET.get('last_cnpj', '')
     last_razao = request.GET.get('last_razao', '')
-    last_fantasia = request.GET.get('last_fantasia', '')
     direction = request.GET.get('dir', 'next')
     is_last_page = request.GET.get('last_page', '') == 'true'
     # Se está na página 1, força início limpo (elimina ponteiros reversos residuais)
@@ -116,7 +181,6 @@ def lista_empresas(request):
         direction = 'next'
         last_cnpj = ''
         last_razao = ''
-        last_fantasia = ''
 
     # ============================================================
     # 1.1 LOG DE ACESSO (lista de empresas)
@@ -132,6 +196,7 @@ def lista_empresas(request):
             ('situacao', situacao),
             ('simples', simples),
             ('mei', mei),
+            ('municipio', municipio),
         )
         if valor
     ]
@@ -150,13 +215,14 @@ def lista_empresas(request):
     first_cnpj_prev = ''
     last_razao_next = ''
     first_razao_prev = ''
-    last_fantasia_next = ''
-    first_fantasia_prev = ''
+    lista_municipios: list[Any] = []
     
     sql: str = ""
     params: list[Any] = []
     count_sql: str = ""
     count_params: list[Any] = []
+    offset_salto = 0
+    salto_recusado = 0
     
     try:
         conn = get_postgres_connection()
@@ -177,7 +243,23 @@ def lista_empresas(request):
             # ============================================================
             filtros_sql = ""
             filtros_params: list[Any] = []
-            
+
+            # ------------------------------------------------------------
+            # 2.0 CIDADE
+            # c_municipios_geo liga o codigo TOM (e.municipio) ao nome/UF.
+            # O select so carrega as cidades da UF escolhida (max. 645 em MG).
+            # ------------------------------------------------------------
+            municipio_id = int(municipio) if municipio.isdigit() else None
+            if municipio_id and not uf:
+                cur.execute('SELECT uf FROM c_municipios_geo WHERE cd_municipio = %s',
+                            [municipio_id])
+                linha_uf = cur.fetchone()
+                uf = (linha_uf['uf'] or '') if linha_uf else ''
+            if uf:
+                cur.execute('SELECT cd_municipio, nome FROM c_municipios_geo '
+                            'WHERE uf = %s ORDER BY nome', [uf])
+                lista_municipios = cur.fetchall()
+
             if razao_social:
                 filtros_sql += " AND emp.razao_social ILIKE %s"
                 filtros_params.append(f'%{razao_social}%')
@@ -212,8 +294,13 @@ def lista_empresas(request):
                     filtros_params.append(f'{cnpj}%')  # Busca prefixada aproveita B-tree
             
             if uf:
+                # O select de UF sempre vem preenchido; e.municipio e o codigo TOM
                 filtros_sql += " AND e.uf = %s"
                 filtros_params.append(uf.upper())
+
+            if municipio_id:
+                filtros_sql += " AND e.municipio = %s"
+                filtros_params.append(municipio_id)
             
             if situacao and situacao in SITUACOES:
                 filtros_sql += " AND e.cd_sit_cadastro = %s"
@@ -235,7 +322,7 @@ def lista_empresas(request):
             total = None
 
             # Caso 1: Sem filtros -> Total geral direto da tabela de totais (0.2 ms)
-            filtros_ativos = [razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]
+            filtros_ativos = [razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei, municipio_id]
             if not any(filtros_ativos):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
@@ -246,7 +333,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 2: Filtro apenas por UF
-            elif uf and not any([razao_social, nome_fantasia, cnpj, situacao, simples, mei]):
+            elif uf and not any([razao_social, nome_fantasia, cnpj, situacao, simples, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'uf' AND chave = %s
@@ -256,7 +343,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 3: Filtro apenas por Situação
-            elif situacao and not any([razao_social, nome_fantasia, cnpj, uf, simples, mei]):
+            elif situacao and not any([razao_social, nome_fantasia, cnpj, uf, simples, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'situacao' AND chave = %s
@@ -266,7 +353,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 4: Filtro apenas por Simples
-            elif simples == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, mei]):
+            elif simples == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'simples' AND chave = 'S'
@@ -276,7 +363,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 5: Filtro apenas por MEI
-            elif mei == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples]):
+            elif mei == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'mei' AND chave = 'S'
@@ -289,7 +376,7 @@ def lista_empresas(request):
             total_estimado = False
             if total is None:
                 from django.core.cache import cache
-                cache_key = f"cnt_{razao_social}_{nome_fantasia}_{cnpj}_{uf}_{situacao}_{simples}_{mei}"
+                cache_key = f"cnt_{razao_social}_{nome_fantasia}_{cnpj}_{uf}_{situacao}_{simples}_{mei}_{municipio_id}"
                 total_em_cache = cache.get(cache_key)
 
                 if total_em_cache is not None:
@@ -320,6 +407,29 @@ def lista_empresas(request):
                 total_paginas = 5000
             else:
                 total_paginas = (total + limit - 1) // limit if total and total > 0 else 0
+
+            # Campo "Ir para": pagina pedida sem cursor. Keyset nao pula N
+            # paginas, entao este modo usa OFFSET (ver comentario abaixo).
+            if not total_estimado and total_paginas and page > total_paginas:
+                aviso = (f'A página {page} passa do fim ({total_paginas} '
+                         'páginas); mostrando a última.')
+                page = total_paginas
+            if not total_paginas:
+                page = 1
+            pular = (page > 1 and not last_cnpj and not last_razao
+                     and direction != 'prev' and not is_last_page)
+            offset_salto = (page - 1) * limit if pular else 0
+
+            # Salto por OFFSET custa caro sem a ordenacao saindo do indice: com
+            # bitmap scan + Sort, uf=PR na pagina 5.000 passou de 25 s (medido
+            # em 06/11/2026); forcando index scan fica ~1 s. Timeout de 8 s
+            # protege o worker quando os filtros nao usam o indice de ordenacao
+            # (ex.: razao social + UF), caso em que o salto e recusado.
+            if pular:
+                cur.execute("SET LOCAL statement_timeout = 8000")
+                for opcao in ('enable_bitmapscan', 'enable_seqscan',
+                              'enable_hashjoin', 'enable_mergejoin'):
+                    cur.execute(f"SET LOCAL {opcao} = off")
             
             # ============================================================
             # 5. PAGINAÇÃO (KEYSET POR ORDENAÇÃO)
@@ -349,6 +459,7 @@ def lista_empresas(request):
                         e.dt_ini AS data_inicio_atividade,
                         s.op_simples,
                         s.op_mei,
+                        mg.nome AS municipio_nome,
                         CASE 
                             WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
                             WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
@@ -361,6 +472,7 @@ def lista_empresas(request):
                     INNER JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
                     LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
                     LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                    LEFT JOIN c_municipios_geo mg ON mg.cd_municipio = e.municipio
                     WHERE e.cd_matriz_filial = 1
                 """ + filtros_sql
                 params = list(filtros_params)
@@ -395,8 +507,10 @@ def lista_empresas(request):
 
                     sql += " ORDER BY emp.razao_social, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
                     params.append(limit + 1)
-                    cur.execute(sql, params)
-                    resultados = cur.fetchall()
+                    resultados, recusou = consultar_com_salto(
+                        cur, conn, sql, params, offset_salto, logger)
+                    if recusou:
+                        salto_recusado = page
 
                     if len(resultados) > limit:
                         has_next = True
@@ -405,123 +519,6 @@ def lista_empresas(request):
                 if resultados:
                     last_razao_next = resultados[-1]['razao_social'] or ''
                     first_razao_prev = resultados[0]['razao_social'] or ''
-                    last_cnpj_next = resultados[-1]['cnpj_completo']
-                    first_cnpj_prev = resultados[0]['cnpj_completo']
-            
-            # ============================================================
-            # ----- ORDENAÇÃO POR NOME FANTASIA -----
-            # ============================================================
-            elif ordem == 'nome_fantasia':
-                join_emp = "INNER JOIN" if razao_social else "LEFT JOIN"
-
-                sql = f"""
-                    SELECT 
-                        e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                        emp.razao_social,
-                        e.nm_fantasia,
-                        e.logradouro,
-                        e.numero,
-                        e.bairro,
-                        e.cep,
-                        e.uf,
-                        e.email,
-                        e.ddd_1 || e.tel_1 AS telefone_1,
-                        e.cnae_principal,
-                        c.nm_cnae AS atividade_principal,
-                        e.cd_sit_cadastro,
-                        e.dt_ini AS data_inicio_atividade,
-                        s.op_simples,
-                        s.op_mei,
-                        CASE 
-                            WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                            WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                            WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                            WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                            WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                            ELSE 'OUTRA'    
-                        END AS situacao_descricao
-                    FROM c_estabelecimentos e
-                    {join_emp} c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                    LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                    LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                    WHERE e.cd_matriz_filial = 1
-                """ + filtros_sql
-                params = list(filtros_params)
-
-                try:
-                    cur.execute("SET LOCAL statement_timeout = 10000")  # 10 segundos
-
-                    if is_last_page:
-                        sql += " ORDER BY e.nm_fantasia DESC NULLS LAST, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
-                        params.append(limit)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-                        resultados = list(reversed(resultados))
-                        has_next = False
-
-                    elif direction == 'prev':
-                        if last_fantasia:
-                            sql += " AND e.nm_fantasia < %s"
-                            params.append(last_fantasia)
-
-                        sql += " ORDER BY e.nm_fantasia DESC NULLS LAST, e.cnpj_basico DESC, e.cnpj_ordem DESC, e.cnpj_dv DESC LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:limit]
-                        resultados = list(reversed(resultados))
-
-                    else:
-                        if last_fantasia:
-                            sql += " AND e.nm_fantasia > %s"
-                            params.append(last_fantasia)
-
-                        sql += " ORDER BY e.nm_fantasia NULLS FIRST, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
-                        params.append(limit + 1)
-                        cur.execute(sql, params)
-                        resultados = cur.fetchall()
-
-                        if len(resultados) > limit:
-                            has_next = True
-                            resultados = resultados[:-1]
-
-                except Exception:
-                    # Cancelou aos 10s: avisa o usuário com transparência
-                    conn.rollback()
-                    resultados = []
-                    aviso = "⚠️ A consulta excedeu o tempo limite de 10 segundos. Tente refinar a busca com mais filtros (como Razão Social ou CNPJ)."
-                    fallback_sql = f"""
-                        SELECT 
-                            e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
-                            emp.razao_social, e.nm_fantasia, e.logradouro, e.numero, e.bairro,
-                            e.cep, e.uf, e.email, e.ddd_1 || e.tel_1 AS telefone_1,
-                            e.cnae_principal, c.nm_cnae AS atividade_principal, e.cd_sit_cadastro,
-                            e.dt_ini AS data_inicio_atividade, s.op_simples, s.op_mei,
-                            CASE 
-                                WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
-                                WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
-                                WHEN e.cd_sit_cadastro = 3 THEN 'SUSPENSA'
-                                WHEN e.cd_sit_cadastro = 4 THEN 'INAPTA'
-                                WHEN e.cd_sit_cadastro = 8 THEN 'BAIXADA'
-                                ELSE 'OUTRA'    
-                            END AS situacao_descricao
-                        FROM c_estabelecimentos e
-                        LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
-                        LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
-                        LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
-                        WHERE e.cd_matriz_filial = 1
-                    """ + filtros_sql + " ORDER BY e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv LIMIT %s"
-                    fallback_params = list(filtros_params) + [limit]
-                    cur.execute(fallback_sql, fallback_params)
-                    resultados = cur.fetchall()
-                    has_next = len(resultados) >= limit
-
-                if resultados:
-                    last_fantasia_next = resultados[-1]['nm_fantasia'] or ''
-                    first_fantasia_prev = resultados[0]['nm_fantasia'] or ''
                     last_cnpj_next = resultados[-1]['cnpj_completo']
                     first_cnpj_prev = resultados[0]['cnpj_completo']
             
@@ -547,6 +544,7 @@ def lista_empresas(request):
                         e.dt_ini AS data_inicio_atividade,
                         s.op_simples,
                         s.op_mei,
+                        mg.nome AS municipio_nome,
                         CASE 
                             WHEN e.cd_sit_cadastro = 1 THEN 'NULA'
                             WHEN e.cd_sit_cadastro = 2 THEN 'ATIVA'
@@ -559,6 +557,7 @@ def lista_empresas(request):
                     LEFT JOIN c_empresas emp ON e.cnpj_basico = emp.cnpj_basico
                     LEFT JOIN c_cnaes c ON e.cnae_principal = c.cnae
                     LEFT JOIN c_simples s ON e.cnpj_basico = s.cnpj_basico
+                    LEFT JOIN c_municipios_geo mg ON mg.cd_municipio = e.municipio
                     WHERE e.cd_matriz_filial = 1
                 """ + filtros_sql
                 params = list(filtros_params)
@@ -602,8 +601,10 @@ def lista_empresas(request):
                     sql += " ORDER BY e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv"
                     sql += " LIMIT %s"
                     params.append(limit + 1)
-                    cur.execute(sql, params)
-                    resultados = cur.fetchall()
+                    resultados, recusou = consultar_com_salto(
+                        cur, conn, sql, params, offset_salto, logger)
+                    if recusou:
+                        salto_recusado = page
                     
                     if len(resultados) > limit:
                         has_next = True
@@ -613,19 +614,64 @@ def lista_empresas(request):
                     last_cnpj_next = resultados[-1]['cnpj_completo']
                     first_cnpj_prev = resultados[0]['cnpj_completo']
             
-            empresas = resultados
-            
+            if pular:
+                # Volta ao plano normal para as consultas seguintes (filiais e
+                # cidades), que sao pequenas e se beneficiam do plano padrao.
+                for opcao in ('enable_bitmapscan', 'enable_seqscan',
+                              'enable_hashjoin', 'enable_mergejoin'):
+                    cur.execute(f"RESET {opcao}")
+                cur.execute("RESET statement_timeout")
+
+            # ============================================================
+            # 6. QUANTAS FILIAIS CADA EMPRESA DA PAGINA TEM
+            # Uma query para os 20 cnpj_basico da pagina (indice
+            # idx_estabelecimentos_cnpj_basico): ~2 ms. Evita um LATERAL
+            # por linha dentro das tres queries de listagem.
+            # ============================================================
+            filiais_por_basico: dict[str, int] = {}
+            if resultados:
+                basicos = sorted({linha['cnpj_completo'][:8] for linha in resultados})
+                cur.execute("""
+                    SELECT cnpj_basico,
+                           count(*) FILTER (WHERE cd_matriz_filial <> 1) AS filiais
+                      FROM c_estabelecimentos
+                     WHERE cnpj_basico = ANY(%s)
+                     GROUP BY cnpj_basico
+                """, [basicos])
+                filiais_por_basico = {
+                    linha['cnpj_basico']: linha['filiais'] for linha in cur.fetchall()
+                }
+
+            empresas = list(resultados)
+            for linha in empresas:
+                # RealDictRow e dict: da para acrescentar a coluna calculada
+                linha['total_filiais'] = filiais_por_basico.get(linha['cnpj_completo'][:8], 0)
+
+            if salto_recusado:
+                # O OFFSET estourou o timeout: a consulta ja foi repetida sem
+                # ele (consultar_com_salto), entao a tela mostra a primeira
+                # pagina - com o total certo - e explica o que houve.
+                aviso = (f'A página {salto_recusado} fica longe demais para '
+                         'esses filtros (a consulta passou de 8 s). Mostrando '
+                         'a primeira página: use as setas ou refine a busca.')
+                page = 1
+
     except Exception as e:
         logger.exception("Erro ao listar empresas: %s", e)
+        if not offset_salto:
+            total = 0
+        else:
+            # Nem o salto nem a repeticao sem OFFSET funcionaram: mantem o
+            # total ja contado e avisa, em vez de zerar a tela.
+            aviso = (f'Não foi possível abrir a página {page} agora. Use as '
+                     'setas a partir da primeira página ou refine a busca.')
+            page = 1
         empresas = []
-        total = 0
         has_next = False
         last_cnpj_next = ''
         first_cnpj_prev = ''
         last_razao_next = ''
         first_razao_prev = ''
-        last_fantasia_next = ''
-        first_fantasia_prev = ''
     finally:
         if conn:
             conn.close()
@@ -639,6 +685,7 @@ def lista_empresas(request):
         'situacao': situacao,
         'simples': simples,
         'mei': mei,
+        'municipio': municipio,
         'ordem': ordem,
         'total': total,
         'total_paginas': total_paginas,
@@ -649,15 +696,196 @@ def lista_empresas(request):
         'first_cnpj': first_cnpj_prev,
         'last_razao': last_razao_next,
         'first_razao': first_razao_prev,
-        'last_fantasia': last_fantasia_next,
-        'first_fantasia': first_fantasia_prev,
-        'lista_ufs': LISTA_UFS,  # <--- CERTIFIQUE-SE DE QUE ESTA LINHA ESTÁ AQUI
-        'aviso': '💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]) else None,
+        'lista_ufs': LISTA_UFS,
+        'lista_municipios': lista_municipios,
         'total_estimado': total_estimado,
-        'aviso': aviso or ('💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei]) else None),
+        'aviso': aviso or ('💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei, municipio_id]) else None),
     }
     
     return render(request, 'core/lista.html', context)
+
+
+def proximidade(request):
+    """
+    Estabelecimentos num raio de X km de um ponto.
+
+    A origem pode ser CNPJ, CEP, cidade ("Joinville/SC"), endereco
+    ("Rua do Principe, 500, Joinville/SC") ou coordenada ("-26.3,-48.8");
+    ver core/proximidade.py. A paginacao e keyset por (km, cnpj): o avanco usa
+    o cursor da ultima linha e o retorno usa a pilha de cursores em `hist`,
+    entao nao existe OFFSET.
+    """
+    origem_txt = request.GET.get('origem', '').strip()
+    try:
+        raio = int(float(request.GET.get('raio', RAIO_PADRAO_KM)))
+    except (TypeError, ValueError):
+        raio = RAIO_PADRAO_KM
+    raio = max(RAIO_MIN_KM, min(RAIO_MAX_KM, raio))
+
+    # Situacao cadastral: mesma nomenclatura e mesmos codigos da lista de
+    # empresas (SITUACOES). Valor desconhecido e ignorado.
+    situacao = request.GET.get('situacao', '').strip().upper()
+    if situacao not in SITUACOES:
+        situacao = ''
+
+    # Primeira visita (sem querystring) ja vem com "somente matrizes" marcado
+    somente_matrizes = ('matrizes' in request.GET) if request.GET else True
+
+    depois_km = request.GET.get('depois_km', '').strip()
+    depois_cnpj = request.GET.get('depois_cnpj', '').strip()
+    hist = hist_de_texto(request.GET.get('hist', ''))
+
+    # Pagina pedida no campo "Ir para" (salto absoluto): o cursor nao vem da
+    # querystring, e calculado em cursor_para_pagina.
+    try:
+        pagina_pedida = int(request.GET.get('page', '').strip())
+    except (TypeError, ValueError):
+        pagina_pedida = 0
+    # Paginas ja navegadas antes desta (so existe depois de um salto): mantem
+    # "Pagina X" correto enquanto o usuario usa as setas.
+    try:
+        pbase = int(request.GET.get('pbase', '').strip())
+    except (TypeError, ValueError):
+        pbase = 0
+    pbase = max(0, pbase)
+
+    # Cursor do keyset que abriu esta pagina (None = primeira pagina).
+    depois = None
+    if depois_km and len(depois_cnpj) == 14:
+        try:
+            depois = (float(depois_km), depois_cnpj)
+        except ValueError:
+            depois = None
+
+    origem = None
+    erro = None
+    aviso = None
+    resultados: list[Any] = []
+    tem_mais = False
+    total = None
+
+    if origem_txt:
+        conn = None
+        try:
+            conn = get_postgres_connection()
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                origem, erro = resolver_origem(cur, origem_txt)
+                if origem:
+                    if pagina_pedida > 1:
+                        salto = cursor_para_pagina(
+                            cur, origem['latitude'], origem['longitude'],
+                            raio, somente_matrizes, pagina_pedida,
+                            situacao=SITUACOES[situacao] if situacao else None,
+                        )
+                        if isinstance(salto, tuple):
+                            depois = salto
+                            hist = []
+                            pbase = pagina_pedida - 1
+                        else:
+                            # Sem cursor, o salto nao vale: volta ao comeco.
+                            hist = []
+                            pbase = 0
+                            if salto == PAGINA_ALEM_DO_FIM:
+                                aviso = (f'A página {pagina_pedida} passa do '
+                                         'fim desta busca; mostrando a '
+                                         'primeira página.')
+                            elif salto == PAGINA_SEM_TABELA:
+                                aviso = ('Sem a tabela de contagem por CEP não '
+                                         'dá para ir direto a uma página.')
+                    resultados, tem_mais, total = buscar_proximos(
+                        cur, origem['latitude'], origem['longitude'],
+                        raio, somente_matrizes, depois,
+                        situacao=SITUACOES[situacao] if situacao else None,
+                    )
+        except Exception as e:
+            logger.exception("Erro na busca por proximidade: %s", e)
+            erro = 'Não foi possível consultar a base agora. Tente novamente.'
+        finally:
+            if conn:
+                conn.close()
+
+        registrar_acesso(
+            request,
+            TIPO_LISTA_EMPRESAS,
+            f'proximidade: {origem_txt} raio={raio}km '
+            f'{"matrizes" if somente_matrizes else "todos"}'
+            f'{(" situacao=" + situacao) if situacao else ""}',
+        )
+
+    # Paginacao keyset: pagina atual = len(hist) + 1; cada token do hist e o
+    # cursor que abriu uma pagina anterior ('-' = comeco). `pbase` e o numero
+    # de paginas antes do primeiro item do hist (so existe apos um salto).
+    def montar_link(novo_hist, cursor, base=None):
+        params = {'origem': origem_txt, 'raio': raio}
+        if somente_matrizes:
+            params['matrizes'] = '1'
+        if situacao:
+            params['situacao'] = situacao
+        if novo_hist:
+            params['hist'] = hist_para_texto(novo_hist)
+        if cursor:
+            params['depois_km'] = km_para_texto(cursor[0])
+            params['depois_cnpj'] = cursor[1]
+        base = pbase if base is None else base
+        if base:
+            params['pbase'] = base
+        return '?' + urlencode(params)
+
+    def montar_link_pagina(numero):
+        """Salto absoluto: a view recalcula o cursor para a pagina pedida."""
+        params = {'origem': origem_txt, 'raio': raio}
+        if somente_matrizes:
+            params['matrizes'] = '1'
+        if situacao:
+            params['situacao'] = situacao
+        if numero > 1:
+            params['page'] = numero
+        return '?' + urlencode(params)
+
+    pagina = pbase + len(hist) + 1
+    link_primeira = montar_link_pagina(1)
+    if hist:
+        link_anterior = montar_link(hist[:-1], cursor_do_token(hist[-1]))
+    elif pagina > 1:
+        # Veio de um salto (hist vazio): voltar tambem e um salto.
+        link_anterior = montar_link_pagina(pagina - 1)
+    else:
+        link_anterior = None
+
+    link_proxima = None
+    if tem_mais and resultados:
+        ultima = resultados[-1]
+        cursor_atual = (float(ultima['km']), ultima['cnpj_completo'])
+        # Guarda contra loop: se o cursor nao andou (mesma ultima linha da
+        # pagina que a abriu), nao ofereca "proxima" - o usuario cairia na
+        # mesma pagina para sempre, com o contador subindo.
+        if cursor_atual != depois:
+            link_proxima = montar_link(hist + [token_cursor(depois)], cursor_atual)
+
+    total_paginas = None
+    if total is not None:
+        total_paginas = max(1, math.ceil(int(total) / LIMITE_PAGINA))
+
+    context = {
+        'origem_txt': origem_txt,
+        'origem': origem,
+        'erro': erro,
+        'aviso': aviso,
+        'raio': raio,
+        'raio_opcoes': [1, 2, 5, 10, 20, 50, 100],
+        'somente_matrizes': somente_matrizes,
+        'situacao': situacao,
+        'situacoes': SITUACOES_ROTULOS,
+        'resultados': resultados,
+        'tem_mais': tem_mais,
+        'total': total,
+        'pagina': pagina,
+        'total_paginas': total_paginas,
+        'link_primeira': link_primeira,
+        'link_anterior': link_anterior,
+        'link_proxima': link_proxima,
+    }
+    return render(request, 'core/proximidade.html', context)
 
 
 def buscar_empresas_rapido(request):
@@ -943,6 +1171,11 @@ def detalhe_empresa(request, cnpj):
             # vezes diverge do Maps e so o nome acha o ponto (ver core/maps.py).
             empresa['maps_url'] = montar_maps_url(empresa)
             empresa['maps_nome_url'] = montar_maps_nome_url(empresa)
+            # WhatsApp so quando um dos telefones e celular (core/telefone.py)
+            empresa['whatsapp_url'] = montar_whatsapp(
+                empresa.get('ddd_1'), empresa.get('tel_1'),
+                empresa.get('ddd_2'), empresa.get('tel_2'),
+            )
             for est in estabelecimentos:
                 # A razao social vem de c_empresas (uma por cnpj_basico): as
                 # filiais so trazem nm_fantasia na consulta delas.
@@ -950,6 +1183,10 @@ def detalhe_empresa(request, cnpj):
                     est['razao_social'] = empresa.get('razao_social')
                 est['maps_url'] = montar_maps_url(est)
                 est['maps_nome_url'] = montar_maps_nome_url(est)
+                est['whatsapp_url'] = montar_whatsapp(
+                    est.get('ddd_1'), est.get('tel_1'),
+                    est.get('ddd_2'), est.get('tel_2'),
+                )
             
             # ============================================================
             # 3. SÓCIOS (COM TODAS AS INFORMAÇÕES)

@@ -69,6 +69,47 @@ atual: se algo mudar, atualize o arquivo correspondente.
   o ProjetoCargaDados **nao existe na VPS**. Para atualizar: rodar o ETL local e
   reenviar com `~/Projetos/restaura_ceps.sh` (ver `docs/COMANDOS.md`). Nunca
   `pg_dump -Fc` entre as duas maquinas: o local e PG 18 e a VPS e PG 16.
+- **WhatsApp** (`core/telefone.py`): `montar_whatsapp_url` so gera link quando o
+  telefone da RFB parece **celular** (8 ou 9 digitos **comecando com 9**, DDD
+  11..99). A base guarda 8 digitos, sem o nono. Fixo (2,3,4,5) nao gera link —
+  nao invente um numero so para ter o botao. `montar_whatsapp` tenta `tel_1` e
+  depois `tel_2`. Aplicado no card do detalhe e na tabela de estabelecimentos.
+- **Filtro de cidade e `/proximidade/`**: dependem da tabela
+  **`c_municipios_geo`** (5.572 linhas: `cd_municipio` = TOM, `cd_ibge`, `nome`
+  do IBGE com acento, `nome_tom` da RFB, `uf`, `latitude`/`longitude` do
+  centroide e `n_ceps`). Ela **nao substitui** `c_municipios` (que continua sendo
+  a lista da RFB). Carregada pelo ProjetoCargaDados
+  (`manage.py carregar_municipios`); este repo so le. Em producao **ainda nao
+  existe** (ver pendencia #28 em `docs/PROJETOS.md`): sem ela o select de Cidade
+  fica vazio e `/proximidade/` responde com erro.
+- **Busca por proximidade** (`core/proximidade.py`): nao ha PostGIS (nem
+  `cube`/`earthdistance`) no local nem na VPS. A ordem do SQL e: bbox calculada
+  em Python -> **CTE `MATERIALIZED` de CEPs ordenados por km** -> join por
+  `cep` em `c_estabelecimentos` -> haversine -> keyset
+  `(km, cnpj_basico, cnpj_ordem, cnpj_dv)`. **Nao** troque a CTE ordenada por
+  um `JOIN` direto em `c_ceps` dentro da CTE: foi medido (Joinville, raio 5 km)
+  250 ms com a CTE contra **1,2 s** na versao anterior, porque o planner perde
+  o early stop na pagina 2. Tambem **nao** crie indice em
+  `c_ceps(latitude, longitude)`: testado, o planner troca o early stop por
+  bitmap scan e a pagina 1 vai para ~1,5 s (o indice foi removido).
+- **Ordenacao da lista**: so `cnpj` e `razao_social`. A ordenacao por nome
+  fantasia foi **removida** (keyset instavel e fallback de 10s sobrescrevendo o
+  resultado); o **filtro** por nome fantasia continua. Nao reintroduza a opcao
+  no `<select>` de `lista.html` sem refazer o keyset.
+- **Colunas da lista**: `Filiais` e `Cidade` nao vem das queries de keyset. As
+  filiais sao uma unica query com `cnpj_basico = ANY(...)` para os 20 CNPJs da
+  pagina (~2 ms); o nome da cidade vem de `LEFT JOIN c_municipios_geo mg ON
+  mg.cd_municipio = e.municipio`. Nao troque por `LATERAL` por linha.
+- **"Ir para" da lista** (`?page=N` sem `last_cnpj`): o unico lugar da lista com
+  `OFFSET`, e so com `SET LOCAL enable_bitmapscan/enable_seqscan/
+  enable_hashjoin/enable_mergejoin = off` + `statement_timeout = 8 s` (RESET no
+  fim). Sem o tuning `uf=PR` pagina 5000 passava de 25 s (bitmap + Sort); com
+  ele, 4-7 s. O timeout nao derruba a tela nem deixa a lista vazia:
+  `consultar_com_salto` faz `rollback` (o que tambem devolve o plano padrao,
+  porque `SET LOCAL` cai com a transacao) e **repete a consulta sem OFFSET**;
+  a tela mostra a primeira pagina com aviso. A pagina e limitada a
+  `total_paginas` quando conhecido, e o campo do rodape so aparece se
+  `total_paginas`.
 - **Segundo link do Maps** (`core/maps.py`, `montar_maps_nome_url`): busca o
   estabelecimento **pelo nome** (nm_fantasia, senao razao social) + municipio +
   UF. Existe porque o endereco da Receita e **fiscal** e as vezes diverge do
@@ -83,12 +124,60 @@ atual: se algo mudar, atualize o arquivo correspondente.
   "Resultados" na maioria (Posto Prudente/Joinville a 2 km). O segundo link e
   aditivo: sem nome ou sem municipio ele nao aparece.
 
+## Busca por proximidade (`/proximidade/`)
+
+- `core/proximidade.py` resolve a origem, monta a bbox e roda a CTE
+  `MATERIALIZED` de CEPs ordenados por km (não existe PostGIS no local nem na
+  VPS; `cube`/`earthdistance` também não). **Nunca** troque a CTE ordenada por
+  join direto (1,2 s na página 2) nem crie índice em
+  `c_ceps(latitude, longitude)` (piora a página 1 para 1,5 s).
+- **Acento**: o banco não tem `unaccent` (só `pg_trgm` e `vector`). Compare com
+  `sql_sem_acento(coluna)` (`upper(translate(...))`) contra `sem_acento(texto)`.
+  Nunca use `UPPER(nome) = %s` para nome de município/logradouro: `Picarras`
+  deixaria de achar `Balneário Piçarras`.
+- **Origem por endereço**: aceita `logradouro[, número][, bairro], Cidade/UF` e
+  `logradouro, 89201-000`. O número é ignorado (a base não tem numeração) e a
+  coordenada é a média dos CEPs do logradouro. A busca recorta antes a caixa de
+  60 km do centro do município (`RAIO_BUSCA_LOGRADOURO_KM`): sem isso o `LIKE`
+  normalizado varre 1,26M de CEPs em ~3,8 s.
+- **Paginação**: "Página X de Y" com keyset — `depois_km`/`depois_cnpj` avançam
+  e a pilha `hist` (tokens `km|cnpj`, `-` = início) volta. Nunca use OFFSET no
+  raio: **a única exceção** é o campo "Ir para" (`?page=N`), que chama
+  `cursor_para_pagina` — soma corrida em `c_ceps_estab(_sit)` acha o CEP da
+  posição e um `OFFSET` pequeno dentro do CEP (`idx_estabelecimentos_cep`) acha
+  o CNPJ. OFFSET direto no raio custa 4-23 s. `pbase` na URL guarda as páginas
+  que ficaram para trás depois de um salto; sem a tabela agregada o salto é
+  recusado (`PAGINA_SEM_TABELA`) e a tela avisa. Com cursor, `SQL_PROXIMOS`
+  poda a CTE em `km >= depois_km` (mesma lista, sem varrer os CEPs anteriores);
+  **o total sai de `ceps_todos`**, nunca da CTE podada. Custo medido em
+  Joinville/10 km: ~0,5-0,6 s em qualquer página (0,56 s na 1.000, 0,63 s na
+  5.000, 0,54 s na última) — sem a poda a última página levava 9 s.
+- **Cursor**: o km vai na URL com `repr(float)` (`km_para_texto`, round-trip
+  exato). **Nunca** formate com `f'{km:.6f}'`: o km é o do CEP e um CEP tem
+  milhares de empresas com o mesmo km; arredondar para cima salta o resto do
+  grupo (perde linhas) e para baixo repete a mesma página para sempre, com o
+  contador de páginas subindo (bug de Piçarras/SC, página 9, 2026-11).
+- **Total**: vem de `c_ceps_estab` (`cep`, `n_matrizes`, `n_total`), criada pelo
+  `ProjetoCargaDados` (`contar_estab_por_cep`). `COUNT` no raio custa 5-15 s. Se
+  a tabela não existir, degrade para "Página X" (`tem_tabela_total`, cache de
+  5 min por `to_regclass`) — nunca quebre a página.
+- **Filtro de situação** (`situacao=` na querystring → `AND e.cd_sit_cadastro`):
+  usa o dict `SITUACOES` de `core/views.py` (1 nula, 2 ativa, 3 suspensa,
+  4 inapta, 8 baixada), o mesmo da lista. Total e "Página X de Y" do filtro vêm
+  de `c_ceps_estab_sit` (`cep`, `cd_sit_cadastro`, `n_matrizes`, `n_total`),
+  criada por `contar_estab_por_cep_situacao` (2,06 M pares, 183 MB, ~154 s).
+  Sem ela, degrade para "Página X" e avise na tela. **Não** troque isso por
+  `count(*) OVER ()`: custa 13-16 s com o filtro (Joinville, raios 5 e 20 km).
+- A ordem é `km` e, no empate, CNPJ (`cnpj_basico, cnpj_ordem, cnpj_dv`), que é
+  o próprio cursor do keyset. Não ofereça "ordenar por CNPJ": sem o early stop
+  na ordem de km a consulta varre o raio inteiro.
+
 ## Comandos do projeto
 
     source venv/bin/activate
     python manage.py runserver 8002          # app em http://localhost:8002/
     python manage.py test chat               # 245 testes em chat/tests/
-    python manage.py test core               # 39 testes (detalhe, Maps, log de acesso)
+    python manage.py test core               # 146 testes (lista, detalhe, Maps, WhatsApp, proximidade, log)
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo
 
@@ -101,8 +190,9 @@ atual: se algo mudar, atualize o arquivo correspondente.
 
 - Nunca commitar/alterar segredos: `.env`, `.env.*`, credenciais, `lib/jt400.jar`.
 - Nunca rodar SQL de escrita/DDL no `bancocnpj` e nunca desativar as validacoes
-  do `sql_validator` para "fazer funcionar". A unica excecao e a `c_ceps`, que
-  e criada e carregada fora daqui, pelo `ProjetoCargaDados`.
+  do `sql_validator` para "fazer funcionar". A unica excecao sao `c_ceps`,
+  `c_municipios_geo` e `c_ceps_estab`, que sao criadas e carregadas fora daqui,
+  pelo `ProjetoCargaDados` (e restauradas na VPS por `~/Projetos/restaura_*.sh`).
 - Nao execute `git commit`, `git push`, `migrate` em producao, `collectstatic`
   ou `sp_recalcular_estatisticas_totais()` sem pedir confirmacao explicita.
 - Proibido criar arquivos de backup manuais (`*.bak`, `*.bak_*`) no repo.

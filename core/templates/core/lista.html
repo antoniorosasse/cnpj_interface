@@ -43,10 +43,20 @@
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Estado (UF)</label>
-                        <select name="uf" class="form-select">
+                        <select name="uf" class="form-select" onchange="this.form.submit()">
                             <option value="">Todos</option>
                             {% for sigla, nome in lista_ufs %}
                             <option value="{{ sigla }}" {% if uf == sigla %}selected{% endif %}>{{ nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Cidade</label>
+                        <select name="municipio" class="form-select"
+                                {% if not uf %}disabled title="Escolha o estado primeiro"{% endif %}>
+                            <option value="">{% if uf %}Todas{% else %}— escolha a UF —{% endif %}</option>
+                            {% for m in lista_municipios %}
+                            <option value="{{ m.cd_municipio }}" {% if municipio == m.cd_municipio|stringformat:"s" %}selected{% endif %}>{{ m.nome }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -83,7 +93,6 @@
                         <select name="ordem" class="form-select">
                             <option value="cnpj" {% if ordem == 'cnpj' %}selected{% endif %}>CNPJ</option>
                             <option value="razao_social" {% if ordem == 'razao_social' %}selected{% endif %}>Razão Social</option>
-                            <option value="nome_fantasia" {% if ordem == 'nome_fantasia' %}selected{% endif %}>Nome Fantasia</option>
                         </select>
                     </div>
                     <div class="col-12">
@@ -106,6 +115,8 @@
                         <th>CNPJ</th>
                         <th>Razão Social</th>
                         <th>Nome Fantasia</th>
+                        <th>Cidade</th>
+                        <th title="Estabelecimentos do mesmo CNPJ que não são a matriz">Filiais</th>
                         <th>UF</th>
                         <th>Situação</th>
                         <th>Simples</th>
@@ -120,6 +131,12 @@
                         <td><code>{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code></td>
                         <td><strong>{{ empresa.razao_social|truncatechars:40 }}</strong></td>
                         <td>{{ empresa.nm_fantasia|default:"-"|truncatechars:25 }}</td>
+                        <td>{{ empresa.municipio_nome|default:"-"|truncatechars:22 }}</td>
+                        <td>
+                            {% if empresa.total_filiais %}
+                            <span class="badge bg-info text-dark" title="{{ empresa.total_filiais }} filial(is)">{{ empresa.total_filiais }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
                         <td>{% if empresa.uf %}<span class="badge bg-secondary">{{ empresa.uf }}</span>{% else %}-{% endif %}</td>
                         <td>
                             {% if empresa.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
@@ -139,13 +156,13 @@
                         </td>
                         <td>{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
                         <td>
-                        <a href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary" title="Ver detalhes">
+                        <a href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)">
                             <i class="bi bi-eye"></i>
                         </a>
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="9" class="text-center py-4"><i class="bi bi-search" style="font-size: 2rem;"></i><p class="mt-2">Nenhuma empresa encontrada</p></td></tr>
+                    <tr><td colspan="11" class="text-center py-4"><i class="bi bi-search" style="font-size: 2rem;"></i><p class="mt-2">Nenhuma empresa encontrada</p></td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -156,7 +173,7 @@
         <nav aria-label="Paginação">
             <ul class="pagination justify-content-center">
                 {% if page > 1 %}
-                <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&last_fantasia={{ first_fantasia }}&dir=prev{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-left"></i></a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&dir=prev{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-left"></i></a></li>
                 {% else %}
                 <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
                 <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
@@ -169,9 +186,34 @@
                 </li>
                 
                 {% if has_next %}
-                <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&last_fantasia={{ last_fantasia }}&dir=next{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-right"></i></a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&dir=next{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-right"></i></a></li>
                 {% else %}
                 <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
+                {% endif %}
+
+                <!-- Ir para: sem cursor na querystring a view usa OFFSET com
+                     enable_*scan desligado (25 s viraram 4-7 s) e, se o
+                     statement_timeout de 8 s estourar, repete sem OFFSET e
+                     mostra a primeira pagina com aviso. -->
+                {% if total_paginas %}
+                <li class="page-item ms-2">
+                    <form method="get" class="d-flex align-items-center gap-1">
+                        <input type="hidden" name="ordem" value="{{ ordem }}">
+                        {% if razao_social %}<input type="hidden" name="razao_social" value="{{ razao_social }}">{% endif %}
+                        {% if nome_fantasia %}<input type="hidden" name="nome_fantasia" value="{{ nome_fantasia }}">{% endif %}
+                        {% if cnpj %}<input type="hidden" name="cnpj" value="{{ cnpj }}">{% endif %}
+                        {% if uf %}<input type="hidden" name="uf" value="{{ uf }}">{% endif %}
+                        {% if municipio %}<input type="hidden" name="municipio" value="{{ municipio }}">{% endif %}
+                        {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
+                        {% if simples %}<input type="hidden" name="simples" value="{{ simples }}">{% endif %}
+                        {% if mei %}<input type="hidden" name="mei" value="{{ mei }}">{% endif %}
+                        <input type="number" name="page" min="1" value="{{ page }}"
+                               {% if not total_estimado %}max="{{ total_paginas }}"{% endif %}
+                               class="form-control form-control-sm" style="width: 5.5rem"
+                               aria-label="Ir para a página" title="Digite a página e clique em Ir">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Ir</button>
+                    </form>
+                </li>
                 {% endif %}
             </ul>
         </nav>

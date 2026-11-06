@@ -7,6 +7,9 @@ app_name = 'core'
 urlpatterns = [
     # Lista de empresas (com busca)
     path('', views.lista_empresas, name='lista'),
+
+    # Busca por proximidade (raio em km a partir de CNPJ/CEP/cidade/coordenada)
+    path('proximidade/', views.proximidade, name='proximidade'),
     
     # Busca rápida via AJAX
     path('busca-rapida/', views.buscar_empresas_rapido, name='busca_rapida'),

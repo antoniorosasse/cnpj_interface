@@ -269,6 +269,13 @@
                                     {% else %}
                                         -
                                     {% endif %}
+                                    {% if empresa.whatsapp_url %}
+                                    <a href="{{ empresa.whatsapp_url }}" target="_blank" rel="noopener"
+                                       class="btn btn-sm btn-outline-success ms-1 py-0"
+                                       title="Abrir conversa no WhatsApp (celular)">
+                                        <i class="bi bi-whatsapp"></i> WhatsApp
+                                    </a>
+                                    {% endif %}
                                 </td>
                             </tr>
                             <tr>
@@ -373,6 +380,12 @@
                                         ({{ est.ddd_1 }}) {{ est.tel_1 }}
                                     {% else %}
                                         -
+                                    {% endif %}
+                                    {% if est.whatsapp_url %}
+                                    <a href="{{ est.whatsapp_url }}" target="_blank" rel="noopener"
+                                       class="text-success ms-1" title="Abrir conversa no WhatsApp (celular)">
+                                        <i class="bi bi-whatsapp"></i>
+                                    </a>
                                     {% endif %}
                                 </td>
                                 <td data-label="Email"><span class="d-inline-block text-truncate align-bottom" style="max-width: 11rem" title="{{ est.email|default:"-" }}">{{ est.email|default:"-"|truncatechars:25 }}</span></td>

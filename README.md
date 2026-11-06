@@ -47,12 +47,15 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templates/core/
     |   |   +-- base.html
     |   |   +-- lista.html
+    |   |   +-- proximidade.html
     |   |   +-- detalhe.html
     |   |   +-- estatisticas.html
     |   +-- templatetags/
     |   |   +-- num_filters.py      # Filtros de formatacao de numero
     |   +-- conexoes.py             # Conexoes (AS/400, PG, Mongo)
     |   +-- maps.py                 # Links do Google Maps (endereco + busca pelo nome)
+    |   +-- proximidade.py          # Busca por raio em km (bbox + haversine, sem PostGIS)
+    |   +-- telefone.py             # Link de WhatsApp a partir do telefone da RFB
     |   +-- routers.py              # CNPJRouter (default vs postgres)
     |   +-- urls.py
     |   +-- views.py                # lista, detalhe, estatisticas
@@ -198,6 +201,19 @@ Passos:
 4. Carregar a `c_ceps` (coordenada/nome por CEP) pelo `ProjetoCargaDados`
    (`manage.py carregar_ceps`) — é o que habilita o link do Google Maps.
    Sem ela a página funciona, mas o mapa cai para o endereço em texto.
+5. Carregar a `c_municipios_geo` (TOM ↔ IBGE ↔ UF + centroide do município)
+   pelo `ProjetoCargaDados` (`manage.py carregar_municipios`). É o que habilita
+   o filtro de **Cidade** e a busca por **proximidade**. Sem ela, o select de
+   cidade fica vazio e `/proximidade/` responde com erro de base indisponível.
+6. Carregar a `c_ceps_estab` (estabelecimentos por CEP) pelo `ProjetoCargaDados`
+   (`manage.py contar_estab_por_cep`). É o que dá o **total** e o "Página X de Y"
+   da `/proximidade/`. Sem ela a busca por proximidade funciona, mas o rodapé
+   mostra só "Página X".
+7. Carregar a `c_ceps_estab_sit` (estabelecimentos por CEP **e** situação) pelo
+   `ProjetoCargaDados` (`manage.py contar_estab_por_cep_situacao`). É o que
+   mantém o total e o "Página X de Y" quando o filtro de situação está ligado.
+   Sem ela, `/proximidade/?situacao=...` funciona, mas mostra só "Página X"
+   (sem o total de empresas e sem o "de Y").
 
 O schema completo das tabelas (colunas, tipos, códigos, índices
 relevantes) fica em `chat/services/schema_context.py` — é o mesmo
@@ -222,9 +238,19 @@ A página inicial (`/`) lista empresas (matrizes) com filtros combináveis:
 | Nome fantasia | Texto parcial (case-insensitive) | `MERCADO` |
 | CNPJ | 8 dígitos (básico) ou 14 (completo) | `12345678` ou `12345678000199` |
 | UF | 2 letras | `SP` |
+| Cidade | Município da UF escolhida (código TOM) | `Joinville` |
 | Situação | Nula, Ativa, Suspensa, Inapta, Baixada | `ATIVA` |
 | Simples | S ou N | `S` |
 | MEI | S ou N | `S` |
+
+O select de **Cidade** só carrega os municípios da UF selecionada (no máximo
+645, em MG) e fica desabilitado enquanto não houver UF. Ele lê a tabela
+`c_municipios_geo` (TOM ↔ IBGE ↔ UF), criada pelo `ProjetoCargaDados`
+(`manage.py carregar_municipios`) — ver "Requisitos de dados".
+
+A lista mostra por empresa: CNPJ, razão social, nome fantasia, **cidade**,
+**quantidade de filiais** (estabelecimentos do mesmo `cnpj_basico` que não
+são a matriz), UF, situação, Simples, MEI e data de início.
 
 ### Ordenação
 
@@ -232,7 +258,11 @@ A lista pode ser ordenada por:
 
 - **CNPJ** (padrão) - mais rápido
 - **Razão social** - usa INNER JOIN com `c_empresas`
-- **Nome fantasia** - mesmo esquema
+
+A ordenação por **nome fantasia** foi removida: o keyset por `nm_fantasia`
+não era estável entre páginas (NULLS FIRST na ida e DESC NULLS LAST na volta)
+e o fallback de 10s acabava sobrescrevendo o resultado. O **filtro** por nome
+fantasia continua funcionando (usa os índices GIN trigram).
 
 ### Paginação
 
@@ -243,6 +273,21 @@ O botão "Próxima" passa o último CNPJ/razão da página atual como ponto de
 partida. O botão "Anterior" faz o mesmo, ao contrário. A contagem total
 usa a tabela de metadados `c_estatisticas_totais` quando não há filtros,
 e cache de 15min com timeout de 800ms quando há filtros combinados.
+
+**Ir para a página** (`?page=N`, campo numérico no rodapé): keyset não pula N
+páginas, então este modo — e só ele — usa `OFFSET` (`(N-1)*20`). Para o salto
+não virar bitmap scan + Sort (medido em 2026-11: `uf=PR` na página 5.000 passava
+de 25 s), a view liga `SET LOCAL enable_bitmapscan/enable_seqscan/enable_hashjoin/
+enable_mergejoin = off` antes da consulta e `RESET` depois. Com index scan a
+mesma página de `uf=PR` fica em 4-7 s (`uf=SP` página 500 em ~0,8 s; sem filtro
+de UF o salto também é barato). Como isso depende de a ordenação sair do índice,
+há `statement_timeout = 8 s` — e ele não deixa a tela vazia: estourou, a view
+faz `rollback` (o que também devolve o plano padrão, já que os `SET LOCAL` caem
+com a transação) e **repete a consulta sem o OFFSET**, mostrando a primeira
+página com o aviso "A página N fica longe demais para esses filtros...". Sem
+filtros de UF/município/situação o salto é barato em qualquer página; com eles,
+páginas muito altas (ex.: `uf=PR` perto da 100.000) caem nesse aviso. Número
+maior que o total de páginas é ajustado para a última página.
 
 ## O que aparece no detalhe da empresa
 
@@ -355,6 +400,12 @@ Dois cards lado a lado:
 - **Email**
 - **Situação especial** + data (se houver)
 
+Quando um dos telefones é **celular** (8 ou 9 dígitos começando com 9), aparece o
+botão **WhatsApp** ao lado do número: ele abre `https://wa.me/55<DDD><numero>`.
+Telefone fixo não gera link — a regra (e a razão de existir) está em
+`core/telefone.py`, e é aplicada também na coluna Telefone da tabela de
+estabelecimentos.
+
 ### Estabelecimentos (matriz + filiais)
 
 Tabela com **todos** os estabelecimentos daquela empresa:
@@ -385,6 +436,153 @@ Tabela com todos os sócios:
 - **Faixa etária** - 0-12, 13-20, ..., 81+ anos
 - **País** (se estrangeiro)
 - **Representante legal** (se houver) - nome + qualificação
+
+## Empresas por proximidade (`/proximidade/`)
+
+Responde "quais empresas ficam perto daqui?". A origem pode ser:
+
+| Origem | Exemplo |
+|---|---|
+| CNPJ (14 dígitos) | `02.831.172/0001-90` — usa o CEP da matriz |
+| CEP | `89201-000` |
+| Cidade (e UF) | `Joinville/SC` — usa o centroide do município |
+| Endereço | `Rua do Príncipe, 500, Joinville/SC` — média dos CEPs do logradouro |
+| Coordenada | `-26.30,-48.84` |
+
+Acentos não importam: `Picarras`, `Piçarras` e `Balneário Piçarras` chegam ao
+mesmo município. O banco não tem a extensão `unaccent` (só `pg_trgm` e
+`vector`), então a comparação usa `upper(translate(coluna, acentos, sem_acento))`
+no SQL contra o texto normalizado em Python (`sem_acento`, `core/proximidade.py`).
+
+O modo **endereço** aceita `logradouro[, número][, bairro], Cidade/UF` ou
+`logradouro, 89201-000`. O número é ignorado (a base não guarda numeração de
+imóvel): a coordenada é a **média dos CEPs do logradouro**, ou seja, o meio da
+rua. Quando o texto tem CEP, o CEP manda. A busca do logradouro recorta primeiro
+a caixa de 60 km em volta do centro do município (varredura de `c_ceps`,
+~250 ms), restringe ao `id_municipio` (IBGE) informado e só então aplica
+`translate()` nas linhas que sobraram — sem esse recorte o `LIKE` normalizado
+varreria 1,26 M de linhas (~3,8 s). Se o logradouro não existir naquele
+município, a resposta é um erro claro ("Tente só a cidade ou um CEP"): **não**
+cai para a UF inteira, que trazia homônimo de outra cidade (`Rua das Palmeiras,
+Joinville/SC` virava Blumenau/SC). O tipo do logradouro só é descartado quando
+sobra mais de uma palavra (`Rua Sete de Setembro` → procura também
+`SETE DE SETEMBRO`); `Avenida Brasil` **não** vira `%BRASIL%`, que casaria Rua
+Brasil, Assis Brasil e Brasília juntas.
+
+O raio vai de 1 a 100 km e há a opção **somente matrizes** (marcada por padrão).
+O resultado sai ordenado por **distância e, no empate, por CNPJ**
+(`ORDER BY c.km, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv`), com a distância em km,
+CNPJ, razão social, endereço, município/UF, **situação cadastral**, tipo
+(matriz/filial) e os links de detalhe e Google Maps. O botão de detalhe abre em
+**outra aba** (`target="_blank"`), para não perder a lista; o mesmo vale para o
+item **Proximidade** do menu.
+
+**Como funciona sem PostGIS** (`core/proximidade.py`): o servidor não tem
+PostGIS (conferido no PG 18 local e no PG 16 da VPS; `cube`/`earthdistance`
+também não estão instalados). A consulta então é SQL puro:
+
+1. caixa geográfica (bbox) calculada em Python a partir do raio;
+2. `c_ceps` filtrada pela bbox e **ordenada por distância** numa CTE
+   `MATERIALIZED` (1,26 M de linhas, ~200 ms);
+3. join por CEP com `c_estabelecimentos` (índice `idx_estabelecimentos_cep`) —
+   como a CTE já vem ordenada, o `LIMIT` para cedo;
+4. haversine exata e `ORDER BY (km, cnpj_basico, cnpj_ordem, cnpj_dv)`;
+5. paginação **keyset** por essa tupla, com **"Página X de Y"** igual à lista de
+   empresas: avançar manda `depois_km` + `depois_cnpj` (cursor da última linha) e
+   `hist` (pilha de cursores das páginas anteriores) permite voltar sem OFFSET.
+
+**Total de páginas** vem de `c_ceps_estab` (`cep, n_matrizes, n_total`), a
+contagem de estabelecimentos por CEP criada pelo `ProjetoCargaDados`
+(`manage.py contar_estab_por_cep`). Um `COUNT` no raio custaria 5-15 s (bitmap
+scan em 38,5 M de linhas); somar o agregado no raio custa ~30-60 ms. Sem essa
+tabela a tela continua funcionando e mostra só "Página X" (o `to_regclass` fica
+em cache de 5 min: `TTL_TABELA_TOTAL`).
+
+Tempos medidos localmente (Joinville, 38,5 M de estabelecimentos): página 1 em
+~250-350 ms para raios de 1 a 20 km (~500 ms em 100 km, já com o total); página 2
+em ~250 ms. Um `CREATE INDEX` em `c_ceps (latitude, longitude)` foi testado e
+**descartado**: o planner trocava o early stop por bitmap scan e a página 1 ia
+para ~1,5 s.
+
+**Filtro de situação** (`situacao=ATIVA|NULA|SUSPENSA|INAPTA|BAIXADA`, o mesmo
+select e os mesmos códigos da lista de empresas — `SITUACOES` em `core/views.py`)
+vira `AND e.cd_sit_cadastro = %(situacao)s` no `WHERE` e não mexe no keyset. O
+total com filtro vem de `c_ceps_estab_sit` (`cep, cd_sit_cadastro, n_matrizes,
+n_total`, uma linha por CEP **e** situação, ~2,1 M linhas/183 MB, criada por
+`ProjetoCargaDados: manage.py contar_estab_por_cep_situacao`), então `Página X
+de Y` e o contador de empresas funcionam com o filtro ligado. Medido em
+2026-11: Joinville raio 10 km → 151.386 matrizes (7.570 páginas), 118.170 ativas
+(5.909) e 32.225 inaptas (1.612), com a página 1 em ~450-550 ms (mesmo custo do
+caso sem filtro). A soma das situações bate com o total sem filtro. Sem
+`c_ceps_estab_sit` a tela cai para "Página X" sem total e avisa em letra miúda.
+Valor desconhecido em `situacao` é ignorado (cai em "Todas").
+
+**Cursor do keyset** vai na URL com o km **sem arredondar** (`repr(float)`,
+`km_para_texto`). O km é o do CEP e um CEP concentra milhares de empresas: com
+`f'{km:.6f}'` (código até 2026-11) o arredondamento para cima pulava o resto do
+grupo (perdia linhas) e para baixo deixava o cursor antes do grupo, repetindo a
+mesma página para sempre com o "Página N" subindo (bug visto em Piçarras/SC,
+página 9). A view também não oferece "próxima" quando o cursor não andou.
+
+**Ir para a página** (`?page=N`, campo numérico no rodapé): como a listagem é
+keyset, o cursor da linha pedida vem de `cursor_para_pagina`
+(`core/proximidade.py`) em duas consultas baratas, sem `OFFSET` no raio (que
+custava 4-23 s em Joinville/10 km):
+
+1. `SQL_CEP_DO_INDICE` — soma corrida (`sum(...) OVER (ORDER BY km, cep)`) das
+   contagens de `c_ceps_estab` (ou `c_ceps_estab_sit` com filtro de situação)
+   dentro do raio; devolve o CEP onde cai a linha `(N-1)*20 - 1` (~0,4 s);
+2. `SQL_CNPJ_NA_POSICAO` — `OFFSET` pequeno dentro daquele CEP
+   (`idx_estabelecimentos_cep`) devolve o CNPJ da posição (~0,4 s).
+
+O resultado é o cursor `(km, cnpj)` da linha anterior à primeira da página, que
+é exatamente o que `buscar_proximos(depois=...)` espera — daí em diante o
+usuário continua com as setas. Números de página inválidos/fora do raio viram
+`PAGINA_ALEM_DO_FIM` (aviso + volta para a primeira página) e, sem a tabela
+agregada, `PAGINA_SEM_TABELA` (não há como calcular posição sem ela). O rodapé
+mantém "Página X de Y" correto depois do salto: o `pbase` da URL guarda quantas
+páginas ficaram para trás.
+
+Dois detalhes de custo (medidos em 2026-11, Joinville/10 km, 151.386 matrizes):
+
+- **Poda da CTE pelo km do cursor**. Toda linha que passa no keyset tem
+  `km >= depois_km`, então `SQL_PROXIMOS` filtra `km >= %(depois_km)s` na CTE
+  `ceps` quando há cursor — mesma lista, sem percorrer os CEPs que ficaram
+  para trás. Sem a poda o custo crescia com a página (0,4 s na 2 → 9 s na
+  última, e o `statement_timeout` de 15 s derrubava a tela).
+- **O total continua vindo de `ceps_todos`** (todos os CEPs do raio): a CTE
+  podada serve só à busca, senão o "de Y" passaria a contar a partir da página
+  pedida.
+
+Com a poda, `?page=N` na proximidade custa ~0,5-0,6 s em qualquer página
+(medido: 0,56 s na 1.000, 0,64 s na 3.000, 0,63 s na 5.000, 0,54 s na última
+— 7.570 do exemplo) e o conteúdo é idêntico ao obtido navegando com o keyset.
+
+**Como o km é calculado** — distância em **linha reta geodésica** (great-circle,
+fórmula haversine com raio da Terra de 6.371 km), não distância de rua nem rota:
+`6371 * acos(cos(lat1)·cos(lat2)·cos(lon2-lon1) + sin(lat1)·sin(lat2))`, com
+`least(1.0, ...)` para o `acos` não estourar por arredondamento. Não há consulta
+ao Google Maps: o link do Maps é só visualização. A caixa do passo 1 é uma
+aproximação grosseira (graus → km com 111,32 km por grau de latitude e
+`/cos(lat)` na longitude; em Joinville 1° de longitude = 99,68 km) e serve apenas
+para descartar linhas; quem decide se o estabelecimento está no raio é o
+haversine no `WHERE c.km <= raio`, então nada fora do círculo entra na lista.
+Precisão: esfera contra elipsoide (WGS84) erra 0,07% a 30 km (~20 m) e 0,36% a
+5 km (~18 m) — menor que o erro do próprio dado. E o dado é o ponto fraco: a
+coordenada é a do **CEP**, não a do número do imóvel (a Receita não traz
+geocodificação). Um CEP cobre um trecho de rua — medido aqui: `Rua Blumenau`
+(Joinville) tem 9 CEPs, o centroide do logradouro fica a até 1,4 km de um deles;
+`Rua do Príncipe` tem 6 CEPs numa extensão de 5,0 km (até 2,8 km do centroide);
+no CEP genérico o "ponto" é o centro do município. Ou seja: diferenças de 1-3 km
+para o imóvel real são esperadas, e as distâncias são exibidas com 2 casas
+(10 m) só para o desempate ficar visível.
+
+**Limitação conhecida**: em município pequeno quase todos os estabelecimentos
+caem no **CEP genérico** (que cobre a cidade inteira e tem a coordenada do
+centroide), então a lista enche de linhas com a mesma distância (ex.:
+`Balneário Piçarras/SC`, 2 km → 8.811 estabelecimentos em 4 CEPs, todos a
+0,89 km). Não é erro do cálculo: é a precisão do CEP. O total e a paginação
+continuam corretos.
 
 ## Estatísticas (`/estatisticas/`)
 
@@ -420,16 +618,28 @@ A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
       SQL
 
   (38,5M linhas em ~1min44s. `CONCURRENTLY` exige autocommit: nada de `psql -1`/`BEGIN`.)
-- **Keyset pagination** em vez de OFFSET
+- **Keyset pagination** em vez de OFFSET (exceto o campo "Ir para", que usa
+  OFFSET com os `enable_*scan` desligados — ver a seção de paginação)
 - **Tabela de metadados** `c_estatisticas_totais` pra contagens instantâneas
 - **ILIKE** em vez de `UPPER(col) LIKE` (aproveita índices GIN trigram)
-- **Timeout de segurança** de 10s em ordenações por nome fantasia
 - **Fast-count** com timeout de 800ms e cache de 15min em filtros combinados
+- **Filiais por página**: uma única query com `cnpj_basico = ANY(...)` para as 20
+  empresas da página (~2 ms), em vez de um `LATERAL` por linha
+- **Busca por proximidade**: CTE `MATERIALIZED` de CEPs ordenados por distância
+  (ver a seção `/proximidade/`)
 
 O tempo de resposta típico é:
 
 - Primeira página sem filtro: ~5ms (lê da tabela de metadados)
 - Páginas seguintes (keyset): ~200ms
+- Filtro por cidade (UF + município): ~140ms
+- Ordenação por razão social: ~500ms
+- Proximidade (raio de 1 a 100 km): ~450-550ms com o total (mesmo custo com e
+  sem o filtro de situação)
+- "Ir para" a página N: lista 0,3-7 s (keyset segue em ~200 ms; com filtro de
+  UF a página 5.000 é o pior caso medido); proximidade ~0,5-0,6 s em qualquer
+  página (soma corrida por CEP + consulta podada pelo km do cursor; 0,56 s na
+  1.000, 0,63 s na 5.000 e 0,54 s na última de Joinville/10 km)
 - Estatísticas: ~5ms (lê da tabela de metadados)
 - Recálculo completo: ~15-30s
 
@@ -616,6 +826,7 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 | Método | URL | O que faz |
 |---|---|---|
 | GET | `/` | Lista de empresas |
+| GET | `/proximidade/` | Empresas num raio de 1 a 100 km de um CNPJ/CEP/endereço/cidade/coordenada |
 | GET | `/busca-rapida/` | Busca rápida via AJAX (JSON) |
 | GET | `/empresa/<cnpj>/` | Detalhe da empresa |
 | GET | `/estatisticas/` | Estatísticas gerais |
@@ -745,9 +956,9 @@ Testes em `chat/tests/test_admin_log.py`.
 # Testes
 
     python manage.py test chat       # 245 testes do chat
-    python manage.py test core       # 39 testes do core
+    python manage.py test core       # 146 testes do core
 
-Roda **245 testes** em `chat/tests/` (+ 39 em `core/tests.py`) = 284 no total:
+Roda **245 testes** em `chat/tests/` (+ 124 em `core/tests.py`) = 369 no total:
 
 - `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
