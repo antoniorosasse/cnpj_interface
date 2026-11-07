@@ -61,6 +61,13 @@ RAIO_BUSCA_LOGRADOURO_KM = 60
 TTL_TABELA_TOTAL = 300
 _tabela_total_cache = None  # (valor, expira_em)
 
+# Margem (em linhas) da janela de CEPs por km (ver SQL_PROXIMOS). A janela
+# mantem so os CEPs ate cobrir as linhas da pagina; a margem cobre diferenca
+# entre a contagem agregada (c_ceps_estab/_sit) e a realidade quando a tabela
+# esta um pouco defasada, sem varrer o raio inteiro. Contagem subestimada so
+# traz CEPs a mais (seguro); superestimada e absorvida pela margem.
+MARGEM_JANELA_KM = 200
+
 # Quantos cursores o historico de paginacao guarda (cada um vira ~22 chars na URL).
 HIST_MAXIMO = 60
 
@@ -426,6 +433,57 @@ def caixa_geografica(latitude, longitude, raio_km):
     }
 
 
+# CTE `ceps` (fallback): todos os CEPs do raio, ordenados por km. E o
+# comportamento historico - funciona sempre, mas o planner do PostgreSQL 16
+# faz um Hash Join em c_municipios_geo que quebra a ordem `c.km`, forca um
+# Sort completo do raio inteiro e estoura o statement_timeout em regiao densa
+# (Curitiba/10 km: 521 mil estabelecimentos). Por isso, com a tabela agregada
+# disponivel, usar CTE_CEPS_JANELA (ver comentario la).
+CTE_CEPS_TODOS = """
+    , ceps AS MATERIALIZED (
+        SELECT * FROM ceps_todos
+         {filtro_km_min}
+         ORDER BY km
+    )
+"""
+
+# CTE `ceps` (janela por km): mantem so os CEPs dos grupos de km que podem
+# conter as linhas da pagina. A ordenacao final e (km, cnpj_basico, ...); como
+# km e do CEP, as linhas de um mesmo km saem contiguas. Com a contagem por CEP
+# (c_ceps_estab / c_ceps_estab_sit, as mesmas tabelas do total), soma-se quantas
+# empresas cabem em cada km e corta-se assim que a pagina ja esta coberta.
+#   - pagina 1: acumulado antes do grupo < limite + margem.
+#   - pagina N (cursor): idem, somando a contagem do km do cursor (as linhas
+#     antes dele naquele grupo serao descartadas pelo keyset).
+# E um superset do resultado real: o ORDER BY/LIMIT/keyset da query principal
+# continua decidindo as linhas. Sem isso, o PG16 ordena o raio inteiro.
+#
+# Parametros de format:
+#   {filtro_km_min}    poda opcional (WHERE km >= depois_km) - quando ha cursor
+#   {tabela_contagem}  c_ceps_estab ou c_ceps_estab_sit
+#   {coluna_contagem}  n_matrizes ou n_total
+#   {filtro_contagem}  restricao extra da tabela de contagem (situacao)
+#   {limite_janela}    expressao SQL: quantas linhas a janela precisa cobrir
+CTE_CEPS_JANELA = """
+    , ceps_contagem AS (
+        SELECT t.cep, t.km, coalesce(ce.{coluna_contagem}, 0) AS n_aqui
+          FROM (SELECT * FROM ceps_todos {filtro_km_min}) t
+          LEFT JOIN {tabela_contagem} ce ON ce.cep = t.cep {filtro_contagem}
+    )
+    , ceps_km AS (
+        SELECT km, sum(n_km) OVER (ORDER BY km) - n_km AS acum_antes
+          FROM (SELECT km, sum(n_aqui) AS n_km FROM ceps_contagem GROUP BY km) g
+    )
+    , ceps AS MATERIALIZED (
+        SELECT c.cep, c.latitude, c.longitude, c.nome_municipio, c.km
+          FROM ceps_todos c
+          JOIN ceps_km k USING (km)
+         WHERE k.acum_antes < {limite_janela}
+         ORDER BY c.km
+    )
+"""
+
+
 SQL_PROXIMOS = """
     WITH ceps_todos AS MATERIALIZED (
         SELECT c.cep,
@@ -441,13 +499,10 @@ SQL_PROXIMOS = """
          WHERE c.latitude BETWEEN %(lat_min)s AND %(lat_max)s
            AND c.longitude BETWEEN %(lon_min)s AND %(lon_max)s
     )
-    -- O total do raio precisa de TODOS os CEPs (ceps_todos); a busca pode
-    -- comecar no km do cursor (ceps), o que evita varrer o raio inteiro.
-    , ceps AS MATERIALIZED (
-        SELECT * FROM ceps_todos
-         {filtro_km_min}
-         ORDER BY km
-    )
+    -- O total do raio precisa de TODOS os CEPs (ceps_todos); a busca usa uma
+    -- CTE `ceps` propria: janela por km quando ha tabela agregada (ver
+    -- CTE_CEPS_JANELA), senao todos os CEPs ordenados por km (CTE_CEPS_TODOS).
+    {cte_ceps}
     {cte_total}
     SELECT e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
            e.cnpj_basico,
@@ -601,6 +656,11 @@ def buscar_proximos(cur, latitude, longitude, raio_km, somente_matrizes,
     8 baixada) ou None para todas.
     Com `depois`, a CTE de CEPs e podada em km >= depois_km (o total do raio
     continua saindo de ceps_todos): mesma lista, sem varrer o raio inteiro.
+    Havendo a tabela agregada, a CTE de CEPs ainda usa a janela por km
+    (CTE_CEPS_JANELA): so entram os grupos de km que cobrem a pagina, e o
+    PostgreSQL 16 nao precisa ordenar o raio inteiro (ver o comentario da
+    constante). Sem a tabela agregada, cai em CTE_CEPS_TODOS (comportamento
+    antigo, correto porem sem essa poda).
     Devolve (linhas, tem_mais, total) - total e None quando a tabela agregada
     nao existe: c_ceps_estab sem filtro, c_ceps_estab_sit com filtro de
     situacao (ver o docstring do modulo).
@@ -639,19 +699,57 @@ def buscar_proximos(cur, latitude, longitude, raio_km, somente_matrizes,
 
     # Total: c_ceps_estab (sem filtro) ou c_ceps_estab_sit (com filtro de
     # situacao). Sem a tabela correspondente, a tela fica em "Pagina X".
+    coluna_contagem = 'n_matrizes' if somente_matrizes else 'n_total'
     if situacao:
         com_total = tem_tabela_total(cur, 'c_ceps_estab_sit')
         cte_total = SQL_TOTAL_RAIO_SIT
+        tabela_contagem = 'c_ceps_estab_sit'
     else:
         com_total = tem_tabela_total(cur, 'c_ceps_estab')
         cte_total = SQL_TOTAL_RAIO
+        tabela_contagem = 'c_ceps_estab'
+
+    # CTE `ceps`: com a tabela agregada, usa a janela por km (CTE_CEPS_JANELA)
+    # para nao ordenar o raio inteiro no PG16 (ver comentario da constante).
+    # A contagem usada na janela e a mesma do total (mesma tabela e coluna),
+    # entao a janela e exatamente "as linhas que o total conta ate aqui".
+    if com_total:
+        filtro_contagem = ('AND ce.cd_sit_cadastro = %(situacao)s'
+                           if situacao else '')
+        if depois:
+            # Janela = km do cursor inteiro + o que falta pra pagina. O grupo
+            # do km do cursor entra por inteiro porque o keyset ainda vai
+            # descartar as linhas antes do cifrao dele.
+            filtro_contagem_cb = ('AND cb.cd_sit_cadastro = %(situacao)s'
+                                  if situacao else '')
+            limite_janela = (
+                'coalesce((SELECT sum(coalesce(cb.{col}, 0)) '
+                'FROM ceps_todos tb '
+                'LEFT JOIN {tab} cb ON cb.cep = tb.cep {filtro_cb} '
+                'WHERE tb.km = %(depois_km)s), 0) + %(limite)s + {margem}'
+            ).format(col=coluna_contagem, tab=tabela_contagem,
+                     filtro_cb=filtro_contagem_cb, margem=MARGEM_JANELA_KM)
+        else:
+            limite_janela = '%(limite)s + {}'.format(MARGEM_JANELA_KM)
+        cte_ceps = CTE_CEPS_JANELA.format(
+            filtro_km_min=filtro_km_min,
+            tabela_contagem=tabela_contagem,
+            coluna_contagem=coluna_contagem,
+            filtro_contagem=filtro_contagem,
+            limite_janela=limite_janela,
+        )
+    else:
+        # Sem tabela agregada nao ha como medir a janela: mantem o
+        # comportamento antigo (todos os CEPs do raio, ordenados por km).
+        cte_ceps = CTE_CEPS_TODOS.format(filtro_km_min=filtro_km_min)
+
     sql = SQL_PROXIMOS.format(
+        cte_ceps=cte_ceps,
         filtro_matriz=filtro_matriz,
         filtro_situacao=filtro_situacao,
         filtro_keyset=filtro_keyset,
-        filtro_km_min=filtro_km_min,
         cte_total=(cte_total.format(
-            coluna='n_matrizes' if somente_matrizes else 'n_total',
+            coluna=coluna_contagem,
             cte_ceps='ceps_todos')
             if com_total else ''),
         col_total=', (SELECT n FROM total) AS total_raio' if com_total else '',

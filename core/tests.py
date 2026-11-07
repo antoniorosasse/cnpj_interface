@@ -1392,6 +1392,68 @@ class ProximidadeBuscaTests(SimpleTestCase):
         self.assertIn('e.cd_sit_cadastro = %(situacao)s', sql)
         self.assertIn('(c.km, e.cnpj_basico', sql)
 
+    # -------------------------------------------------- janela por km
+    # Com a tabela agregada, a CTE de CEPs usa a janela por km para o PG16 nao
+    # ordenar o raio inteiro (Curitiba/10 km passava de 60 s). E um superset do
+    # resultado; o ORDER BY/LIMIT da query principal decide as linhas.
+    def test_janela_por_km_entra_no_sql_principal(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._linha(0.1, '11111111000111')],
+            [{'cnpj_basico': '11111111', 'razao_social': 'A'}],
+        ])
+        proximidade.buscar_proximos(cur, -26.3, -48.8, 5, True, limite=1)
+        sql = self._sql_principal(cur)
+        self.assertIn('ceps_contagem', sql)
+        self.assertIn('acum_antes', sql)
+        self.assertIn('JOIN c_ceps_estab ce', sql)
+        # pagina 1: janela cobre limite+1 linhas + margem
+        self.assertIn('acum_antes < %(limite)s + {}'.format(
+            proximidade.MARGEM_JANELA_KM), sql)
+        # o total continua saindo de ceps_todos, nao da janela
+        self.assertIn('WHERE ce.cep = ANY(ARRAY(SELECT c.cep FROM ceps_todos c',
+                      sql)
+
+    def test_janela_com_cursor_soma_o_km_do_cursor(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._linha(0.5, '99999999000199')],
+            [{'cnpj_basico': '99999999', 'razao_social': 'Z'}],
+        ])
+        proximidade.buscar_proximos(cur, -26.3, -48.8, 5, True,
+                                    depois=(0.4, '12345678000190'), limite=1)
+        sql = self._sql_principal(cur)
+        # a janela soma a contagem do km do cursor (tb.km = depois_km)
+        self.assertIn('WHERE tb.km = %(depois_km)s', sql)
+        self.assertIn('acum_antes', sql)
+        params = [p for s, p in cur.executados if 'c_estabelecimentos' in s][0]
+        self.assertEqual(params['depois_km'], 0.4)
+
+    def test_sem_tabela_agregada_nao_usa_janela(self):
+        cur = CursorFakeSequencia([
+            {'existe': False},
+            [self._linha(0.1, '11111111000111')],
+            [{'cnpj_basico': '11111111', 'razao_social': 'A'}],
+        ])
+        proximidade.buscar_proximos(cur, -26.3, -48.8, 5, True, limite=1)
+        sql = self._sql_principal(cur)
+        self.assertNotIn('acum_antes', sql)
+        self.assertIn('SELECT * FROM ceps_todos', sql)
+
+    def test_janela_respeita_a_situacao(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._linha(0.1, '11111111000111')],
+            [{'cnpj_basico': '11111111', 'razao_social': 'A'}],
+        ])
+        proximidade.buscar_proximos(cur, -26.3, -48.8, 5, True, limite=1,
+                                    situacao=2)
+        sql = self._sql_principal(cur)
+        self.assertIn('ceps_contagem', sql)
+        self.assertIn('JOIN c_ceps_estab_sit ce', sql)
+        self.assertIn('ce.cd_sit_cadastro = %(situacao)s', sql)
+
+
 
 
 
