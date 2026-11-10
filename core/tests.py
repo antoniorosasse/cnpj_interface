@@ -1,11 +1,12 @@
 """Testes do app core (pagina de detalhe da empresa e log de acesso)."""
+import re
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.http import HttpRequest
 from django.template.loader import render_to_string
-from django.test import SimpleTestCase, RequestFactory
+from django.test import SimpleTestCase, RequestFactory, override_settings
 
 from core.log_acesso import (
     TIPO_DETALHE_EMPRESA,
@@ -666,6 +667,19 @@ class MenuPrincipalTemplateTests(SimpleTestCase):
     def test_proximidade_abre_em_nova_aba(self):
         html = self._render()
         self.assertIn('href="/proximidade/" target="_blank" rel="noopener"', html)
+
+    def test_chat_ia_abre_em_nova_aba(self):
+        """Chat IA abre em outra aba, como Proximidade e Estatisticas."""
+        html = re.sub(r'\s+', ' ', self._render())
+        self.assertIn('href="/chat/" target="_blank" rel="noopener"', html)
+
+    @override_settings(ALLOWED_HOSTS=['testserver', 'chat.arosasse.tech'])
+    def test_chat_ia_fica_na_mesma_aba_no_host_do_chat(self):
+        """Dentro do proprio chat.arosasse.tech o link nao abre outra aba."""
+        request = RequestFactory().get('/', HTTP_HOST='chat.arosasse.tech')
+        html = re.sub(r'\s+', ' ', render_to_string('core/base.html', {}, request=request))
+        self.assertIn('href="/chat/"', html)
+        self.assertNotIn('href="/chat/" target="_blank"', html)
 
     def test_empresas_continua_na_mesma_aba(self):
         html = self._render()

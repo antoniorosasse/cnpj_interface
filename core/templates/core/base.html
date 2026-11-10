@@ -59,13 +59,18 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'core:estatisticas' %}">
+                            <a class="nav-link" href="{% url 'core:estatisticas' %}" target="_blank" rel="noopener"
+                               title="Abre em nova aba">
                                 <i class="bi bi-bar-chart"></i> Estatísticas
                             </a>
                         </li>
                     {% endif %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'chat:chat' %}">
+                        {# O Chat IA abre em outra aba, como Proximidade e Estatisticas. #}
+                        {# Dentro do proprio host do chat o link fica na mesma aba. #}
+                        <a class="nav-link" href="{% url 'chat:chat' %}"
+                           {% if 'chat.arosasse.tech' not in request.get_host %}target="_blank" rel="noopener"
+                           title="Abre em nova aba"{% endif %}>
                             <i class="bi bi-chat-dots"></i> Chat IA
                         </a>
                     </li>
@@ -131,6 +136,11 @@
     <footer class="mt-5 py-3 bg-body-tertiary">
         <div class="container text-center text-body-secondary small">
             <p class="mb-0">Sistema CNPJ - Consulta de Empresas</p>
+            <p class="mb-0 mt-1">
+                Este produto inclui dados do GeoLite2 criados pela MaxMind,
+                disponíveis em
+                <a href="https://www.maxmind.com" target="_blank" rel="noopener">maxmind.com</a>.
+            </p>
         </div>
     </footer>
 
