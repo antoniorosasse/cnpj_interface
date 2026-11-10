@@ -56,6 +56,14 @@ atual: se algo mudar, atualize o arquivo correspondente.
   A base e instalada/renovada por `scripts/atualizar_geoip.sh` ou pelo painel
   (checar/baixar/enviar `.mmdb`, so superusuario, com `LogEntry`). Nao consulte
   GeoIP dentro de view, signal ou template.
+- **PATH do systemd** (10/11): os `.service` declaram
+  `Environment="PATH=.../venv/bin"` e o systemd **substitui** (nao acrescenta) o
+  PATH: dentro do gunicorn nao existem `bash`, `curl` nem `tar`. Todo
+  `subprocess` do projeto passa por `chat/geoip.py::ambiente_script()`
+  (venv/bin + `/usr/local/bin:/usr/bin:/bin` + herdado, sem repetir) e converte
+  `OSError`/`FileNotFoundError` em `GeoIPIndisponivel` - mensagem no painel,
+  nunca 500. `subprocess` novo: use o mesmo `env=` e `shutil.which`, senao o bug
+  so aparece em producao.
 - **Expurgo do log** (`chat/manutencao.py` + `manage.py limpar_acessos`):
   idade minima de 7 dias (`MIN_DIAS`) e `DELETE` em lotes de 5000
   (`TAMANHO_LOTE`) - nunca um `DELETE` unico na tabela inteira. O painel e o

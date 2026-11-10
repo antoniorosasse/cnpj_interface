@@ -992,6 +992,15 @@ tabela separada do `LogAcesso`) e é preenchida fora da web, pelo comando:
   fica no `LogEntry` do admin.
 - Cache por IP: localização mais nova que `--revalidar-dias` não é reconsultada.
   Erro de rede/limite **não levanta** — o IP fica para a próxima execução.
+- **PATH do systemd (10/11/2026)**: o `cnpj.service` declara
+  `Environment="PATH=…/venv/bin"` e o systemd **substitui** (não acrescenta) o
+  PATH. Dentro do gunicorn **não existem `bash`, `curl` nem `tar`**, então o
+  "Checar/Baixar" do painel devolvia **500** (`FileNotFoundError`) só em
+  produção — no terminal o script rodava. `chat/geoip.py` agora monta o ambiente
+  com `ambiente_script()` (venv/bin + `/usr/local/bin:/usr/bin:/bin` + herdado,
+  sem repetir), acha o `bash` por `shutil.which`, confere `curl`/`tar` e converte
+  `OSError` em `GeoIPIndisponivel` (mensagem na tela, nunca 500). O
+  `TIMEOUT_SCRIPT` é **240 s**, abaixo do `--timeout 300` do gunicorn.
 - Licença: o GeoLite2 exige o crédito de atribuição (rodapé do site/admin).
 - Base ausente ou erro de rede não afeta a aplicação: só o comando reclama
   (`GeoIPIndisponivel`).
