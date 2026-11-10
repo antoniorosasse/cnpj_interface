@@ -90,7 +90,7 @@ que traduz perguntas em linguagem natural para SQL.
     |   |   +-- limpar_conversas_antigas.py   # Retencao do historico (padrao 30 dias)
     |   |   +-- relatorio_acesso.py           # Logins, chat e empresas (chat_logacesso)
     |   |   +-- localizar_acessos.py          # Cidade/UF/pais dos IPs do log (GeoLite2)
-    |   |   +-- limpar_acessos.py             # Expurgo do log (lotes de 5000, minimo 7 dias)
+    |   |   +-- limpar_acessos.py             # Expurgo do log (lotes de 5000, minimo 1 dia)
     |   +-- models.py               # Conversa + Mensagem (Postgres) + LogAcesso + LocalizacaoIP
     |   +-- mongo_models.py         # Conversa + Mensagem (MongoDB)
     |   +-- repo.py                 # Dispatcher (Mongo | Postgres)
@@ -164,8 +164,8 @@ Observações:
 
 ## Acesso de demonstração
 
-O projeto está publicado como portfólio: `cnpj.arosasse.tech` (consulta de
-empresas, **aberta**) e `chat.arosasse.tech` (chat IA, **exige login**).
+O projeto está publicado como portfólio: `cnpj.busquecnpj.com.br` (consulta de
+empresas, **aberta**) e `chat.busquecnpj.com.br` (chat IA, **exige login**).
 
 Conta de demonstração:
 
@@ -906,7 +906,8 @@ Premissa: um único proxy confiável na frente do gunicorn; se entrar CDN, o
 acessou — quem identifica o visitante é IP + user agent.
 
 **Sessão entre subdomínios** (`SESSION_COOKIE_DOMAIN`): em produção o `.env` do
-servidor define `.arosasse.tech` (aplicado em 03/11/2026), e o login feito em um
+servidor define `.busquecnpj.com.br` (aplicado em 03/11/2026; o domínio trocou em
+11/11/2026, quando o `arosasse.tech` foi aposentado), e o login feito em um
 subdomínio passa a valer nos outros. Consequência: quem loga no chat aparece
 autenticado na consulta e o evento é gravado com o usuário real (`demo`) em vez de
 anônimo. Localmente a variável fica **vazia** (cookie por host) — com domínio fixo
@@ -1025,8 +1026,11 @@ tabela separada do `LogAcesso`) e é preenchida fora da web, pelo comando:
     python manage.py limpar_acessos --dias 90 --dry-run
     python manage.py limpar_acessos --dias 90
 
-- **Idade mínima de 7 dias** (`MIN_DIAS`): um `--dias 1` digitado por engano não
-  zera a auditoria (abaixo disso o comando recusa).
+- **Idade mínima de 1 dia** (`MIN_DIAS`, desde 11/11/2026): `--dias 0` ou
+  negativo é recusado com `ValueError`/`CommandError`. A janela de 1 dia é
+  aceita porque o painel precisa poder limpar o que entrou hoje e ontem quando o
+  volume cresce (carga de CNPJ + chat); o painel mostra a contagem antes de
+  apagar e o `POST` pede confirmação.
 - `DELETE` em **lotes de 5000 ids** (`TAMANHO_LOTE`): um `DELETE` único em
   centenas de milhares de linhas seguraria lock e transação longa no Postgres.
 
@@ -1063,7 +1067,7 @@ Ver `.env.example` para a lista completa. As principais:
 
 - `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` - Django padrão
 - `CSRF_TRUSTED_ORIGINS` - origens confiáveis para POST (produção: os dois subdomínios)
-- `SESSION_COOKIE_DOMAIN` - domínio do cookie de sessão (produção: `.arosasse.tech`;
+- `SESSION_COOKIE_DOMAIN` - domínio do cookie de sessão (produção: `.busquecnpj.com.br`;
   vazio = cookie por host, obrigatório para o login funcionar em `localhost`)
 - `DJANGO_DB_*` - banco `django_internal`
 - `PG_*` - banco `bancocnpj` (dados da RFB)
@@ -1091,8 +1095,8 @@ Na máquina NoteNeto:
 # Ambiente
 
 - **Local:** http://localhost:8002
-- **Produção:** https://cnpj.arosasse.tech
-- **Chat isolado:** https://chat.arosasse.tech
+- **Produção:** https://cnpj.busquecnpj.com.br
+- **Chat isolado:** https://chat.busquecnpj.com.br
 
 # Scripts de manutenção
 
