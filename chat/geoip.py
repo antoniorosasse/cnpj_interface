@@ -90,8 +90,20 @@ MMDB_MINIMO = 1_000_000
 # Pacotes aceitos no upload do painel
 UPLOAD_SUFIXOS = ('.tar.gz', '.tgz', '.gz')
 
-# Tempo maximo do download/checagem disparado pelo painel (segundos)
-TIMEOUT_SCRIPT = 300
+# Tempo maximo do download/checagem disparado pelo painel (segundos).
+# Fica abaixo do `--timeout 300` do gunicorn (cnpj.service): assim o
+# Django ainda responde a mensagem de erro em vez de o worker ser
+# morto no meio do download de ~50 MB.
+TIMEOUT_SCRIPT = 240
+
+# Diretorios padrao do sistema. Entram no PATH do script porque o
+# `Environment=PATH=` dos .service de producao aponta so para o venv/bin e o
+# systemd substitui (nao acrescenta) o PATH: sem isso `bash`, `curl` e `tar`
+# nao existem dentro do gunicorn.
+PATH_SISTEMA = (
+    '/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin',
+    '/sbin', '/bin',
+)
 
 # Faixas que nenhuma base de geolocalizacao resolve: rede interna, loopback,
 # link-local. Ficam fora da fila, senao apareceriam como "pendentes" sempre.
@@ -552,13 +564,39 @@ def instalar_arquivo(nome, conteudo):
     return estado_base()
 
 
+def ambiente_script():
+    """
+    Ambiente do `scripts/atualizar_geoip.sh` com PATH de sistema.
+
+    O `Environment=PATH=` dos .service de producao aponta so para o venv/bin,
+    e o systemd **substitui** o PATH (nao acrescenta): dentro do gunicorn nao
+    existem `bash`, `curl` nem `tar`. Sem sanear, o painel devolvia 500
+    (`FileNotFoundError: No such file or directory: 'bash'`) so no servidor -
+    no terminal da mesma maquina o script rodava, porque o PATH era o completo.
+
+    O venv/bin entra primeiro, os diretorios padrao do sistema depois e, por
+    ultimo, o que veio herdado (sem repetir). Nenhuma outra variavel e'
+    alterada.
+    """
+    ambiente = dict(os.environ)
+    caminhos = [str(Path(settings.BASE_DIR) / 'venv' / 'bin'), *PATH_SISTEMA]
+    herdado = ambiente.get('PATH') or ''
+    caminhos += [
+        pasta for pasta in herdado.split(os.pathsep)
+        if pasta and pasta not in caminhos
+    ]
+    ambiente['PATH'] = os.pathsep.join(caminhos)
+    return ambiente
+
+
 def rodar_script(*opcoes, timeout=None):
     """
     Roda scripts/atualizar_geoip.sh (download/checagem na MaxMind).
 
     Devolve (ok, saida). Nao levanta por erro do script - a saida explica o
     motivo (401, 429, base ja atualizada). Levanta GeoIPIndisponivel se o
-    script sumiu ou estourou o tempo.
+    script sumiu, se falta `bash`/`curl`/`tar` no PATH ou se estourou o tempo
+    (todas as causas viram mensagem no painel, nunca erro 500).
     """
     script = caminho_script()
     if not script.exists():
@@ -566,16 +604,37 @@ def rodar_script(*opcoes, timeout=None):
             f'Script nao encontrado em {script} (scripts/atualizar_geoip.sh).'
         )
     limite = timeout or TIMEOUT_SCRIPT
+    ambiente = ambiente_script()
+    bash = shutil.which('bash', path=ambiente['PATH'])
+    if bash is None:
+        raise GeoIPIndisponivel(
+            f'Nao achei o bash no PATH do servico ({ambiente["PATH"]}). '
+            'Rode scripts/atualizar_geoip.sh pelo terminal do servidor.'
+        )
+    faltando = [
+        nome for nome in ('curl', 'tar')
+        if shutil.which(nome, path=ambiente['PATH']) is None
+    ]
+    if faltando:
+        raise GeoIPIndisponivel(
+            f'O script precisa de {", ".join(faltando)} e nao achei no PATH '
+            'do servico. Instale o pacote ou rode o script pelo terminal.'
+        )
     try:
         processo = subprocess.run(
-            ['bash', str(script), *opcoes],
+            [bash, str(script), *opcoes],
             cwd=str(settings.BASE_DIR),
             capture_output=True, text=True, timeout=limite,
+            env=ambiente,
         )
     except subprocess.TimeoutExpired as erro:
         raise GeoIPIndisponivel(
             f'A atualização passou de {limite}s e foi interrompida. '
             'Tente pelo terminal ou pelo cron.'
+        ) from erro
+    except OSError as erro:   # inclui FileNotFoundError e PermissionError
+        raise GeoIPIndisponivel(
+            f'Nao consegui executar o script: {erro}'
         ) from erro
     saida = '\n'.join(
         linha for linha in (processo.stdout + processo.stderr).splitlines()

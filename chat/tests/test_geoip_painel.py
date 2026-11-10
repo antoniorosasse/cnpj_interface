@@ -13,6 +13,7 @@ Roda com:
 """
 
 import io
+import os
 import shutil
 import subprocess
 import tarfile
@@ -21,6 +22,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.admin.models import LogEntry
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -213,6 +215,52 @@ class RodarScriptTestCase(SimpleTestCase):
     def test_timeout_vira_erro_claro(self, run):
         with self.assertRaisesMessage(GeoIPIndisponivel, 'interrompida'):
             rodar_script(timeout=5)
+
+    @patch('chat.geoip.subprocess.run')
+    def test_bash_do_sistema_entra_no_path_do_script(self, run):
+        """
+        Os .service de producao definem `Environment=PATH=` so com o venv/bin
+        e o systemd substitui o PATH: sem sanear, `bash`, `curl` e `tar` nao
+        existem dentro do gunicorn e o painel devolvia 500 no servidor.
+        """
+        run.return_value = SimpleNamespace(
+            returncode=0, stdout='remoto: x', stderr='',
+        )
+        rodar_script('--checar')
+        ambiente = run.call_args.kwargs['env']
+        caminhos = ambiente['PATH'].split(os.pathsep)
+        self.assertEqual(
+            caminhos[0], str(Path(settings.BASE_DIR) / 'venv' / 'bin'),
+        )
+        for pasta in ('/usr/bin', '/bin'):
+            self.assertIn(pasta, caminhos)
+        self.assertTrue(run.call_args.args[0][0].endswith('bash'))
+
+    @patch('chat.geoip.subprocess.run')
+    def test_path_herdado_entra_sem_duplicar(self, run):
+        """O PATH do processo continua valendo, sem repetir o venv/bin."""
+        run.return_value = SimpleNamespace(
+            returncode=0, stdout='remoto: x', stderr='',
+        )
+        with patch.dict(os.environ, {'PATH': '/opt/extra/bin'}, clear=False):
+            rodar_script('--checar')
+        caminhos = run.call_args.kwargs['env']['PATH'].split(os.pathsep)
+        self.assertIn('/opt/extra/bin', caminhos)
+        self.assertEqual(
+            caminhos.count(str(Path(settings.BASE_DIR) / 'venv' / 'bin')), 1,
+        )
+
+    @patch('chat.geoip.shutil.which', return_value=None)
+    def test_sem_bash_vira_erro_claro(self, which):
+        """Sem `bash` no PATH, mensagem na tela - nunca erro 500."""
+        with self.assertRaisesMessage(GeoIPIndisponivel, 'bash'):
+            rodar_script('--checar')
+
+    @patch('chat.geoip.subprocess.run', side_effect=FileNotFoundError('bash'))
+    def test_execucao_impossivel_vira_erro_claro(self, run):
+        """FileNotFoundError do `subprocess.run` nao pode virar 500."""
+        with self.assertRaisesMessage(GeoIPIndisponivel, 'executar'):
+            rodar_script('--checar')
 
 
 class PainelGeoIPTestCase(TestCase):
