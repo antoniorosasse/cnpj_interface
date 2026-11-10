@@ -25,23 +25,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -f "$RAIZ/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$RAIZ/.env"
-  set +a
-fi
+# Le uma chave do .env SEM executar o arquivo. O SECRET_KEY do Django tem
+# "(...)" no valor e o 'source' do bash quebra com erro de sintaxe.
+ler_env() {
+  local chave="$1" valor
+  [[ -f "$RAIZ/.env" ]] || return 0
+  valor="$(grep -E "^[[:space:]]*${chave}=" "$RAIZ/.env" | tail -1 | cut -d= -f2- | tr -d '\r')"
+  valor="${valor%\"}"; valor="${valor#\"}"
+  valor="${valor%\'}"; valor="${valor#\'}"
+  printf '%s' "$valor"
+}
 
-BANCO="${DJANGO_DB:-django_internal}"
-USUARIO="${DJANGO_DB_USER:-django_app}"
-HOST="${DJANGO_DB_HOST:-localhost}"
-PORTA="${DJANGO_DB_PORT:-5432}"
+BANCO="$(ler_env DJANGO_DB)";              BANCO="${BANCO:-django_internal}"
+USUARIO="$(ler_env DJANGO_DB_USER)";        USUARIO="${USUARIO:-django_app}"
+HOST="$(ler_env DJANGO_DB_HOST)";           HOST="${HOST:-localhost}"
+PORTA="$(ler_env DJANGO_DB_PORT)";          PORTA="${PORTA:-5432}"
+SENHA="$(ler_env DJANGO_DB_PASSWORD)"
 
-if [[ -z "${DJANGO_DB_PASSWORD:-}" ]]; then
+if [[ -z "$SENHA" ]]; then
   echo "ERRO: DJANGO_DB_PASSWORD vazio (confira $RAIZ/.env)" >&2
   exit 1
 fi
-export PGPASSWORD="$DJANGO_DB_PASSWORD"
+export PGPASSWORD="$SENHA"
 
 mkdir -p "$DIR_BACKUP"
 ARQUIVO="$DIR_BACKUP/${BANCO}_$(date +%Y%m%d).sql.gz"
