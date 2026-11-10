@@ -310,7 +310,7 @@
 <div class="painel-log" id="expurgo-log">
   <div class="painel-topo">
     <h2>Expurgo de logs antigos</h2>
-    <span class="ajuda">Apaga de verdade — só superusuário. Idade mínima: {{ expurgo_min_dias }} dias.</span>
+    <span class="ajuda">Apaga de verdade — só superusuário. Idade mínima: {{ expurgo_min_dias }} dia{{ expurgo_min_dias|pluralize }}.</span>
   </div>
   <form method="get" class="expurgo-form">
     {% for chave, valor in request.GET.items %}

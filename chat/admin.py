@@ -248,7 +248,7 @@ class LogAcessoAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             f'Expurgo concluído: {resultado["removidos"]} log(s) com mais de '
-            f'{dias} dias apagado(s).',
+            f'{dias} dia(s) apagado(s).',
             messages.SUCCESS,
         )
         return HttpResponseRedirect(destino)

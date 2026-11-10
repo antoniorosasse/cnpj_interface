@@ -55,7 +55,7 @@ class Command(BaseCommand):
             raise CommandError(str(erro))
 
         self.stdout.write(
-            f'Logs mais antigos que {dias} dias '
+            f'Logs mais antigos que {dias} dia(s) '
             f'(antes de {resumo["antes_de"]:%d/%m/%Y %H:%M}): {resumo["total"]}'
         )
         for linha in resumo['por_tipo']:

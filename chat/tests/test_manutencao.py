@@ -60,8 +60,8 @@ class ContarAcessosTestCase(TestCase):
         resumo = contar_acessos(dias=90, tipo=LogAcesso.TIPO_CHAT_PERGUNTA)
         self.assertEqual(resumo['total'], 1)
 
-    def test_min_dias_vale_sete(self):
-        self.assertEqual(MIN_DIAS, 7)
+    def test_min_dias_vale_um(self):
+        self.assertEqual(MIN_DIAS, 1)
 
     def test_recusa_janela_menor_que_o_minimo(self):
         with self.assertRaises(ValueError):
@@ -105,8 +105,17 @@ class LimparAcessosTestCase(TestCase):
 
     def test_recusa_janela_menor_que_o_minimo(self):
         with self.assertRaises(ValueError):
-            limpar_acessos(dias=1)
+            limpar_acessos(dias=MIN_DIAS - 1)
         self.assertEqual(LogAcesso.objects.count(), 4)
+
+    def test_aceita_janela_de_um_dia(self):
+        # 11/11/2026: MIN_DIAS passou a ser 1. Os 4 logs do setUp (200, 150,
+        # 120 e 2 dias) caem; so o criado agora sobrevive.
+        agora = criar_log(LogAcesso.TIPO_LOGIN, dias_atras=0)
+        resumo = limpar_acessos(dias=1)
+        self.assertEqual(resumo['removidos'], 4)
+        self.assertEqual(LogAcesso.objects.count(), 1)
+        self.assertTrue(LogAcesso.objects.filter(pk=agora.pk).exists())
 
 
 class ComandoLimparAcessosTestCase(TestCase):
@@ -136,7 +145,14 @@ class ComandoLimparAcessosTestCase(TestCase):
 
     def test_dias_abaixo_do_minimo_e_erro(self):
         with self.assertRaises(CommandError):
-            self._rodar('--dias', '1', '--sim')
+            self._rodar('--dias', str(MIN_DIAS - 1), '--sim')
+
+    def test_dias_um_e_aceito(self):
+        # MIN_DIAS=1 desde 11/11/2026: um dia ja e' janela valida.
+        # O setUp tem logs de 200 e 2 dias - os dois caem na janela de 1 dia.
+        saida = self._rodar('--dias', '1', '--sim')
+        self.assertIn('Apagados 2', saida)
+        self.assertEqual(LogAcesso.objects.count(), 0)
 
 
 class ExpurgoNoAdminTestCase(TestCase):
@@ -159,9 +175,17 @@ class ExpurgoNoAdminTestCase(TestCase):
         self.assertEqual(resposta.context['expurgo']['total'], 2)
         self.assertIn('chat/logacesso/expurgar/', html)
 
-    def test_janela_curta_demais_cai_no_padrao(self):
-        resposta = self.client.get(self.lista, {'expurgo_dias': 1})
+    def test_janela_abaixo_do_minimo_cai_no_padrao(self):
+        resposta = self.client.get(self.lista, {'expurgo_dias': MIN_DIAS - 1})
         self.assertEqual(resposta.context['expurgo']['dias'], 90)
+
+    def test_janela_de_um_dia_e_aceita(self):
+        # MIN_DIAS=1 desde 11/11/2026. O painel lista os 3 logs do setUp
+        # (200, 150 e 2 dias atras) como alvo de um expurgo de 1 dia.
+        resposta = self.client.get(self.lista, {'expurgo_dias': 1})
+        self.assertEqual(resposta.context['expurgo']['dias'], 1)
+        self.assertEqual(resposta.context['expurgo']['total'], 3)
+        self.assertEqual(resposta.context['expurgo_min_dias'], 1)
 
     def test_get_no_expurgar_nao_apaga(self):
         resposta = self.client.get(self.expurgar)

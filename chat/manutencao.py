@@ -4,7 +4,9 @@ Manutencao do log de acesso (chat.LogAcesso): contar e apagar registros.
 
 Usado pelo painel do admin (/admin/chat/logacesso/) e pelo comando
 `manage.py limpar_acessos`. A exclusao tem idade minima (MIN_DIAS): um
-"--dias 1" digitado por engano nao pode zerar a auditoria.
+"--dias 0" (ou negativo) digitado por engano nao pode zerar a auditoria.
+Desde 11/11/2026 o minimo e' 1 dia - o painel precisa poder limpar o que
+entrou hoje e ontem quando o volume cresce (carga de CNPJ + chat).
 
 A exclusao e' feita em lotes de `TAMANHO_LOTE` ids: um DELETE unico em
 centenas de milhares de linhas seguraria lock e transacao longa no Postgres.
@@ -20,7 +22,9 @@ from django.utils import timezone
 from .models import LogAcesso
 
 # Idade minima (em dias) aceita para apagar. Abaixo disso: ValueError.
-MIN_DIAS = 7
+# 1 = pode expurgar tudo que for mais antigo que 24h (o painel mostra a
+# contagem antes de apagar e o POST pede confirmacao).
+MIN_DIAS = 1
 
 # Quantos ids entram em cada DELETE
 TAMANHO_LOTE = 5000
