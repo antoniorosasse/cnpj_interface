@@ -15,3 +15,6 @@ torch==2.14.1
 
 # Conexao AS/400 (opcional/legado)
 JPype1==1.7.1
+
+# Geolocalizacao local dos IPs (MaxMind GeoLite2-City.mmdb)
+geoip2==5.3.0

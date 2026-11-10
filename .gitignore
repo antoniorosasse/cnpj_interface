@@ -26,6 +26,10 @@ logs/
 # JDBC driver da IBM (baixar separado, ver lib/README.md)
 lib/jt400.jar
 
+# Banco de geolocalizacao do MaxMind (~48 MB) - baixar com
+# scripts/atualizar_geoip.sh, nao versionar
+geoip/
+
 # IDE / Editor
 .vscode/
 .idea/

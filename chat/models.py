@@ -129,3 +129,43 @@ class LogAcesso(models.Model):
     def __str__(self):
         quem = self.usuario.username if self.usuario else '(anonimo)'
         return f'[{self.tipo}] {quem} @ {self.criado_em:%Y-%m-%d %H:%M}'
+
+
+class LocalizacaoIP(models.Model):
+    """
+    Cidade/UF/pais de um IP do log de acesso (1 linha por IP).
+
+    Preenchida por `manage.py localizar_acessos` (chat/geoip.py) - nunca no
+    request. Fica em tabela propria para a mesma consulta externa nao ser
+    repetida para cada LogAcesso: o admin faz um Subquery por esta tabela.
+    """
+
+    ip = models.GenericIPAddressField(unique=True)
+    cidade = models.CharField(max_length=120, blank=True, default='')
+    regiao = models.CharField(max_length=120, blank=True, default='')
+    uf = models.CharField(max_length=40, blank=True, default='')
+    pais = models.CharField(max_length=60, blank=True, default='')
+    codigo_pais = models.CharField(max_length=2, blank=True, default='')
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+    )
+    fonte = models.CharField(max_length=40, blank=True, default='')
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['ip']
+        verbose_name = 'Localização de IP'
+        verbose_name_plural = 'Localizações de IP'
+
+    def __str__(self):
+        return f'{self.ip}: {self.resumo or "(sem localização)"}'
+
+    @property
+    def resumo(self) -> str:
+        """Texto curto usado na coluna do admin: 'Sao Paulo/SP, Brasil'."""
+        local = '/'.join(p for p in (self.cidade, self.uf) if p) or self.regiao
+        partes = [p for p in (local, self.pais) if p]
+        return ', '.join(partes)

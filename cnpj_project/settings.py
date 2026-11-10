@@ -266,3 +266,16 @@ MONGO_CONFIG = {
     'USER': os.getenv('MONGO_USER', ''),
     'PASSWORD': os.getenv('MONGO_PASSWORD', ''),
 }
+
+# ==================== GEOLOCALIZACAO DOS IPs ====================
+# Fonte usada por `manage.py localizar_acessos` (chat/geoip.py).
+#   'maxmind' = GeoLite2-City.mmdb local (padrao: sem rede, nenhum IP sai do
+#               servidor; atualize com scripts/atualizar_geoip.sh)
+#   'ip-api'  = http://ip-api.com/batch (100 IPs por POST, sem HTTPS)
+#   'ipapi'   = https://ipapi.co/{ip}/json/ (HTTPS, 1 IP por requisicao)
+GEOIP_FONTE = os.getenv('GEOIP_FONTE', 'maxmind')
+
+# Banco local do MaxMind (cidade/UF/pais). Nao entra no git (.gitignore).
+GEOIP_CIDADE_MMDB = os.getenv(
+    'GEOIP_CIDADE_MMDB', str(BASE_DIR / 'geoip' / 'GeoLite2-City.mmdb'),
+)
