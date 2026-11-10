@@ -48,6 +48,18 @@ atual: se algo mudar, atualize o arquivo correspondente.
   `manage.py relatorio_acesso` e pelo painel de `/admin/chat/logacesso/`.
   Nao duplique esse SQL: mudou a metrica, muda ali. A tela **nao executa**
   comando nenhum (so mostra o texto para copiar).
+- **Localizacao dos IPs** (`chat/geoip.py` + `chat.LocalizacaoIP`, desde 09/11):
+  uma linha por IP, preenchida **fora do request** por
+  `manage.py localizar_acessos`. Fonte padrao `GEOIP_FONTE=maxmind`
+  (`GeoLite2-City.mmdb` local em `geoip/`, no `.gitignore` e fora do
+  `rsync --exclude='geoip'` do deploy): nenhum IP de visitante sai do servidor.
+  A base e instalada/renovada por `scripts/atualizar_geoip.sh` ou pelo painel
+  (checar/baixar/enviar `.mmdb`, so superusuario, com `LogEntry`). Nao consulte
+  GeoIP dentro de view, signal ou template.
+- **Expurgo do log** (`chat/manutencao.py` + `manage.py limpar_acessos`):
+  idade minima de 7 dias (`MIN_DIAS`) e `DELETE` em lotes de 5000
+  (`TAMANHO_LOTE`) - nunca um `DELETE` unico na tabela inteira. O painel e o
+  comando usam a **mesma** funcao.
 - **Link do Google Maps**: `core/maps.py` (`montar_maps_url`). A ordem e
   **rua + numero -> endereco em texto** (`logradouro, numero, bairro, municipio,
   UF`), **sem numero -> coordenada** de `c_ceps` (JOIN `cc.cep = e.cep` em

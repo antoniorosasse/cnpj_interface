@@ -23,6 +23,8 @@ que traduz perguntas em linguagem natural para SQL.
 - [Endpoints (todos)](#endpoints-todos)
 - [Bancos de dados](#bancos-de-dados)
 - [Log de acesso (`chat_logacesso`)](#log-de-acesso-chat_logacesso)
+  - [Localização dos IPs (GeoLite2)](#localização-dos-ips-geolite2)
+  - [Expurgo do log](#expurgo-do-log)
 - [Testes](#testes)
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Deploy](#deploy)
@@ -70,23 +72,32 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- templates/chat/
     |   |   +-- chat.html
     |   |   +-- historico.html
-    |   +-- tests/                  # 245 testes
+    |   +-- tests/                  # 340 testes
+    |   |   +-- test_admin_log.py
     |   |   +-- test_embedding_service.py
+    |   |   +-- test_geoip.py
+    |   |   +-- test_geoip_painel.py
     |   |   +-- test_integracao.py
+    |   |   +-- test_manutencao.py
     |   |   +-- test_models.py
     |   |   +-- test_mongo_models.py
     |   |   +-- test_resposta_natural.py
+    |   |   +-- test_signals.py
     |   |   +-- test_sql_executor.py
     |   |   +-- test_sql_generator.py
     |   |   +-- test_sql_validator.py
     |   +-- management/commands/
     |   |   +-- limpar_conversas_antigas.py   # Retencao do historico (padrao 30 dias)
     |   |   +-- relatorio_acesso.py           # Logins, chat e empresas (chat_logacesso)
-    |   +-- models.py               # Conversa + Mensagem (Postgres)
+    |   |   +-- localizar_acessos.py          # Cidade/UF/pais dos IPs do log (GeoLite2)
+    |   |   +-- limpar_acessos.py             # Expurgo do log (lotes de 5000, minimo 7 dias)
+    |   +-- models.py               # Conversa + Mensagem (Postgres) + LogAcesso + LocalizacaoIP
     |   +-- mongo_models.py         # Conversa + Mensagem (MongoDB)
     |   +-- repo.py                 # Dispatcher (Mongo | Postgres)
     |   +-- repo_postgres.py        # Implementacao ORM
     |   +-- repo_mongo.py           # Implementacao pymongo
+    |   +-- geoip.py                # Localizacao dos IPs (maxmind | ip-api | ipapi)
+    |   +-- manutencao.py           # Contagem e expurgo do LogAcesso
     |   +-- urls.py
     |   +-- views.py
     +-- cnpj_project/               # Configuracao Django
@@ -953,12 +964,57 @@ Arquivos: `chat/relatorio.py` (consultas), `chat/admin.py`
 `chat/templates/admin/chat/logacesso/change_list.html` (markup/estilo).
 Testes em `chat/tests/test_admin_log.py`.
 
+## Localização dos IPs (GeoLite2)
+
+O painel do log mostra **cidade/UF/país** de cada IP, mas nada é consultado
+durante o request: a localização vive em `chat.LocalizacaoIP` (uma linha por IP,
+tabela separada do `LogAcesso`) e é preenchida fora da web, pelo comando:
+
+    python manage.py localizar_acessos --dry-run      # só lista os pendentes
+    python manage.py localizar_acessos --dias 30      # padrão: últimos 30 dias
+    python manage.py localizar_acessos --dias 0       # todo o histórico
+
+| Fonte (`GEOIP_FONTE`) | Como funciona | Observação |
+|---|---|---|
+| `maxmind` (**padrão**) | `GeoLite2-City.mmdb` local | nenhum IP sai do servidor, sem cota, sem rede |
+| `ip-api` | `http://ip-api.com/batch`, 100 IPs por POST | **HTTP** (sem TLS) |
+| `ipapi` | `https://ipapi.co/{ip}/json/` | 1 IP por requisição |
+
+- O `.mmdb` **não é versionado** (`geoip/` está no `.gitignore`) e o `deploy.sh`
+  **não o envia** (`rsync --exclude='geoip'`): a base é instalada no servidor
+  uma vez (`scp`, `scripts/atualizar_geoip.sh` ou upload pelo painel) e renovada
+  por lá.
+- Renovar: `bash scripts/atualizar_geoip.sh` (conta gratuita em maxmind.com,
+  `MAXMIND_ACCOUNT_ID` + `MAXMIND_LICENSE_KEY` no `.env`) — ou pelo painel, em
+  `/admin/chat/logacesso/`: **checar base nova** (só `HEAD` no permalink, não
+  baixa), **baixar da MaxMind** e **instalar arquivo enviado** (`.mmdb` ou
+  `.tar.gz`, validado antes de substituir; o `.zip` "-CSV" não serve). Cada troca
+  fica no `LogEntry` do admin.
+- Cache por IP: localização mais nova que `--revalidar-dias` não é reconsultada.
+  Erro de rede/limite **não levanta** — o IP fica para a próxima execução.
+- Licença: o GeoLite2 exige o crédito de atribuição (rodapé do site/admin).
+- Base ausente ou erro de rede não afeta a aplicação: só o comando reclama
+  (`GeoIPIndisponivel`).
+
+## Expurgo do log
+
+`chat/manutencao.py` é a única implementação de exclusão, usada pelo painel
+(`POST /admin/chat/logacesso/expurgar/`) e pelo comando:
+
+    python manage.py limpar_acessos --dias 90 --dry-run
+    python manage.py limpar_acessos --dias 90
+
+- **Idade mínima de 7 dias** (`MIN_DIAS`): um `--dias 1` digitado por engano não
+  zera a auditoria (abaixo disso o comando recusa).
+- `DELETE` em **lotes de 5000 ids** (`TAMANHO_LOTE`): um `DELETE` único em
+  centenas de milhares de linhas seguraria lock e transação longa no Postgres.
+
 # Testes
 
-    python manage.py test chat       # 245 testes do chat
-    python manage.py test core       # 146 testes do core
+    python manage.py test chat       # 340 testes do chat
+    python manage.py test core       # 152 testes do core
 
-Roda **245 testes** em `chat/tests/` (+ 124 em `core/tests.py`) = 369 no total:
+Roda **340 testes** em `chat/tests/` (+ 152 em `core/tests.py`) = 492 no total:
 
 - `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
@@ -970,11 +1026,15 @@ Roda **245 testes** em `chat/tests/` (+ 124 em `core/tests.py`) = 369 no total:
 - `test_integracao.py` - fluxo fim-a-fim (roda nos 2 backends)
 - `test_signals.py` - extração de IP do `X-Forwarded-For` (login/pergunta)
 - `test_admin_log.py` - `resumo_acesso`, comando `relatorio_acesso` e painel do admin
-- `core/tests.py` - template do detalhe (município/UF), links do Maps (endereço e busca pelo nome) + log de acesso das páginas de empresas
+- `test_geoip.py` - fontes de localização, cache por IP, erro de rede e `verificar_fonte`
+- `test_geoip_painel.py` - administração da base pelo painel (checar/baixar/enviar), só superusuário
+- `test_manutencao.py` - idade mínima, lotes de exclusão e `limpar_acessos`
+- `core/tests.py` - template do detalhe (município/UF), links do Maps (endereço e busca pelo nome), log de acesso das páginas de empresas e o "Chat IA" do navbar em nova aba
 
 Os testes usam mock do DeepSeek e do `psycopg2.connect`. **`test_mongo_models`
 e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
-`chat_conversas`** - não rodar com dados reais.
+`chat_conversas`** - não rodar com dados reais. Os testes de GeoIP usam cache
+local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 
 # Variáveis de ambiente
 
@@ -995,6 +1055,11 @@ Ver `.env.example` para a lista completa. As principais:
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrão: `deepseek-chat`)
 - `CHAT_DEEPSEEK_BASE_URL` - endpoint compatível OpenAI (padrão: `https://api.deepseek.com`)
 - `AS400_*` - conexão com o IBM i (`AS400_JDBC_JAR` aponta pro `lib/jt400.jar`; usada pelo `testar_simple.py` e pelas conexões de `core/conexoes.py`)
+- `GEOIP_FONTE` - fonte da localização dos IPs: `maxmind` (padrão, base local),
+  `ip-api` (`http://ip-api.com/batch`) ou `ipapi` (`https://ipapi.co`)
+- `GEOIP_CIDADE_MMDB` - caminho do `GeoLite2-City.mmdb` (vazio = `geoip/GeoLite2-City.mmdb`)
+- `MAXMIND_ACCOUNT_ID` / `MAXMIND_LICENSE_KEY` - conta gratuita da MaxMind, usada
+  **só** pelo `scripts/atualizar_geoip.sh` para baixar a base (não vai junto com os IPs)
 
 # Deploy
 
