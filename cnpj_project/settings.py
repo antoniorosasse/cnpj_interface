@@ -31,8 +31,8 @@ CSRF_TRUSTED_ORIGINS = [
 # ==================== SESSAO (dominio do cookie) ====================
 # Ausente/vazio = cookie por host (padrao do Django).
 #
-# Em PRODUCAO vale '.arosasse.tech': o login feito em um subdominio passa a
-# valer nos outros (chat.arosasse.tech <-> cnpj.arosasse.tech). Efeito: quem
+# Em PRODUCAO vale '.busquecnpj.com.br': o login feito em um subdominio passa a
+# valer nos outros (chat.busquecnpj.com.br <-> cnpj.busquecnpj.com.br). Efeito: quem
 # loga no chat aparece autenticado na consulta de empresas, e o log grava o
 # usuario real em vez de anonimo.
 #
@@ -181,7 +181,7 @@ USE_I18N = True
 USE_TZ = True
 
 # ==================== SUBPATH (produção vs local) ====================
-# Em produção, o app roda em https://arosasse.tech/cnpj/
+# Em produção, o app roda em https://cnpj.busquecnpj.com.br/
 # Em desenvolvimento, roda em http://localhost:8002/
 #
 # Controlado por variável de ambiente SCRIPT_NAME_PREFIX:

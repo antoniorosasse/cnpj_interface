@@ -47,7 +47,7 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    {% if 'chat.arosasse.tech' not in request.get_host %}
+                    {% if 'chat.busquecnpj.com.br' not in request.get_host %}
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'core:lista' %}">
                                 <i class="bi bi-list-ul"></i> Empresas
@@ -69,7 +69,7 @@
                         {# O Chat IA abre em outra aba, como Proximidade e Estatisticas. #}
                         {# Dentro do proprio host do chat o link fica na mesma aba. #}
                         <a class="nav-link" href="{% url 'chat:chat' %}"
-                           {% if 'chat.arosasse.tech' not in request.get_host %}target="_blank" rel="noopener"
+                           {% if 'chat.busquecnpj.com.br' not in request.get_host %}target="_blank" rel="noopener"
                            title="Abre em nova aba"{% endif %}>
                             <i class="bi bi-chat-dots"></i> Chat IA
                         </a>

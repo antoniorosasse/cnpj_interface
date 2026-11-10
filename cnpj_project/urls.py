@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from core import views as core_views
 
 # robots.txt: libera o site (SEO) e fecha as areas privadas. O mesmo projeto
-# serve cnpj.arosasse.tech e chat.arosasse.tech, entao vale para os dois hosts.
+# serve cnpj.busquecnpj.com.br e chat.busquecnpj.com.br, entao vale para os dois hosts.
 ROBOTS_TXT = (
     'User-agent: *\n'
     'Allow: /\n'

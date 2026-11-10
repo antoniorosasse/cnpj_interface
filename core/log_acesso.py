@@ -11,7 +11,7 @@ e' gravado com usuario nulo. O log nunca "inventa" quem acessou - o que
 identifica o visitante e' o IP + user agent + filtros usados.
 
 Observacao: o cookie de sessao so' atravessa subdominios (chat. x cnpj.) quando
-SESSION_COOKIE_DOMAIN esta' definido no ambiente (producao usa '.arosasse.tech');
+SESSION_COOKIE_DOMAIN esta' definido no ambiente (producao usa '.busquecnpj.com.br');
 sem isso o usuario aparece nulo na consulta mesmo tendo logado no chat.
 
 Deduplicacao: um mesmo evento (tipo + IP + detalhe) e' gravado no maximo

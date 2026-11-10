@@ -673,10 +673,10 @@ class MenuPrincipalTemplateTests(SimpleTestCase):
         html = re.sub(r'\s+', ' ', self._render())
         self.assertIn('href="/chat/" target="_blank" rel="noopener"', html)
 
-    @override_settings(ALLOWED_HOSTS=['testserver', 'chat.arosasse.tech'])
+    @override_settings(ALLOWED_HOSTS=['testserver', 'chat.busquecnpj.com.br'])
     def test_chat_ia_fica_na_mesma_aba_no_host_do_chat(self):
-        """Dentro do proprio chat.arosasse.tech o link nao abre outra aba."""
-        request = RequestFactory().get('/', HTTP_HOST='chat.arosasse.tech')
+        """Dentro do proprio chat.busquecnpj.com.br o link nao abre outra aba."""
+        request = RequestFactory().get('/', HTTP_HOST='chat.busquecnpj.com.br')
         html = re.sub(r'\s+', ' ', render_to_string('core/base.html', {}, request=request))
         self.assertIn('href="/chat/"', html)
         self.assertNotIn('href="/chat/" target="_blank"', html)
