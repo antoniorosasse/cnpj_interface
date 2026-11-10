@@ -1684,3 +1684,21 @@ class ConsultaComSaltoTests(SimpleTestCase):
             consultar_com_salto(CursorQuebrado(), ConexaoFakeSalto(),
                                 'SELECT 1 LIMIT %s', [20], 0)
 
+
+class RobotsTxtTests(SimpleTestCase):
+    """robots.txt: libera o site e fecha as areas privadas (admin/chat/login)."""
+
+    def test_robots_libera_o_site_e_fecha_as_areas_privadas(self):
+        resposta = self.client.get('/robots.txt')
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertTrue(resposta['Content-Type'].startswith('text/plain'))
+
+        corpo = resposta.content.decode()
+        self.assertIn('User-agent: *', corpo)
+        self.assertIn('Allow: /', corpo)
+        for caminho in ('/admin/', '/chat/', '/accounts/'):
+            self.assertIn(f'Disallow: {caminho}', corpo)
+        # a raiz continua indexavel: nao pode haver 'Disallow: /'
+        self.assertNotIn('Disallow: /\n', corpo)
+

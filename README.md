@@ -855,6 +855,7 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 | GET/POST | `/admin/password_change/` | Trocar senha |
 | GET | `/health/` | Health check simples |
 | GET | `/health/deep/` | Health check profundo (Postgres) |
+| GET | `/robots.txt` | Crawlers: libera o site e fecha `/admin/`, `/chat/` e `/accounts/` |
 
 # Bancos de dados
 

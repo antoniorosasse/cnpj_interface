@@ -5,6 +5,16 @@ from django.contrib.auth import views as auth_views
 from django.http import HttpResponse
 from core import views as core_views
 
+# robots.txt: libera o site (SEO) e fecha as areas privadas. O mesmo projeto
+# serve cnpj.arosasse.tech e chat.arosasse.tech, entao vale para os dois hosts.
+ROBOTS_TXT = (
+    'User-agent: *\n'
+    'Allow: /\n'
+    'Disallow: /admin/\n'
+    'Disallow: /chat/\n'
+    'Disallow: /accounts/\n'
+)
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
@@ -21,5 +31,7 @@ urlpatterns = [
     path('chat/', include('chat.urls')),
     path('', include('core.urls')),
     path('health/', lambda r: HttpResponse('ok'), name='health'),
+    path('robots.txt', lambda r: HttpResponse(ROBOTS_TXT, content_type='text/plain'),
+         name='robots'),
     path('health/deep/', core_views.health_deep, name='health_deep'),
 ]
