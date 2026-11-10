@@ -55,7 +55,10 @@ atual: se algo mudar, atualize o arquivo correspondente.
   `rsync --exclude='geoip'` do deploy): nenhum IP de visitante sai do servidor.
   A base e instalada/renovada por `scripts/atualizar_geoip.sh` ou pelo painel
   (checar/baixar/enviar `.mmdb`, so superusuario, com `LogEntry`). Nao consulte
-  GeoIP dentro de view, signal ou template.
+  GeoIP dentro de view, signal ou template. **Precisao** (10/11): a base gratuita
+  so da cidade para faixa residencial/movel; IP de datacenter/crawler fica no
+  **pais** — decisao registrada, nao trocar por fonte HTTP/terceiro nem exigir
+  cidade de bot.
 - **PATH do systemd** (10/11): os `.service` declaram
   `Environment="PATH=.../venv/bin"` e o systemd **substitui** (nao acrescenta) o
   PATH: dentro do gunicorn nao existem `bash`, `curl` nem `tar`. Todo

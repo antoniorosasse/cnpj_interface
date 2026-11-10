@@ -1001,6 +1001,17 @@ tabela separada do `LogAcesso`) e é preenchida fora da web, pelo comando:
   sem repetir), acha o `bash` por `shutil.which`, confere `curl`/`tar` e converte
   `OSError` em `GeoIPIndisponivel` (mensagem na tela, nunca 500). O
   `TIMEOUT_SCRIPT` é **240 s**, abaixo do `--timeout 300` do gunicorn.
+- **Precisão (10/11/2026)**: a edição gratuita `GeoLite2-City` só entrega cidade
+  para faixa residencial/móvel. IP de **datacenter/crawler** (Googlebot, DotBot,
+  ElevenlabsCrawler, Vultr, DigitalOcean) devolve apenas o **país**, com
+  `latitude/longitude` no centro do país e `accuracy_radius` alto — o `resumo`
+  mostra `United States`, não `-`. Conferido com a base de 10/11 (build
+  `20261106`, md5 idêntico ao instalado) e com o histórico completo do log: 19 dos
+  43 IPs têm cidade e **todos os 24 sem cidade são bots/infra**. Sites que exibem
+  cidade para esses IPs (`ip-api`, por exemplo) devolvem o valor **padrão** do
+  município (San Francisco = `37.7749 / -122.419`), não uma medição. Decisão: não
+  trocar a fonte por HTTP/terceiro para "ganhar" cidade de datacenter — o teto é
+  o país.
 - Licença: o GeoLite2 exige o crédito de atribuição (rodapé do site/admin).
 - Base ausente ou erro de rede não afeta a aplicação: só o comando reclama
   (`GeoIPIndisponivel`).
