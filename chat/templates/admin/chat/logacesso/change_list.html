@@ -39,7 +39,71 @@
     .painel-log .cmd-topo { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
     .painel-log .ajuda { font-size: .8rem; color: var(--body-quiet-color, #666); margin: 2px 0 0; }
     .painel-log .ua { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .painel-log summary { cursor: pointer; }
+    .painel-log .titulo-comandos { font-size: 1rem; font-weight: 700; margin-right: 8px; }
+    .expurgo-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+                    font-size: .85rem; margin: 6px 0 10px; }
+    .expurgo-form input, .expurgo-form select { padding: 2px 4px; margin-left: 4px; }
+    .painel-log tr.clicavel:hover td { background: var(--selected-bg, #e4e4e4); }
+    .painel-log tr.clicavel a { display: block; text-decoration: none; }
+
+    /* Filtros do admin: o CSS do Django posiciona o <search id="changelist-filter">
+       em coluna a direita (order: 1) e limita a lista a 100% - 270px. Aqui a faixa
+       de filtros volta para cima, na largura toda, com os grupos (<details> lado a
+       lado) - o DOM ja vem antes do form, so o order atrapalhava. */
+    #changelist .changelist-form-container { flex-wrap: wrap; }
+    #changelist .changelist-form-container:has(#changelist-filter) > div {
+      max-width: 100%;
+      flex: 1 1 100%;
+    }
+    #changelist-filter {
+      order: -1;
+      flex: 1 1 100%;
+      margin: 0 0 14px;
+      padding: 6px 12px 10px;
+      border-radius: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 22px;
+      align-items: flex-start;
+    }
+    #changelist-filter h2 { flex: 1 1 100%; margin: 0 0 2px; padding: 0; }
+    #changelist-filter h3 { margin: 0; padding: 0; }
+    #changelist-filter #changelist-filter-extra-actions { display: flex; gap: 14px; }
+    #changelist-filter details { margin: 0; }
+    #changelist-filter details summary { padding: 0; margin: 0 0 2px; font-weight: 600; }
+    #changelist-filter ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 4px 0 0;
+      margin: 0;
+      border-bottom: none;
+    }
+    #changelist-filter li {
+      background: var(--body-bg, #fff);
+      border: 1px solid var(--hairline-color, #ddd);
+      border-radius: 12px;
+      padding: 1px 9px;
+      font-size: .82rem;
+    }
+    #changelist-filter li a { display: inline; }
+    #changelist-filter li.selected { background: var(--primary, #417690); border-color: var(--primary, #417690); }
+    #changelist-filter li.selected a { color: var(--primary-fg, #fff); font-weight: 600; }
+    /* Credito do GeoLite2 (licenca da MaxMind) */
+    .geoip-credito { margin: 10px 0 0; font-size: .78rem; text-align: center;
+                     color: var(--body-quiet-color, #888); }
+    /* Bloco "Base de localizacao": botoes de baixar/checar/enviar */
+    .geoip-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+                  margin: 8px 0 0; }
+    .geoip-form .button { margin: 0; }
+    .geoip-form label { font-size: .85rem; }
+    .geoip-form .ajuda { flex-basis: 100%; }
   </style>
+{% endblock %}
+
+{% block footer %}
+  <p class="geoip-credito">{{ geoip_atribuicao }}</p>
 {% endblock %}
 
 {% block content %}
@@ -83,7 +147,10 @@
         </thead>
         <tbody>
           {% for t in totais %}
-            <tr><td>{{ t.rotulo }}</td><td class="num">{{ t.total }}</td></tr>
+            <tr class="clicavel">
+              <td><a href="{{ t.url }}" title="Mostrar só este tipo na lista">{{ t.rotulo }}</a></td>
+              <td class="num"><a href="{{ t.url }}" title="Mostrar só este tipo na lista">{{ t.total }}</a></td>
+            </tr>
           {% empty %}
             <tr><td colspan="2" class="vazio">Sem registros no período.</td></tr>
           {% endfor %}
@@ -99,7 +166,10 @@
         </thead>
         <tbody>
           {% for ip in resumo.top_ips_chat %}
-            <tr><td>{{ ip.ip }}</td><td class="num">{{ ip.total }}</td></tr>
+            <tr class="clicavel">
+              <td><a href="{{ ip.url }}" title="Buscar a lista por este IP">{{ ip.ip }}</a></td>
+              <td class="num"><a href="{{ ip.url }}" title="Buscar a lista por este IP">{{ ip.total }}</a></td>
+            </tr>
           {% empty %}
             <tr><td colspan="2" class="vazio">Sem IPs registrados.</td></tr>
           {% endfor %}
@@ -111,7 +181,10 @@
         </thead>
         <tbody>
           {% for ip in resumo.top_ips_empresas %}
-            <tr><td>{{ ip.ip }}</td><td class="num">{{ ip.total }}</td></tr>
+            <tr class="clicavel">
+              <td><a href="{{ ip.url }}" title="Buscar a lista por este IP">{{ ip.ip }}</a></td>
+              <td class="num"><a href="{{ ip.url }}" title="Buscar a lista por este IP">{{ ip.total }}</a></td>
+            </tr>
           {% empty %}
             <tr><td colspan="2" class="vazio">Sem IPs registrados.</td></tr>
           {% endfor %}
@@ -131,8 +204,8 @@
       </thead>
       <tbody>
         {% for linha in linhas_dia %}
-          <tr>
-            <td>{{ linha.dia|date:"d/m/Y" }}</td>
+          <tr class="clicavel">
+            <td><a href="{{ linha.url }}" title="Mostrar só este dia na lista">{{ linha.dia|date:"d/m/Y" }}</a></td>
             {% for valor in linha.celulas %}<td class="num">{{ valor }}</td>{% endfor %}
             <td class="num"><strong>{{ linha.total }}</strong></td>
           </tr>
@@ -165,11 +238,127 @@
   </div>
 </div>
 
-<div class="painel-log" id="comandos-log">
+<div class="painel-log" id="geoip-log">
   <div class="painel-topo">
-    <h2>Comandos (copiar e colar)</h2>
-    <span class="ajuda">Esta tela não executa comando: copie o texto e rode no terminal.</span>
+    <h2>Base de localização (GeoIP)</h2>
+    <span class="ajuda">Fonte: <strong>{{ geoip_base.fonte }}</strong> ·
+      {{ geoip_base.tamanho_mb|default:"?" }} MB ·
+      build {{ geoip_base.build|default:"sem data" }}</span>
   </div>
+
+  <div class="painel-grade">
+    <div class="bloco">
+      <h3>Base em uso</h3>
+      <table>
+        <tbody>
+          <tr><th>Arquivo</th><td><code>{{ geoip_base.caminho }}</code></td></tr>
+          <tr><th>Tamanho</th>
+              <td>{% if geoip_base.tamanho_mb %}{{ geoip_base.tamanho_mb }} MB{% else %}—{% endif %}</td></tr>
+          <tr><th>Build (MaxMind)</th><td>{{ geoip_base.build|default:"—" }}</td></tr>
+          <tr><th>Versão baixada</th><td>{{ geoip_base.marca|default:"— (instalado à mão)" }}</td></tr>
+          <tr><th>Escrita na pasta</th>
+              <td>{% if geoip_base.gravavel %}ok{% else %}sem permissão{% endif %}</td></tr>
+        </tbody>
+      </table>
+      {% if geoip_base.erro %}
+        <p class="ajuda" style="color: var(--error-fg, #ba2121);">{{ geoip_base.erro }}</p>
+      {% endif %}
+      <p class="ajuda">
+        A pasta é <code>{{ geoip_base.pasta }}</code>. Para colocar o arquivo à mão,
+        descompacte o <code>GeoLite2-City_AAAAMMDD.tar.gz</code> e deixe o
+        <code>GeoLite2-City.mmdb</code> ali dentro — o <code>-CSV.zip</code> não serve
+        (a fonte <em>maxmind</em> lê o formato binário).
+      </p>
+    </div>
+
+    <div class="bloco">
+      <h3>Atualizar</h3>
+      <form method="post" class="geoip-form"
+            action="{% url 'admin:chat_logacesso_geoip_checar' %}">
+        {% csrf_token %}
+        <button type="submit" class="button">Checar atualização</button>
+        <span class="ajuda">Só consulta a MaxMind: não baixa e não gasta cota.</span>
+      </form>
+      <form method="post" class="geoip-form"
+            action="{% url 'admin:chat_logacesso_geoip_baixar' %}">
+        {% csrf_token %}
+        <button type="submit" class="button">Baixar da MaxMind e atualizar</button>
+        <label><input type="checkbox" name="forcar" value="1">
+          baixar mesmo se já estiver atualizado</label>
+        <span class="ajuda">
+          Usa <code>scripts/atualizar_geoip.sh</code> (pacote de ~27 MB, precisa de
+          <code>MAXMIND_ACCOUNT_ID</code> e <code>MAXMIND_LICENSE_KEY</code> no
+          <code>.env</code>). Depois de trocar a base, rode
+          <code>manage.py localizar_acessos</code> para usar os dados novos —
+          as localizações já gravadas só mudam na revalidação (30 dias).
+        </span>
+      </form>
+      <form method="post" class="geoip-form" enctype="multipart/form-data"
+            action="{% url 'admin:chat_logacesso_geoip_enviar' %}">
+        {% csrf_token %}
+        <input type="file" name="arquivo" accept=".mmdb,.tar.gz,.tgz,.gz">
+        <button type="submit" class="button">Instalar arquivo enviado</button>
+        <span class="ajuda">
+          Aceita o <code>GeoLite2-City_AAAAMMDD.tar.gz</code> (como veio do site) ou o
+          <code>.mmdb</code> já extraído. O arquivo é validado antes de substituir a base.
+        </span>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="painel-log" id="expurgo-log">
+  <div class="painel-topo">
+    <h2>Expurgo de logs antigos</h2>
+    <span class="ajuda">Apaga de verdade — só superusuário. Idade mínima: {{ expurgo_min_dias }} dias.</span>
+  </div>
+  <form method="get" class="expurgo-form">
+    {% for chave, valor in request.GET.items %}
+      {% if chave == 'criado_em__gte' or chave == 'q' or chave == 'tipo__exact' %}
+        <input type="hidden" name="{{ chave }}" value="{{ valor }}">
+      {% endif %}
+    {% endfor %}
+    <label>Apagar registros com mais de
+      <input type="number" name="expurgo_dias" min="{{ expurgo_min_dias }}" step="1"
+             value="{{ expurgo.dias }}" style="width: 80px;"> dias
+    </label>
+    <label>Tipo
+      <select name="expurgo_tipo">
+        <option value="">Todos</option>
+        {% for valor, rotulo in expurgo.tipos %}
+          <option value="{{ valor }}"{% if valor == expurgo.tipo %} selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="button">Contar</button>
+  </form>
+
+  {% if expurgo.total %}
+    <p class="ajuda">
+      <strong>{{ expurgo.total }}</strong> registro{{ expurgo.total|pluralize }} anterior{{ expurgo.total|pluralize }} a
+      {{ expurgo.antes_de|date:"d/m/Y H:i" }} seria{{ expurgo.total|pluralize }} apagado{{ expurgo.total|pluralize }}.
+      {% for linha in expurgo.por_tipo %}{{ linha.tipo }}: {{ linha.total }}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </p>
+    <form method="post" action="{% url 'admin:chat_logacesso_expurgar' %}"
+          onsubmit="return confirm('Apagar {{ expurgo.total }} registro(s)? Não tem como desfazer.');">
+      {% csrf_token %}
+      <input type="hidden" name="dias" value="{{ expurgo.dias }}">
+      <input type="hidden" name="tipo" value="{{ expurgo.tipo|default:'' }}">
+      <button type="submit" class="button" style="background: var(--delete-button-bg, #ba2121);">
+        Apagar {{ expurgo.total }} registro{{ expurgo.total|pluralize }}
+      </button>
+    </form>
+  {% else %}
+    <p class="ajuda">Nenhum registro mais antigo que {{ expurgo.dias }} dias.</p>
+  {% endif %}
+</div>
+
+<div class="painel-log" id="comandos-log">
+  <details>
+    <summary>
+      <span class="titulo-comandos">Comandos (copiar e colar)</span>
+      <span class="ajuda">Esta tela não executa comando: copie o texto e rode no terminal.</span>
+    </summary>
   {% for cmd in comandos %}
     <div class="cmd">
       <div class="cmd-topo">
@@ -214,6 +403,7 @@
       });
     })();
   </script>
+  </details>
 </div>
 
 {{ block.super }}

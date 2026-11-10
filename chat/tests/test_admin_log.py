@@ -17,11 +17,11 @@ from io import StringIO
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from chat.admin import _parse_desde
+from chat.admin import _parse_desde, _url_filtro
 from chat.models import LogAcesso
 from chat.relatorio import resumo_acesso
 
@@ -250,6 +250,44 @@ class PainelLogAcessoAdminTestCase(TestCase):
         )
         self.assertEqual(resposta.context['resumo']['total'], 0)
 
+    def test_links_do_painel_apontam_para_os_filtros(self):
+        criar_log(LogAcesso.TIPO_CHAT_PERGUNTA, usuario=self.staff, ip='203.0.113.77')
+        resposta = self.client.get(self.url)
+        totais = {t['tipo']: t for t in resposta.context['totais']}
+        self.assertIn(
+            'tipo__exact=%s' % LogAcesso.TIPO_LOGIN,
+            totais[LogAcesso.TIPO_LOGIN]['url'],
+        )
+        ips = resposta.context['resumo']['top_ips_chat']
+        self.assertEqual(ips[0]['ip'], '203.0.113.77')
+        self.assertIn('q=203.0.113.77', ips[0]['url'])
+        dia = resposta.context['linhas_dia'][0]
+        self.assertIn('criado_em__year=%d' % dia['dia'].year, dia['url'])
+
+    def test_link_de_tipo_filtra_a_lista(self):
+        esperado = LogAcesso.objects.filter(tipo=LogAcesso.TIPO_LOGIN).count()
+        resposta = self.client.get(self.url, {'tipo__exact': LogAcesso.TIPO_LOGIN})
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.context['cl'].result_count, esperado)
+        self.assertGreaterEqual(esperado, 1)
+
+    def test_link_de_dia_filtra_a_lista(self):
+        hoje = timezone.localdate()
+        esperado = LogAcesso.objects.filter(criado_em__date=hoje).count()
+        resposta = self.client.get(self.url, {
+            'criado_em__year': hoje.year,
+            'criado_em__month': hoje.month,
+            'criado_em__day': hoje.day,
+        })
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.context['cl'].result_count, esperado)
+        self.assertGreaterEqual(esperado, 1)
+
+    def test_link_de_ip_busca_a_lista(self):
+        resposta = self.client.get(self.url, {'q': '198.51.100.50'})
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.context['cl'].result_count, 1)
+
     def test_coluna_navegador_resumida(self):
         model_admin = admin.site._registry[LogAcesso]
         log = LogAcesso.objects.filter(tipo=LogAcesso.TIPO_LOGIN).first()
@@ -262,4 +300,24 @@ class PainelLogAcessoAdminTestCase(TestCase):
         self.assertFalse(model_admin.has_add_permission(None))
         self.assertFalse(model_admin.has_change_permission(None))
         self.assertFalse(model_admin.has_delete_permission(None))
+
+
+class UrlFiltroTestCase(SimpleTestCase):
+    """Links do painel: mantem periodo/busca, descartam pagina e filtram."""
+
+    def test_preserva_periodo_e_busca_e_descarta_pagina(self):
+        request = RequestFactory().get('/', {
+            'criado_em__gte': '2026-01-01 00:00:00',
+            'q': '198.51',
+            'p': '2',
+        })
+        url = _url_filtro(request, tipo__exact=LogAcesso.TIPO_LOGIN)
+        self.assertIn('criado_em__gte=', url)
+        self.assertIn('q=198.51', url)
+        self.assertIn('tipo__exact=%s' % LogAcesso.TIPO_LOGIN, url)
+        self.assertNotIn('p=2', url)
+
+    def test_valor_none_remove_o_lookup(self):
+        request = RequestFactory().get('/', {'tipo__exact': LogAcesso.TIPO_LOGIN})
+        self.assertNotIn('tipo__exact', _url_filtro(request, tipo__exact=None))
 
