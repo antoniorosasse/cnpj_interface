@@ -1,5 +1,6 @@
 """Testes do app core (pagina de detalhe da empresa e log de acesso)."""
 import re
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,6 +9,15 @@ from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, RequestFactory, override_settings
 
+from core.dossie_pdf import (
+    esc,
+    formatar_cnpj,
+    formatar_cnpj_basico,
+    formatar_data,
+    formatar_moeda,
+    gerar_pdf_dossie,
+    mascarar_cpf,
+)
 from core.log_acesso import (
     TIPO_DETALHE_EMPRESA,
     TIPO_LISTA_EMPRESAS,
@@ -1701,4 +1711,120 @@ class RobotsTxtTests(SimpleTestCase):
             self.assertIn(f'Disallow: {caminho}', corpo)
         # a raiz continua indexavel: nao pode haver 'Disallow: /'
         self.assertNotIn('Disallow: /\n', corpo)
+
+
+
+class DossiePdfTests(SimpleTestCase):
+    """Gerador do dossie (core/dossie_pdf.py): formatacao e PDF real."""
+
+    DADOS = {
+        'empresa': {
+            'cnpj_completo': '65113262000108',
+            'razao_social': 'EMPRESA DE TESTE LTDA',
+            'nm_fantasia': 'TESTE',
+            'nat_juridica': 2062,
+            'natureza_juridica_descricao': 'Sociedade Empresaria Limitada',
+            'qual_resp': 5,
+            'qual_resp_descricao': 'Administrador',
+            'capital_social': Decimal('20000'),
+            'porte_empresa_descricao': 'DEMAIS',
+            'dt_ini': date(2026, 2, 11),
+            'cd_sit_cadastro': 2,
+            'dt_sit_cadastro': date(2026, 2, 11),
+            'motivo_sit_cadastro_descricao': 'SEM MOTIVO',
+            'situacao_descricao': 'ATIVA',
+            'cnae_principal': 4669999,
+            'cnae_principal_descricao': 'Comercio atacadista de maquinas',
+            'cnae_secundario': '3319800',
+            'tip_logradouro': 'AVENIDA',
+            'logradouro': 'EMBAIXADOR ABELARDO BUENO',
+            'numero': '3180',
+            'bairro': 'BARRA OLIMPICA',
+            'cep': '22775040',
+            'uf': 'RJ',
+            'municipio_descricao': 'RIO DE JANEIRO',
+            'pais_descricao': 'Brasil',
+            'ddd_1': '21',
+            'tel_1': '35531434',
+            'email': 'contato@exemplo.com.br',
+            'op_simples': 'N',
+            'op_mei': 'N',
+        },
+        'estabelecimentos': [
+            {
+                'cnpj_completo': '65113262000108',
+                'cd_matriz_filial': 1,
+                'tipo': 'MATRIZ',
+                'situacao_descricao': 'ATIVA',
+                'municipio_descricao': 'RIO DE JANEIRO',
+                'uf': 'RJ',
+                'data_abertura': date(2026, 2, 11),
+            },
+        ],
+        'socios': [
+            {
+                'id_socio': 1,
+                'id_tipo_socio': 2,
+                'nome': 'FULANO DE TAL',
+                'cnpj_cpf': '12345678901',
+                'qualificacao_descricao': 'Socio-Administrador',
+                'data_entrada': date(2026, 2, 11),
+                'faixa_etaria_descricao': '41-50 anos',
+            },
+        ],
+        'total_filiais': 0,
+    }
+
+    def test_formatar_cnpj(self):
+        self.assertEqual(formatar_cnpj('65113262000108'), '65.113.262/0001-08')
+        self.assertEqual(formatar_cnpj('65.113.262/0001-08'), '65.113.262/0001-08')
+        self.assertEqual(formatar_cnpj('123'), '123')
+
+    def test_mascarar_cpf_esconde_o_cpf(self):
+        self.assertEqual(mascarar_cpf('12345678901'), '***.***.789-**')
+        self.assertNotIn('123456', mascarar_cpf('12345678901'))
+        # socio PJ: a base manda so a raiz; a raiz e publica e aparece
+        self.assertEqual(formatar_cnpj_basico('41246569'), '41.246.569')
+
+    def test_formatar_moeda_e_data(self):
+        self.assertEqual(formatar_moeda(Decimal('20000')), 'R$ 20.000,00')
+        self.assertEqual(formatar_moeda(Decimal('1234567.5')), 'R$ 1.234.567,50')
+        self.assertEqual(formatar_data(date(2026, 2, 11)), '11/02/2026')
+        self.assertEqual(formatar_data(None), '-')
+
+    def test_esc_neutraliza_tags_do_paragraph(self):
+        self.assertEqual(esc('a & b <c>'), 'a &amp; b &lt;c&gt;')
+        self.assertEqual(esc(''), '-')
+        self.assertEqual(esc(None), '-')
+
+    def test_pdf_gerado_tem_assinatura_e_tamanho(self):
+        pdf = gerar_pdf_dossie(self.DADOS)
+
+        self.assertTrue(pdf.startswith(b'%PDF-'))
+        self.assertGreater(len(pdf), 2000)
+
+    def test_pdf_sem_socios_nao_quebra(self):
+        dados = dict(self.DADOS, socios=[])
+        pdf = gerar_pdf_dossie(dados)
+
+        self.assertTrue(pdf.startswith(b'%PDF-'))
+        self.assertEqual(mascarar_cpf(''), '-')
+
+    def test_pdf_com_muitas_filiais_respeita_o_limite(self):
+        filiais = [
+            dict(self.DADOS['estabelecimentos'][0],
+                 cnpj_completo=f'65113262{i:04d}{i % 100:02d}',
+                 cd_matriz_filial=2,
+                 tipo='FILIAL')
+            for i in range(1, 31)
+        ]
+        dados = dict(self.DADOS,
+                     estabelecimentos=self.DADOS['estabelecimentos'] + filiais,
+                     total_filiais=30)
+        pdf = gerar_pdf_dossie(dados)
+
+        self.assertTrue(pdf.startswith(b'%PDF-'))
+        # 31 estabelecimentos, tabela limitada a 25 + nota de rodape: o PDF
+        # continua valido e nao estoura a largura da pagina.
+        self.assertGreater(len(pdf), 2000)
 

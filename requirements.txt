@@ -18,3 +18,7 @@ JPype1==1.7.1
 
 # Geolocalizacao local dos IPs (MaxMind GeoLite2-City.mmdb)
 geoip2==5.3.0
+
+# Dossie da empresa em PDF (core/dossie_pdf.py). ReportLab puro: nao precisa
+# de pango/cairo no servidor, ao contrario do WeasyPrint.
+reportlab==5.1.0

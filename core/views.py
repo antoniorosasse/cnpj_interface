@@ -1256,6 +1256,46 @@ def detalhe_empresa(request, cnpj):
     
     return render(request, 'core/detalhe.html', context)
 
+def dossie_empresa(request, cnpj):
+    """
+    Dossie da empresa em PDF (mesma base do detalhe, saida para papel).
+
+    Publica como a consulta. O log de acesso reaproveita o tipo do detalhe
+    com 'dossie' no campo detalhe, entao o relatorio de acesso ja mostra
+    quantos dossies foram baixados sem precisar de tipo novo em model.
+    """
+    from django.http import Http404, HttpResponse
+
+    from core.consultas_empresa import carregar_dossie
+    from core.dossie_pdf import gerar_pdf_dossie
+
+    registrar_acesso(request, TIPO_DETALHE_EMPRESA, f'dossie cnpj={cnpj[:20]}')
+
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        dados = carregar_dossie(conn, cnpj)
+    except LookupError:
+        raise Http404('Empresa nao encontrada')
+    except Exception as e:
+        logger.exception('Erro ao montar dossie de %s: %s', cnpj, e)
+        raise Http404('Erro ao montar o dossie')
+    finally:
+        if conn:
+            conn.close()
+
+    pdf = gerar_pdf_dossie(dados)
+
+    nome_arquivo = dados['empresa'].get('cnpj_completo') or cnpj
+    resposta = HttpResponse(pdf, content_type='application/pdf')
+    resposta['Content-Disposition'] = (
+        f'attachment; filename="dossie-{nome_arquivo}.pdf"'
+    )
+    resposta['Content-Length'] = str(len(pdf))
+    return resposta
+
+
+
 
 def estatisticas(request):
     """

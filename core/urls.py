@@ -16,6 +16,9 @@ urlpatterns = [
     
     # Detalhe da empresa
     path('empresa/<str:cnpj>/', views.detalhe_empresa, name='detalhe'),
+
+    # Dossie da empresa em PDF (gerado na hora, a partir da mesma base)
+    path('empresa/<str:cnpj>/dossie.pdf', views.dossie_empresa, name='dossie'),
     
     # Estatísticas
     path('estatisticas/', views.estatisticas, name='estatisticas'),
