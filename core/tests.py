@@ -2,9 +2,11 @@
 import re
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.conf import settings
 from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, RequestFactory, override_settings
@@ -694,6 +696,49 @@ class MenuPrincipalTemplateTests(SimpleTestCase):
     def test_empresas_continua_na_mesma_aba(self):
         html = self._render()
         self.assertNotIn('href="/" target="_blank"', html)
+
+
+class MarcaENavegacaoTests(SimpleTestCase):
+    """Marca do sistema (busquecnpj) e link para a pagina inicial em toda tela."""
+
+    def _render(self, host='testserver'):
+        request = RequestFactory().get('/', HTTP_HOST=host)
+        return render_to_string('core/base.html', {}, request=request)
+
+    def test_titulo_padrao_e_busquecnpj(self):
+        self.assertIn('<title>busquecnpj</title>', self._render())
+
+    def test_marca_no_topo_e_no_rodape(self):
+        html = self._render()
+        self.assertIn('</i> busquecnpj', html)                      # navbar
+        self.assertIn('busquecnpj — Consulta de empresas', html)    # rodape
+        self.assertNotIn('Sistema CNPJ', html)
+
+    def test_logo_aponta_para_a_raiz(self):
+        self.assertIn('<a class="navbar-brand" href="/"', self._render())
+
+    def test_link_inicio_leva_a_pagina_inicial(self):
+        """Em qualquer pagina da para voltar a inicial pelo menu."""
+        html = re.sub(r'\s+', ' ', self._render())
+        self.assertIn('href="/" title="Página inicial"', html)
+        self.assertIn('Início', html)
+
+    @override_settings(ALLOWED_HOSTS=['testserver', 'chat.busquecnpj.com.br'])
+    def test_link_inicio_aparece_tambem_no_host_do_chat(self):
+        html = re.sub(r'\s+', ' ', self._render('chat.busquecnpj.com.br'))
+        self.assertIn('href="/" title="Página inicial"', html)
+
+    def test_nenhum_template_usa_a_marca_antiga(self):
+        """Regressao: a marca 'Sistema CNPJ' nao pode voltar aos templates."""
+        ignorar = {'venv', 'env_django', 'site-packages', 'staticfiles'}
+        templates = [
+            p for p in Path(settings.BASE_DIR).glob('**/templates/**/*.html')
+            if not ignorar & set(p.parts)
+        ]
+        self.assertTrue(templates, 'nenhum template encontrado')
+        antigos = [p.name for p in templates
+                   if 'Sistema CNPJ' in p.read_text(encoding='utf-8')]
+        self.assertEqual(antigos, [])
 
 
 class WhatsAppTests(SimpleTestCase):
