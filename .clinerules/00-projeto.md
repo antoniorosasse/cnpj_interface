@@ -17,6 +17,21 @@ neste workspace. Mantenha-o enxuto e versionado no git.
 Nao repita aqui o que ja esta nas regras globais (R1-R16) nem duplique o estado
 atual: se algo mudar, atualize o arquivo correspondente.
 
+## Tarefa que atravessa projetos
+
+Uma conversa pode comecar neste repositorio e mexer em outro (`.env` do vizinho,
+`deploy.sh`, backups e docs em `~/Projetos`). A regra global vale nos quatro,
+mas o spec de cada repo **nao** e carregado automaticamente: antes de editar
+fora daqui, **leia** o `.clinerules/00-projeto.md` do projeto que vai ser tocado.
+
+- `/home/neto/menu_interface/.clinerules/00-projeto.md`
+- `/home/neto/IBM/as400_interface/.clinerules/00-projeto.md`
+- `/home/neto/cnpj_interface/.clinerules/00-projeto.md`
+- `/home/neto/ProjetoCargaDados/.clinerules/00-projeto.md`
+
+O que muda de um para o outro e o spec do repo (stack, schema, comandos,
+decisoes que nao se reabrem).
+
 ## Idioma e estilo
 
 - Responda sempre em **portugues do Brasil (pt-BR)**.
