@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.views.decorators.http import require_POST
 
+from core.context_processors import url_inicio_do_produto
 from core.log_acesso import (
     TIPO_DETALHE_EMPRESA,
     TIPO_LISTA_EMPRESAS,
@@ -138,6 +139,19 @@ SITUACOES_ROTULOS = [
     ('INAPTA', 'Inapta'),
     ('BAIXADA', 'Baixada'),
 ]
+
+
+def inicio_do_produto(request):
+    """
+    Pagina inicial do produto (landing comercial) deste sistema.
+
+    Destino do LOGIN_REDIRECT_URL e da troca de senha: depois de entrar, o
+    usuario vai para a pagina inicial do produto (busquecnpj.com.br em
+    producao, preview em :8000/site/ no dev), nao direto para o chat.
+
+    A lista de empresas continua em Empresas (raiz do site).
+    """
+    return redirect(url_inicio_do_produto(request))
 
 
 def lista_empresas(request):

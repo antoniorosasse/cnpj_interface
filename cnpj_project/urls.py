@@ -25,8 +25,13 @@ urlpatterns = [
     path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('admin/password_change/', auth_views.PasswordChangeView.as_view(
         template_name='registration/password_change.html',
-        success_url='/chat/'
+        success_url='/inicio/'
     ), name='password_change'),
+
+    # Pagina inicial do produto (landing): destino do LOGIN_REDIRECT_URL.
+    # Resolve por ambiente em core/context_processors.py (SITE_HOME_URL ou
+    # :8000/site/ no dev). Nao confundir com / (lista de empresas).
+    path('inicio/', core_views.inicio_do_produto, name='inicio'),
 
     path('chat/', include('chat.urls')),
     path('', include('core.urls')),

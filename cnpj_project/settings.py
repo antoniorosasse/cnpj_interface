@@ -22,6 +22,14 @@ if not SECRET_KEY:
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# ==================== PAGINA INICIAL DO PRODUTO (landing) ====================
+# O "Inicio" do menu e a marca (core/base.html) apontam para a landing
+# comercial de busquecnpj.com.br, servida pelo menu_interface; a lista de
+# empresas continua em Empresas. Vazio = padrao por ambiente, resolvido em
+# core/context_processors.py: dev http://<host>:8000/site/ e producao
+# https://busquecnpj.com.br/.
+SITE_HOME_URL = os.getenv('SITE_HOME_URL', '').strip()
+
 # ==================== CSRF ====================
 # Origens confiaveis para requisicoes POST com CSRF (Django 4+)
 CSRF_TRUSTED_ORIGINS = [
@@ -109,6 +117,9 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Pagina inicial do produto (landing): usada pela marca e pelo
+                # "Inicio" de core/base.html.
+                'core.context_processors.site_home',
             ],
         },
     },
@@ -234,7 +245,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ==================== AUTENTICACAO ====================
 LOGIN_URL = '/accounts/login/'
-LOGIN_REDIRECT_URL = '/chat/'
+# Depois de entrar, o usuario vai para a pagina inicial do produto (landing),
+# nao direto para o chat. /inicio/ resolve por ambiente em
+# core/context_processors.py: SITE_HOME_URL do .env, :8000/site/ no dev e
+# https://busquecnpj.com.br/ em producao.
+LOGIN_REDIRECT_URL = '/inicio/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 # ==================== CONFIGURAÇÕES DOS BANCOS (para conexões diretas, se necessário) ====================

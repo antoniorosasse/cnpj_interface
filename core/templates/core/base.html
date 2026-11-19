@@ -39,7 +39,9 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{% url 'core:lista' %}" title="Página inicial do busquecnpj">
+            {# Marca e "Inicio" levam a pagina inicial do produto (landing do #}
+            {# menu_interface); a lista de empresas fica no item Empresas. #}
+            <a class="navbar-brand" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
                 <i class="bi bi-building"></i> busquecnpj
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -47,9 +49,10 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    {# Link sempre visivel: em qualquer pagina da para voltar a inicial. #}
+                    {# Link sempre visivel: volta para a pagina inicial do produto #}
+                    {# (landing em :8000/site/ no dev e busquecnpj.com.br em prod). #}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'core:lista' %}" title="Página inicial">
+                        <a class="nav-link" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
                             <i class="bi bi-house-door"></i> Início
                         </a>
                     </li>

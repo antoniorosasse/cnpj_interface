@@ -15,6 +15,7 @@ from django.core.management.base import CommandError
 from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, RequestFactory, override_settings
+from django.urls import get_resolver, reverse
 
 from core.dossie_pdf import (
     esc,
@@ -720,19 +721,39 @@ class MarcaENavegacaoTests(SimpleTestCase):
         self.assertIn('busquecnpj — Consulta de empresas', html)    # rodape
         self.assertNotIn('Sistema CNPJ', html)
 
-    def test_logo_aponta_para_a_raiz(self):
-        self.assertIn('<a class="navbar-brand" href="/"', self._render())
+    def test_logo_aponta_para_a_pagina_inicial_do_produto(self):
+        """Marca do topo vai para a landing (busquecnpj.com.br), nao para a lista."""
+        self.assertIn('<a class="navbar-brand" href="https://busquecnpj.com.br/"',
+                      self._render())
 
-    def test_link_inicio_leva_a_pagina_inicial(self):
-        """Em qualquer pagina da para voltar a inicial pelo menu."""
+    def test_link_inicio_leva_a_pagina_inicial_do_produto(self):
+        """Em qualquer pagina o Inicio volta para a pagina inicial do produto."""
         html = re.sub(r'\s+', ' ', self._render())
-        self.assertIn('href="/" title="Página inicial"', html)
+        self.assertIn('href="https://busquecnpj.com.br/" title="Página inicial do busquecnpj"', html)
         self.assertIn('Início', html)
+
+    @override_settings(DEBUG=True)
+    def test_em_desenvolvimento_inicio_aponta_para_o_preview_da_landing(self):
+        """No dev a landing e' servida pelo menu_interface em :8000/site/."""
+        html = re.sub(r'\s+', ' ', self._render())
+        self.assertIn('href="http://testserver:8000/site/"', html)
+
+    @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
+    def test_url_do_env_vence_o_padrao(self):
+        """SITE_HOME_URL no .env manda na marca e no Inicio."""
+        html = re.sub(r'\s+', ' ', self._render())
+        self.assertEqual(html.count('href="https://exemplo.test/inicio/"'), 2)
+
+    def test_empresas_continua_apontando_para_a_lista(self):
+        """O item Empresas nao muda: continua na lista de empresas (raiz)."""
+        html = re.sub(r'\s+', ' ', self._render())
+        self.assertIn('href="/"', html)
+        self.assertIn('bi-list-ul"></i> Empresas', html)
 
     @override_settings(ALLOWED_HOSTS=['testserver', 'chat.busquecnpj.com.br'])
     def test_link_inicio_aparece_tambem_no_host_do_chat(self):
         html = re.sub(r'\s+', ' ', self._render('chat.busquecnpj.com.br'))
-        self.assertIn('href="/" title="Página inicial"', html)
+        self.assertIn('href="https://busquecnpj.com.br/" title="Página inicial do busquecnpj"', html)
 
     def test_nenhum_template_usa_a_marca_antiga(self):
         """Regressao: a marca 'Sistema CNPJ' nao pode voltar aos templates."""
@@ -745,6 +766,44 @@ class MarcaENavegacaoTests(SimpleTestCase):
         antigos = [p.name for p in templates
                    if 'Sistema CNPJ' in p.read_text(encoding='utf-8')]
         self.assertEqual(antigos, [])
+
+
+class InicioDoProdutoTests(SimpleTestCase):
+    """
+    Pagina inicial do produto (landing) e o destino depois do login.
+
+    Antes o login caia sempre em /chat/; agora cai no inicio do produto.
+    Nome: "inicio do produto" (a landing comercial de busquecnpj.com.br).
+    """
+
+    def test_login_redireciona_para_o_inicio(self):
+        self.assertEqual(settings.LOGIN_REDIRECT_URL, '/inicio/')
+
+    def test_rota_inicio_existe(self):
+        self.assertEqual(reverse('inicio'), '/inicio/')
+
+    def test_inicio_aponta_para_a_landing_em_producao(self):
+        resposta = self.client.get('/inicio/')
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(resposta['Location'], 'https://busquecnpj.com.br/')
+
+    @override_settings(DEBUG=True)
+    def test_inicio_aponta_para_o_preview_no_desenvolvimento(self):
+        """No dev a landing e' servida pelo menu_interface em :8000/site/."""
+        resposta = self.client.get('/inicio/')
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(resposta['Location'], 'http://testserver:8000/site/')
+
+    @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
+    def test_inicio_respeita_a_url_do_env(self):
+        self.assertEqual(self.client.get('/inicio/')['Location'],
+                         'https://exemplo.test/inicio/')
+
+    def test_troca_de_senha_volta_para_o_inicio(self):
+        """Trocar a senha tambem termina no inicio do produto, nao no chat."""
+        padrao = next(p for p in get_resolver().url_patterns
+                      if getattr(p, 'name', None) == 'password_change')
+        self.assertEqual(padrao.callback.view_initkwargs.get('success_url'), '/inicio/')
 
 
 class WhatsAppTests(SimpleTestCase):
