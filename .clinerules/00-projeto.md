@@ -219,6 +219,12 @@ decisoes que nao se reabrem).
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo
 
+    # Recalculo de c_estatisticas_totais (~11 min / 669 s na base de 74,4 M).
+    # Roda FORA do request; a procedure calcula em c_estatisticas_calc e troca
+    # as tabelas por RENAME no fim (a /estatisticas/ nunca fica vazia).
+    python manage.py recalcular_totais
+    python manage.py recalcular_totais --status
+
 - Use sempre o Python do `venv/` (`venv/bin/python`). Nunca instale pacotes
   globalmente e nao altere `requirements.txt` sem pedir.
 - `CHAT_USE_MONGO=1` no teste de integracao **apaga** a collection
@@ -233,6 +239,8 @@ decisoes que nao se reabrem).
   pelo `ProjetoCargaDados` (e restauradas na VPS por `~/Projetos/restaura_*.sh`).
 - Nao execute `git commit`, `git push`, `migrate` em producao, `collectstatic`
   ou `sp_recalcular_estatisticas_totais()` sem pedir confirmacao explicita.
+  O recalculo das estatisticas e `python manage.py recalcular_totais` (fora do
+  request, ~11 min); a DDL dos objetos e `sql/estatisticas_totais.sql`.
 - Proibido criar arquivos de backup manuais (`*.bak`, `*.bak_*`) no repo.
 
 ## Convencoes de implementacao
@@ -240,7 +248,8 @@ decisoes que nao se reabrem).
 - **Schema e fonte da verdade do LLM**: `chat/services/schema_context.py`.
   Se uma coluna, codigo, indice ou tabela mudar, atualize esse arquivo e o
   README na mesma tarefa.
-- **Performance** (base com ~38M linhas em `c_estabelecimentos`): mantenha
+- **Performance** (base com ~74,4M linhas em `c_estabelecimentos` desde o lote
+  2026-11): mantenha
   keyset pagination (nunca OFFSET), indices parciais com
   `cd_matriz_filial = 1`, `ILIKE` (nunca `UPPER(col) LIKE`) e leitura de
   contagens em `c_estatisticas_totais`.

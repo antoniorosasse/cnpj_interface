@@ -1,12 +1,17 @@
 """Testes do app core (pagina de detalhe da empresa e log de acesso)."""
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.test import SimpleTestCase, RequestFactory, override_settings
@@ -41,7 +46,8 @@ from core.proximidade import (
     token_cursor,
 )
 from core.telefone import montar_whatsapp, montar_whatsapp_url
-from core.views import consultar_com_salto
+from core.estatisticas import iniciar_recalculo_background, status_recalculo
+from core.views import consultar_com_salto, recalcular_totais
 from chat.models import LogAcesso
 
 
@@ -1872,4 +1878,319 @@ class DossiePdfTests(SimpleTestCase):
         # 31 estabelecimentos, tabela limitada a 25 + nota de rodape: o PDF
         # continua valido e nao estoura a largura da pagina.
         self.assertGreater(len(pdf), 2000)
+
+
+# ---------------------------------------------------------------------------
+# Recalculo de c_estatisticas_totais (swap de tabela + botao nao bloqueante)
+# ---------------------------------------------------------------------------
+class CursorFakeEstatisticas:
+    """Cursor minimo: registra o SQL e devolve as respostas na ordem."""
+
+    def __init__(self, respostas=None, erro=None):
+        self.respostas = list(respostas or [])
+        self.erro = erro
+        self.executados = []
+
+    def execute(self, sql, params=None):
+        if self.erro:
+            raise self.erro
+        self.executados.append((' '.join(sql.split()), params))
+
+    def fetchone(self):
+        return self.respostas.pop(0) if self.respostas else None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class CursorFakeComFalha(CursorFakeEstatisticas):
+    """Estoura so no comando que contem `falha_em` (ex.: CALL da SP)."""
+
+    def __init__(self, respostas=None, falha_em='CALL'):
+        super().__init__(respostas)
+        self.falha_em = falha_em
+
+    def execute(self, sql, params=None):
+        if self.falha_em and self.falha_em in sql:
+            raise RuntimeError('lock timeout')
+        super().execute(sql, params)
+
+
+class ConexaoFakeEstatisticas:
+    """Conexao minima no formato usado por status_recalculo e pelo comando."""
+
+    def __init__(self, respostas=None, erro=None, cursor=None):
+        self.cursor_obj = cursor or CursorFakeEstatisticas(respostas, erro)
+        self.fechada = False
+        self.commits = 0
+        self.rollbacks = 0
+
+    def cursor(self, *args, **kwargs):
+        return self.cursor_obj
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+    def close(self):
+        self.fechada = True
+
+
+class StatusRecalculoTests(SimpleTestCase):
+    """Leitura do status em c_estatisticas_recalculo (linha unica)."""
+
+    def test_le_a_linha_unica(self):
+        linha = {
+            'status': 'ok', 'iniciado_em': None, 'terminado_em': None,
+            'duracao_s': Decimal('401.50'), 'linhas': 104, 'mensagem': None,
+            'pid': None, 'ativo': False,
+        }
+        conn = ConexaoFakeEstatisticas([linha])
+
+        self.assertEqual(status_recalculo(conn), linha)
+        sql = conn.cursor_obj.executados[0][0]
+        self.assertIn('c_estatisticas_recalculo', sql)
+        self.assertIn('ativo', sql)
+        # conexao emprestada nao e fechada pelo helper
+        self.assertFalse(conn.fechada)
+
+    @patch('core.estatisticas.obter_conexao')
+    def test_conexao_propria_e_fechada(self, obter):
+        conn = ConexaoFakeEstatisticas([{'status': 'nunca'}])
+        obter.return_value = conn
+
+        self.assertEqual(status_recalculo(), {'status': 'nunca'})
+        self.assertTrue(conn.fechada)
+
+    def test_tabela_ausente_devolve_none(self):
+        conn = ConexaoFakeEstatisticas(erro=RuntimeError('relation does not exist'))
+
+        self.assertIsNone(status_recalculo(conn))
+        self.assertEqual(conn.rollbacks, 0)
+
+    @patch('core.estatisticas.obter_conexao')
+    def test_erro_em_conexao_propria_faz_rollback_e_fecha(self, obter):
+        conn = ConexaoFakeEstatisticas(erro=RuntimeError('boom'))
+        obter.return_value = conn
+
+        self.assertIsNone(status_recalculo())
+        self.assertEqual(conn.rollbacks, 1)
+        self.assertTrue(conn.fechada)
+
+
+class IniciarRecalculoBackgroundTests(SimpleTestCase):
+    """Disparo do manage.py recalcular_totais fora do request."""
+
+    def test_dispara_processo_destacado_no_manage_py(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            with override_settings(BASE_DIR=base):
+                with patch('core.estatisticas.subprocess.Popen') as popen:
+                    popen.return_value.pid = 1234
+                    pid = iniciar_recalculo_background()
+
+            comando = popen.call_args.args[0]
+            kwargs = popen.call_args.kwargs
+
+        self.assertEqual(pid, 1234)
+        self.assertEqual(comando[1], str(base / 'manage.py'))
+        self.assertEqual(comando[2], 'recalcular_totais')
+        self.assertEqual(kwargs['cwd'], str(base))
+        self.assertTrue(kwargs['start_new_session'])
+        # PATH saneado (convencao do projeto: systemd so aponta o venv/bin)
+        self.assertIn(str(base / 'venv' / 'bin'), kwargs['env']['PATH'])
+
+    def test_cria_a_pasta_de_logs(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            with override_settings(BASE_DIR=base):
+                with patch('core.estatisticas.subprocess.Popen') as popen:
+                    popen.return_value.pid = 1
+                    iniciar_recalculo_background()
+
+            self.assertTrue((base / 'logs').is_dir())
+            self.assertTrue((base / 'logs' / 'recalculo_totais.log').exists())
+
+class ComandoRecalcularTotaisTests(SimpleTestCase):
+    """manage.py recalcular_totais: advisory lock, status e CALL da SP."""
+
+    @staticmethod
+    def _rodar(respostas):
+        conn = ConexaoFakeEstatisticas(respostas)
+        with patch(
+            'core.management.commands.recalcular_totais.obter_conexao',
+            return_value=conn,
+        ):
+            call_command('recalcular_totais', stdout=StringIO())
+        return conn
+
+    def test_grava_rodando_e_ok(self):
+        conn = self._rodar([(True,), (104,)])
+        sqls = [sql for sql, _ in conn.cursor_obj.executados]
+
+        self.assertTrue(any('pg_try_advisory_lock' in s for s in sqls))
+        self.assertTrue(
+            any(s.startswith('CALL sp_recalcular_estatisticas_totais') for s in sqls)
+        )
+        self.assertTrue(any("status = 'rodando'" in s for s in sqls))
+        self.assertTrue(any("status = 'ok'" in s for s in sqls))
+        self.assertEqual(conn.commits, 3)
+        self.assertTrue(conn.fechada)
+
+    def test_usa_lock_timeout_curto_no_swap(self):
+        conn = self._rodar([(True,), (104,)])
+        sqls = [sql for sql, _ in conn.cursor_obj.executados]
+
+        self.assertIn('SET statement_timeout = 0', sqls)
+        self.assertIn("SET lock_timeout = '10s'", sqls)
+
+    @patch('core.management.commands.recalcular_totais.obter_conexao')
+    def test_lock_ocupado_aborta_sem_chamar_a_sp(self, obter):
+        conn = ConexaoFakeEstatisticas([(False,)])
+        obter.return_value = conn
+
+        with self.assertRaises(CommandError):
+            call_command('recalcular_totais', stdout=StringIO())
+
+        sqls = [sql for sql, _ in conn.cursor_obj.executados]
+        self.assertFalse(any('CALL' in s for s in sqls))
+        self.assertTrue(conn.fechada)
+
+    @patch('core.management.commands.recalcular_totais.obter_conexao')
+    def test_falha_na_sp_grava_status_de_erro(self, obter):
+        conn = ConexaoFakeEstatisticas(
+            cursor=CursorFakeComFalha([(True,), (104,)], falha_em='CALL')
+        )
+        conn_erro = ConexaoFakeEstatisticas()
+        obter.side_effect = [conn, conn_erro]
+
+        with self.assertRaises(CommandError):
+            call_command('recalcular_totais', stdout=StringIO())
+
+        sqls_erro = [sql for sql, _ in conn_erro.cursor_obj.executados]
+        self.assertTrue(any("status = 'erro'" in s for s in sqls_erro))
+        self.assertEqual(conn.rollbacks, 1)
+        self.assertTrue(conn_erro.fechada)
+
+
+class RecalcularTotaisViewTests(SimpleTestCase):
+    """POST do botao: so dispara em background e avisa; nunca roda a SP."""
+
+    @staticmethod
+    def _request(superuser=True):
+        request = RequestFactory().post('/estatisticas/recalcular/')
+        request.user = SimpleNamespace(is_authenticated=True, is_superuser=superuser)
+        return request
+
+    def test_nao_superusuario_recebe_403(self):
+        with self.assertRaises(PermissionDenied):
+            recalcular_totais(self._request(superuser=False))
+
+    @patch('core.views.status_recalculo', return_value={'ativo': False, 'status': 'ok'})
+    @patch('core.views.get_postgres_connection')
+    def test_superusuario_dispara_em_background(self, conectar, status):
+        conectar.return_value = ConexaoFakeEstatisticas()
+        with patch('core.views.iniciar_recalculo_background', return_value=4321) as iniciar:
+            with patch('core.views.messages') as mensagens:
+                resposta = recalcular_totais(self._request())
+
+        iniciar.assert_called_once()
+        mensagens.success.assert_called_once()
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(resposta['Location'], '/estatisticas/')
+
+    @patch('core.views.status_recalculo', return_value=None)
+    @patch('core.views.get_postgres_connection')
+    def test_sem_tabela_de_status_avisa_e_nao_dispara(self, conectar, status):
+        conectar.return_value = ConexaoFakeEstatisticas()
+        with patch('core.views.iniciar_recalculo_background') as iniciar:
+            with patch('core.views.messages') as mensagens:
+                resposta = recalcular_totais(self._request())
+
+        iniciar.assert_not_called()
+        mensagens.error.assert_called_once()
+        self.assertIn('sql/estatisticas_totais.sql', str(mensagens.error.call_args))
+        self.assertEqual(resposta.status_code, 302)
+
+    @patch('core.views.status_recalculo', return_value={'ativo': True, 'status': 'rodando'})
+    @patch('core.views.get_postgres_connection')
+    def test_recalculo_ativo_nao_dispara_outro(self, conectar, status):
+        conectar.return_value = ConexaoFakeEstatisticas()
+        with patch('core.views.iniciar_recalculo_background') as iniciar:
+            with patch('core.views.messages') as mensagens:
+                resposta = recalcular_totais(self._request())
+
+        iniciar.assert_not_called()
+        mensagens.info.assert_called_once()
+        self.assertEqual(resposta.status_code, 302)
+
+    @patch('core.views.status_recalculo', return_value={'ativo': False, 'status': 'erro'})
+    @patch('core.views.get_postgres_connection')
+    def test_erro_no_disparo_avisa_sem_quebrar(self, conectar, status):
+        conectar.return_value = ConexaoFakeEstatisticas()
+        with patch('core.views.iniciar_recalculo_background', side_effect=OSError('sem espaco')):
+            with patch('core.views.messages') as mensagens:
+                resposta = recalcular_totais(self._request())
+
+        mensagens.error.assert_called_once()
+        self.assertEqual(resposta.status_code, 302)
+
+class EstatisticasTemplateTests(SimpleTestCase):
+    """Aviso de recalculo, botao desabilitado e auto-refresh."""
+
+    def _render(self, **contexto):
+        base = {
+            'totais': {
+                'total_matrizes': 74373417, 'total_ativas': 1, 'total_inaptas': 0,
+                'total_baixadas': 0, 'total_suspensas': 0, 'total_ufs': 27,
+            },
+            'simples_mei': {'total_simples': 51328896, 'total_mei': 1},
+            'socios': {'total_socios': 28671796, 'total_empresas_com_socios': 1},
+            'top_ufs': [], 'situacoes': [], 'portes': [], 'top_cnaes': [],
+            'top_naturezas': [], 'por_ano': [], 'top_municipios': [],
+            'recalculo': None,
+        }
+        base.update(contexto)
+        return render_to_string('core/estatisticas.html', base)
+
+    def test_aviso_de_recalculo_em_andamento(self):
+        html = self._render(
+            recalculo={
+                'ativo': True, 'status': 'rodando',
+                'iniciado_em': datetime(2026, 11, 19, 10, 0),
+            },
+            user=SimpleNamespace(is_superuser=True, is_authenticated=True),
+        )
+
+        self.assertIn('Recalculando os totais em segundo plano', html)
+        self.assertIn('window.location.reload()', html)
+        self.assertIn('disabled', html)
+
+    def test_sem_recalculo_nao_mostra_aviso_nem_refresh(self):
+        html = self._render()
+
+        self.assertNotIn('Recalculando os totais em segundo plano', html)
+        self.assertNotIn('window.location.reload()', html)
+
+    def test_erro_aparece_para_superusuario(self):
+        html = self._render(
+            recalculo={'ativo': False, 'status': 'erro', 'mensagem': 'lock timeout'},
+            user=SimpleNamespace(is_superuser=True, is_authenticated=True),
+        )
+
+        self.assertIn('O ultimo recalculo falhou: lock timeout', html)
+
+    def test_botao_desabilitado_durante_o_recalculo(self):
+        html = self._render(
+            recalculo={'ativo': True, 'status': 'rodando'},
+            user=SimpleNamespace(is_superuser=True, is_authenticated=True),
+        )
+
+        self.assertIn('Recalculando...', html)
+        self.assertIn('disabled', html)
 

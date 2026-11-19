@@ -58,9 +58,14 @@ que traduz perguntas em linguagem natural para SQL.
     |   +-- maps.py                 # Links do Google Maps (endereco + busca pelo nome)
     |   +-- proximidade.py          # Busca por raio em km (bbox + haversine, sem PostGIS)
     |   +-- telefone.py             # Link de WhatsApp a partir do telefone da RFB
+    |   +-- estatisticas.py         # Status + disparo do recalculo (fora do request)
+    |   +-- management/commands/
+    |   |   +-- recalcular_totais.py  # Recria c_estatisticas_totais (~11 min)
     |   +-- routers.py              # CNPJRouter (default vs postgres)
     |   +-- urls.py
     |   +-- views.py                # lista, detalhe, estatisticas
+    +-- sql/
+    |   +-- estatisticas_totais.sql # DDL da tabela, do status e da procedure (swap)
     +-- chat/                       # Chat IA
     |   +-- services/
     |   |   +-- llm_client.py       # Wrapper OpenAI apontando pro DeepSeek
@@ -206,9 +211,11 @@ Passos:
 1. Baixar os Parquet da RFB (link acima).
 2. Rodar o [ProjetoCargaDados](https://github.com/antoniorosasse/ProjetoCargaDados)
    para popular as 10 tabelas `c_*` no `bancocnpj`.
-3. Rodar `CALL sp_recalcular_estatisticas_totais();` no `bancocnpj`
-   (ou usar o botão em `/estatisticas/recalcular/`) para popular a
-   tabela `c_estatisticas_totais` (contagens instantâneas).
+3. Rodar `python manage.py recalcular_totais` no `cnpj_interface` (ou o botão
+   em `/estatisticas/`) para popular a tabela `c_estatisticas_totais`
+   (contagens instantâneas). A procedure calcula em `c_estatisticas_calc` e
+   troca as tabelas por `RENAME` no fim, então a página continua no ar
+   durante o recálculo (~11 min na base de 74,4 M).
 4. Carregar a `c_ceps` (coordenada/nome por CEP) pelo `ProjetoCargaDados`
    (`manage.py carregar_ceps`) — é o que habilita o link do Google Maps.
    Sem ela a página funciona, mas o mapa cai para o endereço em texto.
@@ -278,7 +285,7 @@ fantasia continua funcionando (usa os índices GIN trigram).
 ### Paginação
 
 Usa **keyset pagination** (não OFFSET). Isso significa que a página 5000
-carrega tão rápido quanto a página 1, mesmo com 38 milhões de linhas.
+carrega tão rápido quanto a página 1, mesmo com 74,4 milhões de linhas.
 
 O botão "Próxima" passa o último CNPJ/razão da página atual como ponto de
 partida. O botão "Anterior" faz o mesmo, ao contrário. A contagem total
@@ -323,10 +330,10 @@ já veio do banco. A ordem é:
 
 O CEP não entra no texto quando há rua: com o CEP na busca o Google não acha a
 rua, e sem hífen ele ainda lê `89204251` como número de porta. Ele só aparece
-(formatado, `74740-300`) quando não há logradouro nenhum. Medido na base: 90,1%
-dos 38,5 milhões de estabelecimentos têm rua + número e passam pelo texto; 9,9%
-(3,8 milhões, número `S/N`, `SN`, `0`) ficam no pino do CEP, que é o que tem
-coordenada.
+(formatado, `74740-300`) quando não há logradouro nenhum. Medido na base 2026-11:
+**91,2%** dos 74,4 milhões de estabelecimentos têm rua + número e passam pelo
+texto; 8,8% (6,6 milhões, número `S/N`, `SN`, `0`) ficam no pino do CEP, que é o
+que tem coordenada.
 
 **CEP genérico** (`c_ceps.generico = true`): em município pequeno o Correios
 usa um único CEP para a cidade inteira (o `xxxxx-000`, ex.: `89669-000`
@@ -505,11 +512,12 @@ também não estão instalados). A consulta então é SQL puro:
 **Total de páginas** vem de `c_ceps_estab` (`cep, n_matrizes, n_total`), a
 contagem de estabelecimentos por CEP criada pelo `ProjetoCargaDados`
 (`manage.py contar_estab_por_cep`). Um `COUNT` no raio custaria 5-15 s (bitmap
-scan em 38,5 M de linhas); somar o agregado no raio custa ~30-60 ms. Sem essa
+scan em 74,4 M de linhas); somar o agregado no raio custa ~30-60 ms. Sem essa
 tabela a tela continua funcionando e mostra só "Página X" (o `to_regclass` fica
 em cache de 5 min: `TTL_TABELA_TOTAL`).
 
-Tempos medidos localmente (Joinville, 38,5 M de estabelecimentos): página 1 em
+Tempos medidos localmente (Joinville, base de 38,5 M — não remedidos com os
+74,4 M): página 1 em
 ~250-350 ms para raios de 1 a 20 km (~500 ms em 100 km, já com o total); página 2
 em ~250 ms. Um `CREATE INDEX` em `c_ceps (latitude, longitude)` foi testado e
 **descartado**: o planner trocava o early stop por bitmap scan e a página 1 ia
@@ -611,12 +619,27 @@ Página com visão agregada da base inteira:
 - **Total de sócios** + empresas com sócios
 
 Os dados vêm da tabela `c_estatisticas_totais`, populada pela stored
-procedure `sp_recalcular_estatisticas_totais()`. Superusuário pode
-disparar o recálculo pelo botão na própria página.
+procedure `sp_recalcular_estatisticas_totais()`. A procedure calcula tudo em
+`c_estatisticas_calc` e, no fim, troca as duas tabelas por `RENAME` dentro de
+uma transação: a `/estatisticas/` nunca fica vazia nem travada durante o
+cálculo (o lock exclusivo existe só por milissegundos, no swap).
+
+O recálculo leva **~11 min** (669 s e 616 s em duas execuções medidas em
+19/11/2026 na base de 74,4 M), mais que o timeout de 300 s do gunicorn/nginx.
+Por isso rode fora do request:
+
+```
+python manage.py recalcular_totais           # recalcula e grava o status
+python manage.py recalcular_totais --status  # mostra o ultimo status
+```
+
+O botão "Recalcular Totais do Banco" (superusuário) dispara esse comando em
+segundo plano; o andamento fica em `c_estatisticas_recalculo` e a página se
+atualiza sozinha a cada 15 s, mostrando os números anteriores até a troca.
 
 ## Performance
 
-A base tem ~38M de linhas em `c_estabelecimentos`. Pra aguentar isso:
+A base tem ~74,4M de linhas em `c_estabelecimentos` (2026-11, com as baixadas). Pra aguentar isso:
 
 - **Índices parciais** com `WHERE cd_matriz_filial = 1` (matrizes são ~10% da tabela)
 - **Índice de cidade** `idx_estab_municipio_cnpj (municipio, cnpj_basico)` (1,1 GB, sem filtro de matriz, cobre sede e filial) para o semi-join "tem estabelecimento na cidade" do chat. Criado sem bloquear a tabela:

@@ -279,3 +279,14 @@ GEOIP_FONTE = os.getenv('GEOIP_FONTE', 'maxmind')
 GEOIP_CIDADE_MMDB = os.getenv(
     'GEOIP_CIDADE_MMDB', str(BASE_DIR / 'geoip' / 'GeoLite2-City.mmdb'),
 )
+
+# ==================== CARGA DA RFB (ProjetoCargaDados) ====================
+# Admin do ProjetoCargaDados, onde fica a pagina de estatisticas da carga
+# (tempos e linhas de cada execucao). Ele roda so em dev, na porta 8003; em
+# producao nao existe, entao com a URL vazia o botao da /estatisticas/ nao
+# aparece. Para apontar para outro host, defina CARGA_ADMIN_URL no .env.
+CARGA_ADMIN_URL = os.getenv(
+    'CARGA_ADMIN_URL',
+    'http://127.0.0.1:8003' if DEBUG else '',
+).rstrip('/')
+

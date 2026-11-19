@@ -23,14 +23,62 @@
                 {% endif %}
             </div>
 {% if user.is_superuser %}
-            <form method="post" action="{% url 'core:recalcular_totais' %}" class="d-inline" onsubmit="return confirm('Deseja recalcular todos os totais e estatísticas do banco? Isso pode levar cerca de 15 a 30 segundos.');">
+            {% if carga_admin_url %}
+            <a href="{{ carga_admin_url }}/admin/etl/carga/estatisticas/" target="_blank" rel="noopener"
+               class="btn btn-outline-primary me-2"
+               title="Abre o admin do ProjetoCargaDados (tempos e linhas de cada carga da RFB)">
+                <i class="bi bi-speedometer2"></i> Estatísticas de Carga
+            </a>
+            {% endif %}
+            <form method="post" action="{% url 'core:recalcular_totais' %}" class="d-inline" onsubmit="return confirm('Deseja recalcular todos os totais do banco? O calculo leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos) e roda em segundo plano: os numeros atuais continuam no ar ate a troca das tabelas, no fim.');">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-warning">
+                <button type="submit" class="btn btn-warning"{% if recalculo.ativo %} disabled title="Recalculo em andamento"{% endif %}>
+                    {% if recalculo.ativo %}
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Recalculando...
+                    {% else %}
                     <i class="bi bi-arrow-repeat"></i> Recalcular Totais do Banco
+                    {% endif %}
                 </button>
             </form>
             {% endif %}
         </div>
+
+        <!-- ============================================================ -->
+        <!-- STATUS DO RECALCULO -->
+        <!-- ============================================================ -->
+        {% if recalculo_iniciado %}
+        <div class="alert alert-info">
+            <i class="bi bi-arrow-repeat"></i>
+            Recalculo iniciado em segundo plano. Os numeros aparecem aqui quando ele terminar.
+        </div>
+        {% elif recalculo_erro_disparo %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            Nao foi possivel iniciar o recalculo: {{ recalculo_erro_disparo }}
+        </div>
+        {% elif recalculo.ativo %}
+        <div class="alert alert-warning d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm me-3" role="status" aria-hidden="true"></div>
+            <div>
+                <strong>Recalculando os totais em segundo plano.</strong>
+                Os numeros abaixo sao os do ultimo recalculo concluido e continuam no ar
+                ate a troca das tabelas, no fim do calculo. A pagina se atualiza sozinha.
+                <span class="text-muted">Leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos).</span>
+            </div>
+        </div>
+        {% elif recalculo.status == 'erro' and user.is_superuser %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            O ultimo recalculo falhou: {{ recalculo.mensagem }}
+        </div>
+        {% elif recalculo.status == 'rodando' and user.is_superuser %}
+        <div class="alert alert-secondary">
+            <i class="bi bi-hourglass-split"></i>
+            O recalculo anterior ficou marcado como em andamento desde
+            {{ recalculo.iniciado_em|date:"d/m/Y H:i" }}, mas o processo nao esta mais ativo.
+            Clique em "Recalcular Totais do Banco" para rodar de novo.
+        </div>
+        {% endif %}
 
         <!-- ============================================================ -->
         <!-- TOTAIS GERAIS -->
@@ -391,4 +439,14 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if recalculo.ativo %}
+<script>
+    // O recalculo roda em outro processo (~11 min): recarrega a cada 15 s
+    // para trocar o aviso pelo resultado quando ele terminar.
+    setTimeout(function () { window.location.reload(); }, 15000);
+</script>
+{% endif %}
 {% endblock %}

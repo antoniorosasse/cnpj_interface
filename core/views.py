@@ -3,7 +3,7 @@ from typing import Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from django.conf import settings
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -33,6 +33,7 @@ from core.proximidade import (
     token_cursor,
 )
 from core.telefone import montar_whatsapp
+from core.estatisticas import iniciar_recalculo_background, status_recalculo
 
 import math
 import time
@@ -1312,15 +1313,22 @@ def estatisticas(request):
                 ORDER BY categoria, valor DESC
             """)
             linhas = cur.fetchall()
+            recalculo = status_recalculo(conn)
 
-            if not linhas:
-                recalcular_totais_banco()
-                cur.execute("""
-                    SELECT categoria, chave, descricao, valor, atualizado_em
-                    FROM c_estatisticas_totais
-                    ORDER BY categoria, valor DESC
-                """)
-                linhas = cur.fetchall()
+            if not linhas and recalculo is not None and not recalculo['ativo']:
+                # Base vazia (carga inicial): o recalculo leva ~11 min e nao
+                # pode rodar dentro do request (estoura o timeout de 300 s do
+                # gunicorn/nginx). Dispara em background; a pagina avisa e se
+                # atualiza sozinha.
+                try:
+                    iniciar_recalculo_background()
+                    context['recalculo_iniciado'] = True
+                    recalculo = status_recalculo(conn)
+                except Exception as exc:
+                    logger.exception("Erro ao disparar o recalculo inicial: %s", exc)
+                    context['recalculo_erro_disparo'] = str(exc)
+
+            context['recalculo'] = recalculo
 
             por_cat = {}
             ultima_data = None
@@ -1410,6 +1418,11 @@ def estatisticas(request):
         if conn:
             conn.close()
 
+    # Botao para o admin do ProjetoCargaDados (estatisticas de carga da RFB).
+    # Vazio em producao: o template so mostra o botao com a URL preenchida e
+    # para superusuario, como o "Recalcular Totais do Banco".
+    context['carga_admin_url'] = getattr(settings, 'CARGA_ADMIN_URL', '') or ''
+
     return render(request, 'core/estatisticas.html', context)
 
 def health_deep(request):
@@ -1455,7 +1468,13 @@ def health_deep(request):
                 pass
 
 def recalcular_totais_banco():
-    """Chama a Stored Procedure do PostgreSQL para recalcular totais."""
+    """
+    Chama a SP de recalculo direto na conexao do request.
+
+    NAO use em view: a SP leva ~11 min na base de 74,4 M e estoura o timeout
+    de 300 s do gunicorn/nginx. O caminho normal e `manage.py
+    recalcular_totais` (disparado em background pela view do botao).
+    """
     inicio = time.time()
     conn = get_postgres_connection()
     try:
@@ -1470,23 +1489,54 @@ def recalcular_totais_banco():
 @login_required
 @require_POST
 def recalcular_totais(request):
-    """View administrativa para disparar o recálculo via botão."""
+    """
+    Dispara o recalculo dos totais em segundo plano.
+
+    A SP troca as tabelas por RENAME (a pagina nunca fica sem dados), mas o
+    calculo leva ~11 min - nao pode rodar dentro do request. Quem faz o
+    trabalho e o management command `recalcular_totais`, que grava o status
+    em c_estatisticas_recalculo.
+    """
     if not request.user.is_superuser:
         raise PermissionDenied("Apenas administradores podem recalcular os totais.")
 
+    status = None
+    conn = None
     try:
-        from django.core.cache import cache
-        from django.contrib import messages
-        from django.shortcuts import redirect
+        conn = get_postgres_connection()
+        status = status_recalculo(conn)
+    except Exception as exc:
+        logger.exception("Erro ao ler o status do recalculo: %s", exc)
+    finally:
+        if conn:
+            conn.close()
 
-        segundos = recalcular_totais_banco()
+    if status is None:
+        messages.error(
+            request,
+            'Sem status de recalculo: a tabela c_estatisticas_recalculo nao existe '
+            'ou o bancocnpj nao respondeu. Aplique sql/estatisticas_totais.sql '
+            '(ou verifique a conexao) e tente de novo.',
+        )
+        return redirect('core:estatisticas')
 
-        # Limpa o cache da página de estatísticas para refletir na hora
-        cache.delete('estatisticas_completas')
+    if status['ativo']:
+        messages.info(
+            request,
+            'Ja existe um recalculo em andamento. A pagina se atualiza sozinha '
+            'quando ele terminar.',
+        )
+        return redirect('core:estatisticas')
 
-        messages.success(request, f"Totais do banco recalculados com sucesso em {segundos}s!")
-    except Exception as e:
-        logger.exception("Erro ao recalcular totais do banco: %s", e)
-        messages.error(request, f"Erro ao recalcular totais: {e}")
+    try:
+        iniciar_recalculo_background()
+        messages.success(
+            request,
+            'Recalculo iniciado em segundo plano (cerca de 11 minutos nesta base). '
+            'Os numeros atuais continuam no ar ate a troca das tabelas, no fim.',
+        )
+    except Exception as exc:
+        logger.exception("Erro ao disparar o recalculo dos totais: %s", exc)
+        messages.error(request, f"Erro ao disparar o recalculo: {exc}")
 
     return redirect('core:estatisticas')
