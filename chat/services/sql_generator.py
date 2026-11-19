@@ -512,7 +512,7 @@ QUANDO RECUSAR:
 - Se a pergunta pedir "empresas por bairro" SEM filtro de cidade
   ou UF (ex: "quantas empresas existem por bairro no Brasil",
   "empresas por bairro"), responda:
-    RECUSAR: essa consulta exige varrer 38M de linhas por bairro;
+    RECUSAR: essa consulta exige varrer 74M de linhas por bairro;
     filtre por cidade ou UF antes.
 - Se a pergunta pedir uma combinacao de situacao com porte,
   natureza, CNAE ou UF que NAO esteja pre-agregada em

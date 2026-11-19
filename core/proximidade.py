@@ -21,7 +21,7 @@ vector, conferido em 2026-11), entao a comparacao de nomes usa
 translate()+upper() em SQL (ver `sql_sem_acento`) contra o texto normalizado em
 Python por `sem_acento`. Assim "Picarras" acha "Balneario Picarras".
 
-Total de paginas: o COUNT exato no raio custa 5-15 s (bitmap scan em 38,5 M de
+Total de paginas: o COUNT exato no raio custa 5-15 s (bitmap scan em 74,4 M de
 estabelecimentos), entao a contagem vem da tabela agregada `c_ceps_estab`
 (cep, n_matrizes, n_total), criada por
 `ProjetoCargaDados: manage.py contar_estab_por_cep`. Sem essa tabela a busca

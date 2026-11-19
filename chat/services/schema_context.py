@@ -22,20 +22,20 @@ SCHEMA: public (unico schema relevante)
 TABELAS E TAMANHOS (use para decidir se vale JOIN)
 =====================================================================
 
-  c_estabelecimentos    ~38.500.000 linhas   GIGANTE
-  c_empresas            ~36.900.000 linhas   GIGANTE
-  c_simples             ~30.300.000 linhas   GIGANTE
-  c_socios              ~18.900.000 linhas   GRANDE
+  c_estabelecimentos    ~74.400.000 linhas   GIGANTE
+  c_empresas            ~71.100.000 linhas   GIGANTE
+  c_simples             ~51.300.000 linhas   GIGANTE
+  c_socios              ~28.700.000 linhas   GIGANTE
   c_municipios          ~5.570 linhas        LOOKUP
   c_ceps                ~1.260.000 linhas    LOOKUP (CEP -> coordenada)
   c_cnaes               ~1.360 linhas        LOOKUP
-  c_paises              ~260 linhas          LOOKUP
-  c_naturezas           ~90 linhas           LOOKUP
-  c_qualificacoes       ~70 linhas           LOOKUP
-  c_motivos             ~65 linhas           LOOKUP
+  c_paises              ~255 linhas          LOOKUP
+  c_naturezas           ~92 linhas           LOOKUP
+  c_qualificacoes       ~68 linhas           LOOKUP
+  c_motivos             ~63 linhas           LOOKUP
 
 =====================================================================
-c_empresas  (~36.9M linhas) -- dados cadastrais da empresa
+c_empresas  (~71.1M linhas) -- dados cadastrais da empresa
 =====================================================================
 
   cnpj_basico     varchar(8) NOT NULL   (8 primeiros digitos do CNPJ)
@@ -52,7 +52,7 @@ c_empresas  (~36.9M linhas) -- dados cadastrais da empresa
              ordenacao por razao_social (permite keyset rapido)
 
 =====================================================================
-c_estabelecimentos  (~38.5M linhas) -- enderecos, situacao, CNAE
+c_estabelecimentos  (~74.4M linhas) -- enderecos, situacao, CNAE
 =====================================================================
 
   cnpj_basico         varchar(8) NOT NULL
@@ -153,7 +153,7 @@ c_ceps  (~1.26M linhas) -- coordenada e nome do logradouro por CEP
   Carregada por: ProjetoCargaDados -> manage.py carregar_ceps
 
 =====================================================================
-c_simples  (~30.3M linhas) -- optantes Simples/MEI
+c_simples  (~51.3M linhas) -- optantes Simples/MEI
 =====================================================================
 
   cnpj_basico     varchar(8) NOT NULL (PK)
@@ -174,7 +174,7 @@ c_simples  (~30.3M linhas) -- optantes Simples/MEI
   empresa esta em c_simples.
 
 =====================================================================
-c_socios  (~18.9M linhas) -- socios das empresas
+c_socios  (~28.7M linhas) -- socios das empresas
 =====================================================================
 
   cnpj_basico           varchar(8)
@@ -551,7 +551,7 @@ TRADUCAO DE LINGUAGEM NATURAL PARA CODIGO:
 DICA CRITICA DE PERFORMANCE
 =====================================================================
 
-Agregar (COUNT, GROUP BY) sobre qualquer tabela GIGANTE leva ~3 a ~10
+Agregar (COUNT, GROUP BY) sobre qualquer tabela GIGANTE leva ~10 a ~30
 segundos. Isso e esperado. O que NAO pode e:
 
   - JOIN direto entre duas GIGANTES sem filtro forte em uma delas
@@ -574,7 +574,7 @@ Prefira:
     c_estabelecimentos (cobre matriz + filial via
     idx_estab_nome_fantasia_gin_todos). NAO use OR do tipo
     `e.nm_fantasia ILIKE %s OR EXISTS (...)`, porque o planner escolhe
-    Merge Join e le 36M de linhas (~23s). Use EXISTS sozinho, que forca
+    Merge Join e le 71M de linhas (~50s). Use EXISTS sozinho, que forca
     Nested Loop (~200ms).
   - Para listagens de empresas, use SEMPRE INNER JOIN c_empresas emp ON
     emp.cnpj_basico = e.cnpj_basico e selecione emp.razao_social junto com
