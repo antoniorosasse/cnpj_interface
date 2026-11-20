@@ -97,7 +97,8 @@
             {% if situacao %}· situação: {% for codigo, rotulo in situacoes %}{% if situacao == codigo %}{{ rotulo }}{% endif %}{% endfor %}{% endif %}
         </p>
 
-        <div class="table-responsive">
+        <div id="ui-results-layout" class="ui-results-layout"><div class="ui-results-list">
+<div class="table-responsive">
             <table class="table table-hover table-striped align-middle">
                 <thead class="table-dark">
                     <tr>
@@ -141,7 +142,7 @@
                         <td class="text-nowrap">
                             <a href="{% url 'core:detalhe' linha.cnpj_completo %}?next={{ request.get_full_path|urlencode }}"
                                target="_blank" rel="noopener"
-                               class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)">
+                               class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)" data-company-detail>
                                 <i class="bi bi-eye"></i>
                             </a>
                             {% if linha.maps_url %}
@@ -163,7 +164,11 @@
                     {% endfor %}
                 </tbody>
             </table>
-        </div>
+        </div></div><aside id="ui-details-panel" class="ui-details-panel" aria-label="Ficha cadastral" hidden>
+    <div class="ui-panel-actions"><a id="ui-details-full" href="#" target="_blank" rel="noopener">Abrir pagina completa <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a><button id="ui-details-close" type="button" class="btn btn-outline-secondary btn-sm" aria-label="Fechar ficha cadastral"><span class="ui-mobile-close">Voltar</span><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+    <p id="ui-panel-status" class="ui-panel-status" role="status" aria-live="polite"></p>
+    <div id="ui-details-content"></div>
+</aside></div>
 
         <!-- Paginação (keyset: avançar usa o cursor da última linha, voltar usa
              a pilha `hist` da querystring; não existe OFFSET) -->
