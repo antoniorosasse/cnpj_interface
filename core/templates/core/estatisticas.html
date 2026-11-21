@@ -1,218 +1,337 @@
-<!-- /home/neto/cnpj_interface/core/templates/core/estatisticas.html -->
 {% extends 'core/base.html' %}
-{% load num_filters %}
+{% load num_filters static %}
 
 {% block title %}Estatísticas — busquecnpj{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261121">
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col">
-        <!-- ============================================================ -->
-        <!-- CABEÇALHO -->
-        <!-- ============================================================ -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h1 class="mb-0">
-                    <i class="bi bi-bar-chart-fill"></i> Estatísticas
-                </h1>
-                {% if ultima_atualizacao %}
-                <small class="text-muted">
-                    <i class="bi bi-clock"></i> 
-                    Última atualização: {{ ultima_atualizacao }}
-                </small>
-                {% endif %}
-            </div>
-{% if user.is_superuser %}
+<div class="intel-page">
+
+    {# ============================================================ #}
+    {# CABECALHO #}
+    {# ============================================================ #}
+    <div class="ui-page-head">
+        <div>
+            <p class="ui-eyebrow"><i class="bi bi-bar-chart-fill" aria-hidden="true"></i> Inteligência de dados</p>
+            <h1>Estatísticas</h1>
+            <p>
+                Panorama agregado da base de CNPJs: situação cadastral, porte,
+                atividades (CNAE), municípios e ano de abertura. Os números vêm
+                da tabela de totais pré-calculados, sem consultar as tabelas
+                gigantes da Receita.
+            </p>
+            {% if ultima_atualizacao %}
+            <p class="intel-updated">
+                <i class="bi bi-clock" aria-hidden="true"></i>
+                Última atualização: <strong>{{ ultima_atualizacao }}</strong>
+            </p>
+            {% endif %}
+        </div>
+
+        {% if user.is_superuser %}
+        <div class="ui-page-head__actions">
             {% if carga_admin_url %}
             <a href="{{ carga_admin_url }}/admin/etl/carga/estatisticas/" target="_blank" rel="noopener"
-               class="btn btn-outline-primary me-2"
+               class="btn btn-outline-primary"
                title="Abre o admin do ProjetoCargaDados (tempos e linhas de cada carga da RFB)">
-                <i class="bi bi-speedometer2"></i> Estatísticas de Carga
+                <i class="bi bi-speedometer2" aria-hidden="true"></i> Estatísticas de Carga
             </a>
             {% endif %}
-            <form method="post" action="{% url 'core:recalcular_totais' %}" class="d-inline" onsubmit="return confirm('Deseja recalcular todos os totais do banco? O calculo leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos) e roda em segundo plano: os numeros atuais continuam no ar ate a troca das tabelas, no fim.');">
+            <form method="post" action="{% url 'core:recalcular_totais' %}" class="intel-recalc" onsubmit="return confirm('Deseja recalcular todos os totais do banco? O calculo leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos) e roda em segundo plano: os numeros atuais continuam no ar ate a troca das tabelas, no fim.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-warning"{% if recalculo.ativo %} disabled title="Recalculo em andamento"{% endif %}>
                     {% if recalculo.ativo %}
                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Recalculando...
                     {% else %}
-                    <i class="bi bi-arrow-repeat"></i> Recalcular Totais do Banco
+                    <i class="bi bi-arrow-repeat" aria-hidden="true"></i> Recalcular Totais do Banco
                     {% endif %}
                 </button>
             </form>
-            {% endif %}
-        </div>
-
-        <!-- ============================================================ -->
-        <!-- STATUS DO RECALCULO -->
-        <!-- ============================================================ -->
-        {% if recalculo_iniciado %}
-        <div class="alert alert-info">
-            <i class="bi bi-arrow-repeat"></i>
-            Recalculo iniciado em segundo plano. Os numeros aparecem aqui quando ele terminar.
-        </div>
-        {% elif recalculo_erro_disparo %}
-        <div class="alert alert-danger">
-            <i class="bi bi-exclamation-triangle"></i>
-            Nao foi possivel iniciar o recalculo: {{ recalculo_erro_disparo }}
-        </div>
-        {% elif recalculo.ativo %}
-        <div class="alert alert-warning d-flex align-items-center">
-            <div class="spinner-border spinner-border-sm me-3" role="status" aria-hidden="true"></div>
-            <div>
-                <strong>Recalculando os totais em segundo plano.</strong>
-                Os numeros abaixo sao os do ultimo recalculo concluido e continuam no ar
-                ate a troca das tabelas, no fim do calculo. A pagina se atualiza sozinha.
-                <span class="text-muted">Leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos).</span>
-            </div>
-        </div>
-        {% elif recalculo.status == 'erro' and user.is_superuser %}
-        <div class="alert alert-danger">
-            <i class="bi bi-exclamation-triangle"></i>
-            O ultimo recalculo falhou: {{ recalculo.mensagem }}
-        </div>
-        {% elif recalculo.status == 'rodando' and user.is_superuser %}
-        <div class="alert alert-secondary">
-            <i class="bi bi-hourglass-split"></i>
-            O recalculo anterior ficou marcado como em andamento desde
-            {{ recalculo.iniciado_em|date:"d/m/Y H:i" }}, mas o processo nao esta mais ativo.
-            Clique em "Recalcular Totais do Banco" para rodar de novo.
         </div>
         {% endif %}
+    </div>
 
-        <!-- ============================================================ -->
-        <!-- TOTAIS GERAIS -->
-        <!-- ============================================================ -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_matrizes|format_number }}</h2>
-                        <small>Total de Matrizes</small>
-                    </div>
+    {# ============================================================ #}
+    {# STATUS DO RECALCULO #}
+    {# ============================================================ #}
+    {% if recalculo_iniciado %}
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+        Recalculo iniciado em segundo plano. Os numeros aparecem aqui quando ele terminar.
+    </div>
+    {% elif recalculo_erro_disparo %}
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+        Nao foi possivel iniciar o recalculo: {{ recalculo_erro_disparo }}
+    </div>
+    {% elif recalculo.ativo %}
+    <div class="alert alert-warning d-flex align-items-center" role="alert">
+        <div class="spinner-border spinner-border-sm me-3" role="status" aria-hidden="true"></div>
+        <div>
+            <strong>Recalculando os totais em segundo plano.</strong>
+            Os numeros abaixo sao os do ultimo recalculo concluido e continuam no ar
+            ate a troca das tabelas, no fim do calculo. A pagina se atualiza sozinha.
+            <span class="ui-muted">Leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos).</span>
+        </div>
+    </div>
+    {% elif recalculo.status == 'erro' and user.is_superuser %}
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+        O ultimo recalculo falhou: {{ recalculo.mensagem }}
+    </div>
+    {% elif recalculo.status == 'rodando' and user.is_superuser %}
+    <div class="alert alert-secondary" role="alert">
+        <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+        O recalculo anterior ficou marcado como em andamento desde
+        {{ recalculo.iniciado_em|date:"d/m/Y H:i" }}, mas o processo nao esta mais ativo.
+        Clique em "Recalcular Totais do Banco" para rodar de novo.
+    </div>
+    {% endif %}
+
+    {# ============================================================ #}
+    {# TOTAIS GERAIS (KPIs) #}
+    {# ============================================================ #}
+    <section class="ui-section" aria-labelledby="titulo-totais">
+        <div class="ui-section__head">
+            <div>
+                <h2 id="titulo-totais">Totais gerais</h2>
+                <p>Contagens de matrizes por situação cadastral, optantes e cobertura de UFs.</p>
+            </div>
+        </div>
+
+        <div class="ui-grid ui-grid--4">
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Matrizes</p>
+                    <p class="ui-kpi__value">{{ totais.total_matrizes|format_number }}</p>
+                    <p class="ui-kpi__foot">total de matrizes na base</p>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_ativas|format_number }}</h2>
-                        <small>Empresas Ativas</small>
-                    </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--ok" aria-hidden="true"><i class="bi bi-check2-circle"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Ativas</p>
+                    <p class="ui-kpi__value">{{ totais.total_ativas|format_number }}</p>
+                    <p class="ui-kpi__foot">situação ATIVA</p>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-danger text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_inaptas|format_number }}</h2>
-                        <small>Empresas Inaptas</small>
-                    </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--danger" aria-hidden="true"><i class="bi bi-x-octagon"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Inaptas</p>
+                    <p class="ui-kpi__value">{{ totais.total_inaptas|format_number }}</p>
+                    <p class="ui-kpi__foot">situação INAPTA</p>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-secondary text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_baixadas|format_number }}</h2>
-                        <small>Empresas Baixadas</small>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--neutral" aria-hidden="true"><i class="bi bi-archive"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Baixadas</p>
+                    <p class="ui-kpi__value">{{ totais.total_baixadas|format_number }}</p>
+                    <p class="ui-kpi__foot">situação BAIXADA</p>
+                </div>
+            </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon" aria-hidden="true"><i class="bi bi-receipt"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Simples</p>
+                    <p class="ui-kpi__value">{{ simples_mei.total_simples|format_number }}</p>
+                    <p class="ui-kpi__foot">optantes pelo Simples</p>
+                </div>
+            </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--warn" aria-hidden="true"><i class="bi bi-person-vcard"></i></span>
+                <div>
+                    <p class="ui-kpi__label">MEI</p>
+                    <p class="ui-kpi__value">{{ simples_mei.total_mei|format_number }}</p>
+                    <p class="ui-kpi__foot">optantes pelo MEI</p>
+                </div>
+            </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--warn" aria-hidden="true"><i class="bi bi-pause-circle"></i></span>
+                <div>
+                    <p class="ui-kpi__label">Suspensas</p>
+                    <p class="ui-kpi__value">{{ totais.total_suspensas|format_number }}</p>
+                    <p class="ui-kpi__foot">situação SUSPENSA</p>
+                </div>
+            </div>
+            <div class="ui-kpi">
+                <span class="ui-kpi__icon ui-kpi__icon--neutral" aria-hidden="true"><i class="bi bi-geo-alt"></i></span>
+                <div>
+                    <p class="ui-kpi__label">UFs</p>
+                    <p class="ui-kpi__value">{{ totais.total_ufs }}</p>
+                    <p class="ui-kpi__foot">estados com empresas na base</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {# ============================================================ #}
+    {# GRAFICOS REAIS #}
+    {# ============================================================ #}
+    <section class="ui-section" aria-labelledby="titulo-graficos">
+        <div class="ui-section__head">
+            <div>
+                <h2 id="titulo-graficos">Panorama</h2>
+                <p>Gráficos calculados sobre os mesmos totais do contexto — sem consulta nova e sem números fixos.</p>
+            </div>
+        </div>
+
+        <div class="ui-grid ui-grid--2">
+            <div class="ui-card intel-card intel-card--donut">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-pie-chart" aria-hidden="true"></i> Proporção por porte</h3>
+                    <span class="ui-muted intel-note">% do total</span>
+                </div>
+                <div class="ui-card__body">
+                    <div class="intel-donut-row">
+                        <div class="ui-donut" id="intel-donut"
+                             style="--ui-donut: conic-gradient(var(--p-surface-3) 0 100%)"
+                             role="img" aria-label="Proporção de matrizes por porte">
+                            <span class="ui-donut__center">
+                                <strong>{{ totais.total_matrizes|format_number }}</strong>
+                                matrizes
+                            </span>
+                        </div>
+                        <ul class="ui-legend intel-donut-legend">
+                            {% for p in portes %}
+                            <li data-porte-total="{{ p.total }}">
+                                <span class="ui-legend__dot" aria-hidden="true" style="background:{% cycle 'var(--p-accent)' '#7dd3fc' '#a5b4fc' '#38bdf8' %}"></span>
+                                <span class="intel-donut-legend__label">{{ p.porte|default:"NÃO INFORMADO" }}</span>
+                                <span class="intel-donut-legend__value">
+                                    {{ p.total|format_number }}<span class="intel-donut-legend__pct" data-pct></span>
+                                </span>
+                            </li>
+                            {% empty %}
+                            <li><span class="ui-muted">Nenhum dado de porte disponível.</span></li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    <p class="intel-donut-note ui-muted">
+                        Percentuais calculados sobre a soma dos portes; o centro mostra
+                        o total de matrizes da base.
+                    </p>
+                </div>
+            </div>
+
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-briefcase" aria-hidden="true"></i> Empresas por CNAE</h3>
+                    <span class="ui-muted intel-note">top {{ top_cnaes|length }}</span>
+                </div>
+                <div class="ui-card__body">
+                    <div class="ui-bars intel-bars">
+                        {% for c in top_cnaes %}
+                        <div class="ui-bar">
+                            <span class="ui-bar__label" title="{{ c.cnae_principal }} - {{ c.nm_cnae|default:'' }}">
+                                <strong>{{ c.cnae_principal }}</strong> — {{ c.nm_cnae|default:"-"|truncatechars:76 }}
+                            </span>
+                            <span class="ui-bar__value">{{ c.total|format_number }}</span>
+                            <div class="ui-bar__track">
+                                <div class="ui-bar__fill" style="width:{% widthratio c.total top_cnaes.0.total 100 %}%"></div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <p class="ui-muted">Nenhum dado de CNAE disponível.</p>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ simples_mei.total_simples|format_number }}</h2>
-                        <small>Optantes pelo Simples</small>
-                    </div>
-                </div>
+        <div class="ui-card intel-card intel-area-card">
+            <div class="ui-card__head">
+                <h3 class="ui-card__title"><i class="bi bi-graph-up" aria-hidden="true"></i> Empresas por ano de abertura</h3>
+                <span class="ui-muted intel-note">{% if por_ano %}{{ por_ano|length }} anos{% endif %}</span>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ simples_mei.total_mei|format_number }}</h2>
-                        <small>Optantes pelo MEI</small>
-                    </div>
+            <div class="ui-card__body">
+                <div class="intel-area">
+                    <svg class="ui-chart" id="intel-ano" viewBox="0 0 640 200" role="img"
+                         aria-label="Gráfico de linha com o total de empresas por ano de abertura; os valores estão na tabela de detalhamento abaixo."></svg>
                 </div>
+                <p class="intel-chart-note ui-muted">
+                    Cada ponto é o total de matrizes com data de abertura naquele ano;
+                    a série é exibida em ordem cronológica.
+                </p>
             </div>
-            <div class="col-md-3">
-                <div class="card bg-dark text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_suspensas|format_number }}</h2>
-                        <small>Empresas Suspensas</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body text-center">
-                        <h2 class="mb-0">{{ totais.total_ufs }}</h2>
-                        <small>Estados (UFs)</small>
-                    </div>
-                </div>
+        </div>
+    </section>
+
+    {# ============================================================ #}
+    {# DETALHAMENTO (TABELAS) #}
+    {# ============================================================ #}
+    <section class="ui-section" aria-labelledby="titulo-detalhe">
+        <div class="ui-section__head">
+            <div>
+                <h2 id="titulo-detalhe">Detalhamento</h2>
+                <p>As mesmas categorias dos gráficos, com contagem e participação no total de matrizes.</p>
             </div>
         </div>
 
-        <!-- ============================================================ -->
-        <!-- TOP UFs e SITUAÇÕES -->
-        <!-- ============================================================ -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-geo-alt"></i> Top 10 UFs</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+        <div class="ui-grid ui-grid--2">
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-geo-alt" aria-hidden="true"></i> Top 10 UFs</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>UF</th>
-                                    <th class="text-end">Empresas</th>
-                                    <th class="text-end">%</th>
+                                    <th scope="col">UF</th>
+                                    <th scope="col" class="text-end">Empresas</th>
+                                    <th scope="col" class="text-end">%</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for uf in top_ufs %}
                                 <tr>
-                                    <td><span class="badge bg-secondary">{{ uf.uf|default:"N/A" }}</span></td>
-                                    <td class="text-end">{{ uf.total|format_number }}</td>
-                                    <td class="text-end">
+                                    <td><span class="ui-badge ui-badge--neutral">{{ uf.uf|default:"N/A" }}</span></td>
+                                    <td class="text-end ui-tnum">{{ uf.total|format_number }}</td>
+                                    <td class="text-end ui-tnum">
                                         {% widthratio uf.total totais.total_matrizes 100 %}%
                                     </td>
                                 </tr>
+                                {% empty %}
+                                <tr><td colspan="3">Nenhum dado</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="bi bi-circle"></i> Distribuição por Situação</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-circle" aria-hidden="true"></i> Distribuição por situação</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>Situação</th>
-                                    <th class="text-end">Empresas</th>
-                                    <th class="text-end">%</th>
+                                    <th scope="col">Situação</th>
+                                    <th scope="col" class="text-end">Empresas</th>
+                                    <th scope="col" class="text-end">%</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for sit in situacoes %}
                                 <tr>
                                     <td>
-                                        {% if sit.situacao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
-                                        {% elif sit.situacao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
-                                        {% elif sit.situacao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
-                                        {% elif sit.situacao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
-                                        {% elif sit.situacao == 'NULA' %}<span class="badge bg-dark">Nula</span>
-                                        {% else %}<span class="badge bg-secondary">{{ sit.situacao }}</span>{% endif %}
+                                        {% if sit.situacao == 'ATIVA' %}<span class="ui-badge ui-badge--ok">Ativa</span>
+                                        {% elif sit.situacao == 'INAPTA' %}<span class="ui-badge ui-badge--danger">Inapta</span>
+                                        {% elif sit.situacao == 'SUSPENSA' %}<span class="ui-badge ui-badge--warn">Suspensa</span>
+                                        {% elif sit.situacao == 'BAIXADA' %}<span class="ui-badge ui-badge--neutral">Baixada</span>
+                                        {% elif sit.situacao == 'NULA' %}<span class="ui-badge ui-badge--neutral">Nula</span>
+                                        {% else %}<span class="ui-badge ui-badge--neutral">{{ sit.situacao }}</span>{% endif %}
                                     </td>
-                                    <td class="text-end">{{ sit.total|format_number }}</td>
-                                    <td class="text-end">
+                                    <td class="text-end ui-tnum">{{ sit.total|format_number }}</td>
+                                    <td class="text-end ui-tnum">
                                         {% widthratio sit.total totais.total_matrizes 100 %}%
                                     </td>
                                 </tr>
@@ -222,24 +341,19 @@
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- ============================================================ -->
-        <!-- PORTE E NATUREZA JURÍDICA -->
-        <!-- ============================================================ -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="bi bi-building"></i> Porte da Empresa</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-building" aria-hidden="true"></i> Porte da empresa</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>Porte</th>
-                                    <th class="text-end">Empresas</th>
-                                    <th class="text-end">%</th>
+                                    <th scope="col">Porte</th>
+                                    <th scope="col" class="text-end">Empresas</th>
+                                    <th scope="col" class="text-end">%</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -247,19 +361,19 @@
                                 <tr>
                                     <td>
                                         {% if p.porte == 'MICRO EMPRESA' %}
-                                            <span class="badge bg-success">ME</span> {{ p.porte }}
+                                            <span class="ui-badge ui-badge--ok">ME</span> {{ p.porte }}
                                         {% elif p.porte == 'EMPRESA DE PEQUENO PORTE' %}
-                                            <span class="badge bg-primary">EPP</span> {{ p.porte }}
+                                            <span class="ui-badge ui-badge--info">EPP</span> {{ p.porte }}
                                         {% elif p.porte == 'DEMAIS' %}
-                                            <span class="badge bg-secondary">Demais</span> {{ p.porte }}
+                                            <span class="ui-badge ui-badge--neutral">Demais</span> {{ p.porte }}
                                         {% elif p.porte == 'NÃO INFORMADO' %}
-                                            <span class="badge bg-dark">N/I</span> {{ p.porte }}
+                                            <span class="ui-badge ui-badge--neutral">N/I</span> {{ p.porte }}
                                         {% else %}
-                                            <span class="badge bg-warning">{{ p.porte }}</span>
+                                            <span class="ui-badge ui-badge--warn">{{ p.porte }}</span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">{{ p.total|format_number }}</td>
-                                    <td class="text-end">
+                                    <td class="text-end ui-tnum">{{ p.total|format_number }}</td>
+                                    <td class="text-end ui-tnum">
                                         {% widthratio p.total totais.total_matrizes 100 %}%
                                     </td>
                                 </tr>
@@ -271,26 +385,27 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-dark text-white">
-                        <h5 class="mb-0"><i class="bi bi-list-ol"></i> Top 10 Naturezas Jurídicas</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-list-ol" aria-hidden="true"></i> Top 10 naturezas jurídicas</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>Código</th>
-                                    <th>Descrição</th>
-                                    <th class="text-end">Empresas</th>
+                                    <th scope="col">Código</th>
+                                    <th scope="col">Descrição</th>
+                                    <th scope="col" class="text-end">Empresas</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for n in top_naturezas %}
                                 <tr>
-                                    <td><strong>{{ n.codigo }}</strong></td>
+                                    <td><strong class="ui-tnum">{{ n.codigo }}</strong></td>
                                     <td>{{ n.descricao|default:"-"|truncatechars:50 }}</td>
-                                    <td class="text-end">{{ n.total|format_number }}</td>
+                                    <td class="text-end ui-tnum">{{ n.total|format_number }}</td>
                                 </tr>
                                 {% empty %}
                                 <tr><td colspan="3">Nenhum dado</td></tr>
@@ -300,35 +415,28 @@
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- ============================================================ -->
-        <!-- TOP CNAES E MUNICÍPIOS -->
-        <!-- ============================================================ -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-warning text-dark">
-                        <h5 class="mb-0"><i class="bi bi-briefcase"></i> Top 10 Atividades (CNAE)</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-briefcase" aria-hidden="true"></i> Top 10 atividades (CNAE)</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>CNAE</th>
-                                    <th class="text-end">Empresas</th>
+                                    <th scope="col">CNAE</th>
+                                    <th scope="col" class="text-end">Empresas</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for c in top_cnaes %}
                                 <tr>
                                     <td>
-                                        <small>
-                                            <strong>{{ c.cnae_principal }}</strong> - 
-                                            {{ c.nm_cnae|default:"-"|truncatechars:50 }}
-                                        </small>
+                                        <strong class="ui-tnum">{{ c.cnae_principal }}</strong> —
+                                        {{ c.nm_cnae|default:"-"|truncatechars:50 }}
                                     </td>
-                                    <td class="text-end">{{ c.total|format_number }}</td>
+                                    <td class="text-end ui-tnum">{{ c.total|format_number }}</td>
                                 </tr>
                                 {% empty %}
                                 <tr><td colspan="2">Nenhum dado</td></tr>
@@ -338,28 +446,29 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="bi bi-geo"></i> Top 10 Municípios</h5>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm table-striped">
+
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-geo" aria-hidden="true"></i> Top 10 municípios</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>Código</th>
-                                    <th>Município</th>
-                                    <th>UF</th>
-                                    <th class="text-end">Empresas</th>
+                                    <th scope="col">Código</th>
+                                    <th scope="col">Município</th>
+                                    <th scope="col">UF</th>
+                                    <th scope="col" class="text-end">Empresas</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for m in top_municipios %}
                                 <tr>
-                                    <td><strong>{{ m.codigo }}</strong></td>
+                                    <td><strong class="ui-tnum">{{ m.codigo }}</strong></td>
                                     <td>{{ m.nome_municipio|default:"-" }}</td>
-                                    <td><span class="badge bg-secondary">{{ m.uf }}</span></td>
-                                    <td class="text-end">{{ m.total|format_number }}</td>
+                                    <td><span class="ui-badge ui-badge--neutral">{{ m.uf }}</span></td>
+                                    <td class="text-end ui-tnum">{{ m.total|format_number }}</td>
                                 </tr>
                                 {% empty %}
                                 <tr><td colspan="4">Nenhum dado</td></tr>
@@ -369,79 +478,74 @@
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- ============================================================ -->
-        <!-- EMPRESAS POR ANO DE ABERTURA -->
-        <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i class="bi bi-calendar"></i> Empresas por Ano de Abertura</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-sm table-striped">
-                    <thead>
-                        <tr>
-                            <th>Ano</th>
-                            <th class="text-end">Empresas</th>
-                            <th>Gráfico</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for a in por_ano %}
-                        <tr>
-                            <td><strong>{{ a.ano }}</strong></td>
-                            <td class="text-end">{{ a.total|format_number }}</td>
-                            <td>
-                                <div class="progress" style="height: 20px;">
-                                    <div class="progress-bar bg-info" role="progressbar" 
-                                         style="width: {% widthratio a.total por_ano.0.total 100 %}%">
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="3">Nenhum dado</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ============================================================ -->
-        <!-- SÓCIOS -->
-        <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="bi bi-people"></i> Sócios</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-6">
-                        <h2>{{ socios.total_socios|format_number }}</h2>
-                        <p class="text-muted">Total de Sócios</p>
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-calendar" aria-hidden="true"></i> Empresas por ano de abertura</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="intel-tabela-ano">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Ano</th>
+                                    <th scope="col" class="text-end">Empresas</th>
+                                    <th scope="col">Gráfico</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for a in por_ano %}
+                                <tr data-ano="{{ a.ano }}" data-total="{{ a.total }}">
+                                    <td><strong class="ui-tnum">{{ a.ano }}</strong></td>
+                                    <td class="text-end ui-tnum">{{ a.total|format_number }}</td>
+                                    <td>
+                                        <div class="progress" role="progressbar"
+                                             aria-label="Participação de {{ a.ano }} no maior ano da série"
+                                             aria-valuenow="{% widthratio a.total por_ano.0.total 100 %}"
+                                             aria-valuemin="0" aria-valuemax="100">
+                                            <div class="progress-bar" style="width: {% widthratio a.total por_ano.0.total 100 %}%"></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="3">Nenhum dado</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="col-md-6">
-                        <h2>{{ socios.total_empresas_com_socios|format_number }}</h2>
-                        <p class="text-muted">Empresas com Sócios</p>
+                </div>
+            </div>
+
+            <div class="ui-card intel-card">
+                <div class="ui-card__head">
+                    <h3 class="ui-card__title"><i class="bi bi-people" aria-hidden="true"></i> Sócios</h3>
+                </div>
+                <div class="ui-card__body">
+                    <div class="intel-stat-pair">
+                        <div>
+                            <p class="ui-kpi__label">Total de sócios</p>
+                            <p class="ui-kpi__value">{{ socios.total_socios|format_number }}</p>
+                        </div>
+                        <div>
+                            <p class="ui-kpi__label">Empresas com sócios</p>
+                            <p class="ui-kpi__value">{{ socios.total_empresas_com_socios|format_number }}</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+    </section>
 
-        <!-- ============================================================ -->
-        <!-- BOTÃO VOLTAR -->
-        <!-- ============================================================ -->
-        <div class="mt-3">
-            <a href="{% url 'core:lista' %}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Voltar
-            </a>
-        </div>
+    <div class="ui-cluster intel-back">
+        <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar para Empresas
+        </a>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/portal-inteligencia.js' %}?v=20261121" defer></script>
 {% if recalculo.ativo %}
 <script>
     // O recalculo roda em outro processo (~11 min): recarrega a cada 15 s

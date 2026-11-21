@@ -1,78 +1,79 @@
 {% extends 'core/base.html' %}
+{% load static %}
 
 {% block title %}Histórico — busquecnpj{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261121">
+{% endblock %}
+
 {% block content %}
-<div class="row">
-    <div class="col">
+<div class="hist-page">
 
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h1 class="mb-0">
-                    <i class="bi bi-clock-history"></i> Histórico de conversas
-                </h1>
-                <small class="text-muted">
-                    Todas as suas conversas com o Chat IA.
-                </small>
-            </div>
+    <div class="ui-page-head">
+        <div>
+            <p class="ui-eyebrow"><i class="bi bi-clock-history" aria-hidden="true"></i> Chat IA</p>
+            <h1>Histórico de conversas</h1>
+            <p>Todas as suas conversas com o Chat IA, das mais recentes para as mais antigas.</p>
         </div>
-
-        <div class="card">
-            <div class="card-body p-0">
-                {% if conversas %}
-                    <ul class="list-group list-group-flush">
-                        {% for c in conversas %}
-                            <li class="list-group-item d-flex align-items-center gap-2">
-                                <a href="{% url 'chat:conversa' c.id %}"
-                                   class="flex-grow-1 text-decoration-none text-dark">
-                                    <div class="d-flex justify-content-between align-items-center gap-3">
-                                        <span class="fw-semibold text-truncate">
-                                            {{ c.titulo|default:"(sem titulo)" }}
-                                        </span>
-                                        <span class="text-muted small text-nowrap">
-                                            {{ c.total_mensagens }} mensagem{{ c.total_mensagens|pluralize }}
-                                            <span class="badge bg-light text-dark ms-2">
-                                                {{ c.atualizado_em|date:"d/m/Y H:i" }}
-                                            </span>
-                                        </span>
-                                    </div>
-                                </a>
-                                <form method="post" action="{% url 'chat:deletar' c.id %}"
-                                      onsubmit="return confirm('Deletar esta conversa?');">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                            class="btn btn-sm btn-outline-danger"
-                                            title="Deletar conversa">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </form>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-inbox" style="font-size: 2rem;"></i>
-                        <p class="mt-2 mb-0">Você ainda não fez nenhuma pergunta.</p>
-                        <a href="{% url 'chat:chat' %}" class="btn btn-primary btn-sm mt-3">
-                            <i class="bi bi-chat-dots"></i> Começar uma conversa
-                        </a>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="mt-3 d-flex justify-content-between">
-            <a href="{% url 'chat:chat' %}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Voltar ao chat
-            </a>
-            <form method="post" action="{% url 'chat:nova' %}">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-plus-lg"></i> Nova conversa
-                </button>
-            </form>
-        </div>
-
     </div>
+
+    <div class="ui-card">
+        <div class="ui-card__head">
+            <h2 class="ui-card__title"><i class="bi bi-chat-square-text" aria-hidden="true"></i> Suas conversas</h2>
+            {% if conversas %}
+            <span class="ui-badge ui-badge--neutral">{{ conversas|length }} conversa{{ conversas|length|pluralize }}</span>
+            {% endif %}
+        </div>
+        <div class="ui-card__body">
+            {% if conversas %}
+                <ul class="hist-list">
+                    {% for c in conversas %}
+                        <li class="hist-item">
+                            <a href="{% url 'chat:conversa' c.id %}" class="hist-item__link">
+                                <span class="hist-item__titulo">{{ c.titulo|default:"(sem titulo)" }}</span>
+                                <span class="hist-item__meta">
+                                    {{ c.total_mensagens }} mensagem{{ c.total_mensagens|pluralize }}
+                                    <span class="ui-badge ui-badge--neutral">
+                                        <i class="bi bi-calendar3" aria-hidden="true"></i>
+                                        {{ c.atualizado_em|date:"d/m/Y H:i" }}
+                                    </span>
+                                </span>
+                            </a>
+                            <form method="post" action="{% url 'chat:deletar' c.id %}" class="form-deletar"
+                                  onsubmit="return confirm('Deletar esta conversa?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-primary"
+                                        title="Deletar conversa" aria-label="Deletar conversa {{ c.titulo|default:'sem titulo' }}">
+                                    <i class="bi bi-trash" aria-hidden="true"></i>
+                                </button>
+                            </form>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="hist-vazio">
+                    <i class="bi bi-inbox" aria-hidden="true"></i>
+                    <p class="mt-2 mb-0 ui-muted">Você ainda não fez nenhuma pergunta.</p>
+                    <a href="{% url 'chat:chat' %}" class="btn btn-primary btn-sm mt-3">
+                        <i class="bi bi-chat-dots" aria-hidden="true"></i> Começar uma conversa
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="mt-3 d-flex justify-content-between flex-wrap gap-2">
+        <a href="{% url 'chat:chat' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar ao chat
+        </a>
+        <form method="post" action="{% url 'chat:nova' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i> Nova conversa
+            </button>
+        </form>
+    </div>
+
 </div>
 {% endblock %}
