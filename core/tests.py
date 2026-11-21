@@ -741,9 +741,9 @@ class MarcaENavegacaoTests(SimpleTestCase):
 
     @override_settings(DEBUG=True)
     def test_em_desenvolvimento_inicio_aponta_para_o_preview_da_landing(self):
-        """No dev a landing e' servida pelo menu_interface em :8000/site/."""
+        """No dev a landing e' servida por este app em /site/ (core:landing)."""
         html = re.sub(r'\s+', ' ', self._render())
-        self.assertIn('href="http://testserver:8000/site/"', html)
+        self.assertIn('href="http://testserver/site/"', html)
 
     @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
     def test_url_do_env_vence_o_padrao(self):
@@ -796,10 +796,10 @@ class InicioDoProdutoTests(SimpleTestCase):
 
     @override_settings(DEBUG=True)
     def test_inicio_aponta_para_o_preview_no_desenvolvimento(self):
-        """No dev a landing e' servida pelo menu_interface em :8000/site/."""
+        """No dev a landing e' servida por este app em /site/ (core:landing)."""
         resposta = self.client.get('/inicio/')
         self.assertEqual(resposta.status_code, 302)
-        self.assertEqual(resposta['Location'], 'http://testserver:8000/site/')
+        self.assertEqual(resposta['Location'], 'http://testserver/site/')
 
     @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
     def test_inicio_respeita_a_url_do_env(self):

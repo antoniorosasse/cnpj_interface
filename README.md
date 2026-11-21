@@ -29,6 +29,7 @@ que traduz perguntas em linguagem natural para SQL.
 - [Variáveis de ambiente](#variáveis-de-ambiente)
 - [Deploy](#deploy)
 - [Ambiente](#ambiente)
+- [Landing comercial (`/site/`)](#landing-comercial-site)
 - [Scripts de manutenção](#scripts-de-manutenção)
 - [Repositórios relacionados](#repositórios-relacionados)
 
@@ -52,6 +53,9 @@ que traduz perguntas em linguagem natural para SQL.
     |   |   +-- proximidade.html
     |   |   +-- detalhe.html
     |   |   +-- estatisticas.html
+    |   |   +-- landing.html        # landing comercial (standalone)
+    |   +-- landing.py              # conteudo + view da landing (core:landing)
+    |   +-- tests_landing.py        # 19 testes da landing
     |   +-- templatetags/
     |   |   +-- num_filters.py      # Filtros de formatacao de numero
     |   +-- conexoes.py             # Conexoes (AS/400, PG, Mongo)
@@ -859,6 +863,7 @@ corrigir. Isso resolve a maioria dos casos de nomes errados.
 
 | Método | URL | O que faz |
 |---|---|---|
+| GET | `/site/` | Landing comercial (nome `core:landing`; destino de `/inicio/`) |
 | GET | `/` | Lista de empresas |
 | GET | `/proximidade/` | Empresas num raio de 1 a 100 km de um CNPJ/CEP/endereço/cidade/coordenada |
 | GET | `/busca-rapida/` | Busca rápida via AJAX (JSON) |
@@ -1060,9 +1065,9 @@ tabela separada do `LogAcesso`) e é preenchida fora da web, pelo comando:
 # Testes
 
     python manage.py test chat       # 340 testes do chat
-    python manage.py test core       # 152 testes do core
+    python manage.py test core       # 241 testes do core
 
-Roda **340 testes** em `chat/tests/` (+ 152 em `core/tests.py`) = 492 no total:
+Roda **340 testes** em `chat/tests/` (+ 241 em `core/`: 222 de `core/tests.py` e 19 da landing em `core/tests_landing.py`) = 581 no total:
 
 - `test_embedding_service.py` - geração de vetor, sinônimos e substituição do `%s` no SQL
 - `test_models.py` - modelos `Conversa` + `Mensagem` (Postgres)
@@ -1122,6 +1127,33 @@ Na máquina NoteNeto:
 - **Local:** http://localhost:8002
 - **Produção:** https://cnpj.busquecnpj.com.br
 - **Chat isolado:** https://chat.busquecnpj.com.br
+
+# Landing comercial (`/site/`)
+
+A pagina inicial de marketing do produto (hero, 4 solucoes, servicos e contato)
+saiu do `menu_interface` e agora e' servida por este projeto em `/site/`
+(`core:landing`), no mesmo visual do portal (`portal.css`, Bootstrap 5.3 +
+Bootstrap Icons, tema claro/escuro com `sistema-tema` e `?tema=dark|light`).
+O template e' standalone (nao estende `base.html`): topbar de marketing com
+ancoras `#solucoes`/`#servicos`/`#contato`, links dos apps, Entrar e o switch
+de tema.
+
+- Conteudo/URLs em `core/landing.py`; view `landing_comercial`.
+- URLs por ambiente: dev `http://<host>:8002/` (cnpj/chat), `:8001` (AS/400) e
+  `http://<host>:8000/menu/` (portfolio); producao
+  `https://cnpj.busquecnpj.com.br/`, `https://chat.busquecnpj.com.br/chat/`,
+  `https://as400.busquecnpj.com.br/` e `https://arosasse.tec.br/`.
+- Selo "Sistemas no ar": health check de `/health/deep/` do cnpj/chat e do
+  AS/400, em paralelo, timeout de 1,5 s e cache em memoria (60 s online / 10 s
+  offline). Sem resposta conclusiva o selo cai para "Sistemas em operacao".
+- `site_home_url` (`core/context_processors.py`): `SITE_HOME_URL` do `.env`
+  vence; em DEBUG usa `request.build_absolute_uri('/site/')` (sem request:
+  `http://localhost:8002/site/`); em producao `https://busquecnpj.com.br/`.
+  A marca e o item "Inicio" do `base.html` apontam para ele; `/inicio/`
+  redireciona para o mesmo lugar.
+- Testes: `core/tests_landing.py` (19) cobrem rota, secoes, as 4 solucoes,
+  URLs dev/prod/host do request, SEO/canonical/OG, login, selo/health e
+  `site_home_url`.
 
 # Scripts de manutenção
 

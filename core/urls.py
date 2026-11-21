@@ -5,6 +5,11 @@ from . import views
 app_name = 'core'
 
 urlpatterns = [
+    # Landing comercial (pagina inicial do produto). Fica ANTES da raiz para
+    # nao ser capturada pela lista de empresas. E' o destino de /inicio/ e do
+    # item "Inicio" do shell (core/context_processors.py).
+    path('site/', views.landing_comercial, name='landing'),
+
     # Lista de empresas (com busca)
     path('', views.lista_empresas, name='lista'),
 

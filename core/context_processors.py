@@ -8,25 +8,28 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 from django.conf import settings
 
 
-# Porta do menu_interface no runserver local: e' ele quem serve a landing
-# do produto (busquecnpj.com.br) em /site/.
-PORTA_MENU_DEV = 8000
+# Porta do runserver local do cnpj_interface: e' ele quem serve a landing
+# do produto em /site/ (o menu_interface fica na 8000, so portfolio).
+PORTA_CNPJ_DEV = 8002
 
-# Producao: a landing e' o dominio raiz, servido pelo menu.service.
+# Producao: a landing e' o dominio raiz do produto (servido por este app).
 SITE_HOME_PRODUCAO = 'https://busquecnpj.com.br/'
 
 
 def url_inicio_do_produto(request=None):
     """
-    URL da pagina inicial do produto (landing do menu_interface).
+    URL da pagina inicial do produto (landing comercial em /site/).
 
     Ordem de resolucao:
       1. SITE_HOME_URL do .env, quando definida (vence sempre);
-      2. DEBUG=True  -> http://<host>:8000/site/  (preview da landing no dev);
+      2. DEBUG=True  -> request.build_absolute_uri('/site/')
+                        (ex.: http://127.0.0.1:8002/site/ no runserver);
+                        sem request -> http://localhost:8002/site/
       3. producao    -> https://busquecnpj.com.br/
 
-    O caminho /site/ responde em qualquer Host, entao o link do dev nao
-    depende do HOSTS_COMERCIAL configurado no menu_interface.
+    A landing agora e' servida por este proprio app (core:landing), entao o
+    link do dev nao depende mais do menu_interface nem da porta 8000. No
+    deploy o dominio raiz continua sendo busquecnpj.com.br.
 
     Usada pelo context processor (marca e item Inicio de base.html) e pela
     view core.views.inicio_do_produto (destino apos o login).
@@ -35,8 +38,9 @@ def url_inicio_do_produto(request=None):
     if url:
         return url
     if settings.DEBUG:
-        host = request.get_host().split(':')[0] if request else 'localhost'
-        return f'http://{host}:{PORTA_MENU_DEV}/site/'
+        if request is not None:
+            return request.build_absolute_uri('/site/')
+        return f'http://localhost:{PORTA_CNPJ_DEV}/site/'
     return SITE_HOME_PRODUCAO
 
 

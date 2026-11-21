@@ -11,6 +11,10 @@ from django.core.exceptions import PermissionDenied
 from django.views.decorators.http import require_POST
 
 from core.context_processors import url_inicio_do_produto
+
+# A view da landing comercial mora em core/landing.py (conteudo e URLs dos
+# apps separados das views de consulta). Reexportada aqui para as rotas.
+from core.landing import landing_comercial  # noqa: E402,F401
 from core.consultas_lista import (
     SQL_LISTA_CNPJ,
     SQL_LISTA_RAZAO_SOCIAL,
@@ -152,7 +156,7 @@ def inicio_do_produto(request):
 
     Destino do LOGIN_REDIRECT_URL e da troca de senha: depois de entrar, o
     usuario vai para a pagina inicial do produto (busquecnpj.com.br em
-    producao, preview em :8000/site/ no dev), nao direto para o chat.
+    producao, preview em :8002/site/ no dev), nao direto para o chat.
 
     A lista de empresas continua em Empresas (raiz do site).
     """

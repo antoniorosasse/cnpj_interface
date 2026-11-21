@@ -1,0 +1,471 @@
+{% load static %}
+<!-- /home/neto/cnpj_interface/core/templates/core/landing.html -->
+<!--
+  Landing comercial do produto (busquecnpj.com.br), servida por
+  core.landing.landing_comercial em /site/.
+
+  Template standalone: NAO estende core/base.html (a landing tem topbar de
+  marketing com ancoras, sem busca global nem menu do usuario). Usa o mesmo
+  design system (portal.css + Bootstrap 5.3 + Bootstrap Icons) e o tema
+  claro/escuro do sistema ('sistema-tema' + ?tema=dark|light).
+
+  As URLs dos apps vem do contexto (core/landing.py): dev por porta,
+  producao por subdominio. Nenhum host fixo aqui.
+-->
+<!DOCTYPE html>
+<html lang="pt-br" data-theme="light" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" id="meta-tema" content="#f5f8fb">
+    <title>busquecnpj — consulta de empresas, busca por proximidade e chat com IA</title>
+    <meta name="description" content="Consulta de CNPJ sobre os dados públicos da Receita Federal, busca de empresas por proximidade e chat com IA que responde em português consultando a base real.">
+    <link rel="canonical" href="https://busquecnpj.com.br/">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="busquecnpj">
+    <meta property="og:title" content="busquecnpj — dados públicos de empresas, prontos para usar">
+    <meta property="og:description" content="Consulta de CNPJ, busca por proximidade e chat com IA sobre 74,4 milhões de estabelecimentos da Receita Federal.">
+    <meta property="og:url" content="https://busquecnpj.com.br/">
+
+    {# Tema antes do CSS: evita o flash claro -> escuro ao carregar a pagina. #}
+    <script>
+    (function () {
+        /* ?tema=dark|light forca o tema (teste/print); senao vale o localStorage. */
+        var q = new URLSearchParams(window.location.search).get('tema');
+        var t = (q === 'dark' || q === 'light')
+            ? q
+            : (function () { try { return localStorage.getItem('sistema-tema'); } catch (e) { return null; } })();
+        if (t !== 'dark' && t !== 'light') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-bs-theme', t);
+        var meta = document.getElementById('meta-tema');
+        if (meta) { meta.setAttribute('content', t === 'dark' ? '#070e18' : '#f5f8fb'); }
+    })();
+    </script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="{% static 'css/sistema.css' %}?v=1">
+    {# portal.css carrega por ultimo: e a camada visual do portal. #}
+    <link rel="stylesheet" href="{% static 'css/portal.css' %}?v=20261120">
+    <style>
+        /* ============================================================
+           LANDING COMERCIAL - so o que e' especifico desta pagina.
+           Cores, tipografia e espacos saem dos tokens --p-* do portal,
+           entao claro/escuro funcionam sem regra duplicada.
+           ============================================================ */
+        html { scroll-behavior: smooth; }
+        body.ui-body { background-attachment: fixed; }
+
+        /* Topbar: marca + acoes (tema/hamburguer) na primeira linha e a
+           navegacao (collapse) abaixo no mobile; no desktop a ordem visual
+           fica marca | links | acoes. Sem isso o tema/hamburguer desciam
+           para baixo do menu aberto. */
+        .ui-topbar__inner .navbar-brand { order: 1; }
+        .ui-topbar__inner .ui-topbar__actions { order: 2; margin-left: auto; }
+        .ui-topbar__inner .navbar-collapse { order: 3; }
+        @media (min-width: 992px) {
+            .ui-topbar__inner .navbar-collapse { order: 2; }
+            .ui-topbar__inner .ui-topbar__actions { order: 3; }
+        }
+
+        /* ---------------- hero ---------------- */
+        .lp-hero {
+            padding: clamp(2.5rem, 6vw, 5rem) 0 clamp(2.25rem, 5vw, 4rem);
+            border-bottom: 1px solid var(--p-line);
+        }
+        .lp-hero h1 {
+            max-width: 24ch;
+            margin: 0 0 1rem;
+            font-size: clamp(2.1rem, 1.4rem + 3.1vw, 3.8rem);
+            font-weight: 780;
+            line-height: 1.03;
+            letter-spacing: -.045em;
+        }
+        .lp-hero h1 .lp-destaque {
+            /* Acento solido: o gradiente claro (oil-400) perdia contraste
+               no tema claro; var(--p-accent) e' escuro no claro e claro no
+               escuro, entao passa AA nos dois temas. */
+            color: var(--p-accent);
+            background: none;
+            -webkit-text-fill-color: currentColor;
+        }
+        .lp-hero__lead {
+            max-width: 60ch;
+            margin: 0 0 1.6rem;
+            color: var(--p-ink-soft);
+            font-size: clamp(1rem, .95rem + .25vw, 1.15rem);
+            line-height: 1.65;
+        }
+        .lp-selo {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            margin-bottom: 1.1rem;
+            padding: .35rem .7rem;
+            border: 1px solid var(--p-line-strong);
+            border-radius: var(--p-r-pill);
+            background: var(--p-surface);
+            color: var(--p-ink-soft);
+            font-size: .75rem;
+            font-weight: 650;
+            letter-spacing: .01em;
+            box-shadow: var(--p-shadow-1);
+        }
+        .lp-selo__ponto {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--p-ok);
+            box-shadow: 0 0 0 3px var(--p-ok-soft);
+        }
+        .lp-selo--warn .lp-selo__ponto { background: var(--p-warn); box-shadow: 0 0 0 3px var(--p-warn-soft); }
+        .lp-hero__acoes { gap: .65rem; }
+
+        /* ---------------- secoes ---------------- */
+        .lp-secao { padding: clamp(2.5rem, 5vw, 4.25rem) 0; }
+        .lp-secao--alt { background: var(--p-bg-deep); border-block: 1px solid var(--p-line); }
+        .lp-secao__head { max-width: 62ch; margin-bottom: clamp(1.5rem, 3vw, 2.25rem); }
+        .lp-secao__head h2 {
+            margin: 0 0 .45rem;
+            font-size: clamp(1.5rem, 1.2rem + .9vw, 2.1rem);
+            letter-spacing: -.03em;
+        }
+        .lp-secao__head p { margin: 0; color: var(--p-muted); }
+
+        /* ---------------- cards de solucao ---------------- */
+        .lp-solucao {
+            height: 100%;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .lp-solucao:hover {
+            transform: translateY(-2px);
+            border-color: var(--p-accent-line);
+            box-shadow: var(--p-shadow-2);
+        }
+        .lp-icone {
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            margin-bottom: .95rem;
+            border: 1px solid var(--p-accent-line);
+            border-radius: var(--p-r-md);
+            background: var(--p-accent-soft);
+            color: var(--p-accent);
+            font-size: 1.25rem;
+        }
+        .lp-solucao h3 { margin: 0 0 .45rem; font-size: 1.06rem; letter-spacing: -.015em; }
+        .lp-solucao p { margin: 0; color: var(--p-muted); font-size: .9rem; line-height: 1.6; }
+        .lp-nota-demo {
+            margin-top: .9rem !important;
+            padding: .55rem .65rem;
+            border-left: 3px solid var(--p-accent);
+            border-radius: 0 var(--p-r-xs) var(--p-r-xs) 0;
+            background: var(--p-accent-soft);
+            color: var(--p-ink-soft) !important;
+            font-size: .78rem !important;
+        }
+        .lp-nota-demo code { background: var(--p-surface); color: var(--p-ink); }
+        .lp-solucao__foot { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+        .lp-link-app {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            color: var(--p-accent);
+            font-size: .84rem;
+            font-weight: 700;
+            text-decoration: none;
+        }
+        .lp-link-app:hover { color: var(--p-accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+
+        /* ---------------- servicos ---------------- */
+        .lp-servico { height: 100%; }
+        .lp-servico h3 { margin: .1rem 0 .5rem; font-size: 1.02rem; }
+        .lp-servico p { margin: 0; color: var(--p-muted); font-size: .875rem; line-height: 1.6; }
+
+        /* ---------------- rodape ---------------- */
+        .lp-rodape { margin-top: 0; }
+        .lp-rodape__grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
+            gap: 2rem;
+            padding-block: clamp(2.25rem, 4vw, 3.25rem) 1.75rem;
+        }
+        .lp-rodape__titulo {
+            margin: 0 0 .7rem;
+            color: var(--p-muted);
+            font-size: .6875rem;
+            font-weight: 700;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+        }
+        .lp-rodape__marca { display: flex; align-items: center; gap: .6rem; margin-bottom: .6rem; color: var(--p-ink); font-weight: 750; }
+        .lp-rodape__marca .ui-brand-mark { width: 28px; height: 28px; border-radius: 9px; font-size: .85rem; box-shadow: none; }
+        .lp-rodape p { color: var(--p-muted); font-size: .85rem; line-height: 1.6; }
+        .lp-lista { margin: 0; padding: 0; list-style: none; display: grid; gap: .42rem; }
+        .lp-lista a { color: var(--p-ink-soft); font-size: .85rem; text-decoration: none; }
+        .lp-lista a:hover { color: var(--p-accent); text-decoration: underline; text-underline-offset: 3px; }
+        .lp-lista .bi { margin-right: .35rem; color: var(--p-muted); }
+        .lp-lista li { display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
+        .lp-rodape__base {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: .5rem 1rem;
+            padding-block: 1rem;
+            border-top: 1px solid var(--p-line);
+            color: var(--p-muted);
+            font-size: .75rem;
+        }
+        .lp-rodape__base a { color: var(--p-muted); text-decoration: underline; }
+        .lp-rodape__base a:hover { color: var(--p-accent); }
+
+        @media (max-width: 991.98px) {
+            .lp-rodape__grid { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 575.98px) {
+            .lp-hero { padding-top: 2rem; }
+            .lp-rodape__grid { grid-template-columns: 1fr; gap: 1.5rem; }
+        }
+    </style>
+</head>
+<body class="ui-body">
+
+    <a class="ui-skip" href="#conteudo">Ir para o conteúdo</a>
+
+    <!-- ===================== TOPBAR DE MARKETING ===================== -->
+    <header class="ui-topbar">
+        <nav class="navbar navbar-expand-lg ui-navbar" aria-label="Navegação principal">
+            <div class="container ui-topbar__inner">
+                <a class="navbar-brand" href="{% url 'core:landing' %}" title="Página inicial do busquecnpj">
+                    <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                    <span class="ui-brand-text">
+                        <span class="ui-brand-name">busca CNPJ</span>
+                        <span class="ui-brand-tag">Consulta e inteligência de empresas</span>
+                    </span>
+                </a>
+
+                <div class="ui-topbar__actions">
+                    <button type="button" id="btn-tema" class="ui-theme-switch" role="switch" aria-checked="false" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro">
+                        <span class="ui-theme-knob"><i class="bi bi-moon-stars" id="icone-tema" aria-hidden="true"></i></span>
+                    </button>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir menu de navegação">
+                        <span class="navbar-toggler-icon"><i class="bi bi-list" aria-hidden="true"></i></span>
+                    </button>
+                </div>
+
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ui-menu">
+                        <li class="nav-item">
+                            <a class="nav-link ui-menu-link" href="#solucoes"><i class="bi bi-grid" aria-hidden="true"></i> Soluções</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link ui-menu-link" href="#servicos"><i class="bi bi-briefcase" aria-hidden="true"></i> Serviços</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link ui-menu-link" href="#contato"><i class="bi bi-envelope" aria-hidden="true"></i> Contato</a>
+                        </li>
+                    </ul>
+
+                    <ul class="navbar-nav ui-menu" aria-label="Aplicações do sistema">
+                        {% for app in apps_nav %}
+                        <li class="nav-item">
+                            <a class="nav-link ui-menu-link" href="{{ app.url }}" target="_blank" rel="noopener" title="{{ app.nome }} — abre em nova aba">
+                                <i class="{{ app.icone }}" aria-hidden="true"></i> {{ app.nome }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+
+                    <a class="ui-login-link" href="{% url 'login' %}">
+                        <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar
+                    </a>
+                </div>
+
+            </div>
+        </nav>
+    </header>
+
+    <main class="ui-main" id="conteudo" tabindex="-1">
+
+        <!-- ===================== HERO ===================== -->
+        <header class="lp-hero">
+            <div class="container">
+                <span class="lp-selo{% if not status.todos_online %} lp-selo--warn{% endif %}">
+                    <span class="lp-selo__ponto" aria-hidden="true"></span>
+                    {{ status.texto }} · 74,4 milhões de estabelecimentos
+                </span>
+                <h1>
+                    Dados públicos de empresas,<br class="d-none d-lg-block">
+                    <span class="lp-destaque">prontos para consultar.</span>
+                </h1>
+                <p class="lp-hero__lead">
+                    Consulta de CNPJ, busca por proximidade e chat com IA — sobre a base
+                    pública da Receita Federal, com endereço, sócios e atividade de cada
+                    estabelecimento do Brasil.
+                </p>
+                <div class="ui-cluster lp-hero__acoes">
+                    <a class="btn btn-primary btn-lg" href="#solucoes">
+                        Ver as soluções <i class="bi bi-arrow-down" aria-hidden="true"></i>
+                    </a>
+                    <a class="btn btn-secondary btn-lg" href="#contato">
+                        Falar sobre um projeto
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===================== SOLUCOES ===================== -->
+        <section class="lp-secao" id="solucoes">
+            <div class="container">
+                <div class="lp-secao__head">
+                    <span class="ui-eyebrow">Soluções</span>
+                    <h2>Quatro aplicações, uma base só</h2>
+                    <p>
+                        Cada aplicação abre uma janela diferente sobre os mesmos dados
+                        públicos da Receita Federal: consulta, conversa, proximidade e
+                        totais da base.
+                    </p>
+                </div>
+
+                <div class="row g-4">
+                    {% for solucao in solucoes %}
+                    <div class="col-12 col-lg-6">
+                        <article class="ui-card lp-solucao">
+                            <div class="ui-card__body">
+                                <span class="lp-icone" aria-hidden="true"><i class="{{ solucao.icone }}"></i></span>
+                                <h3>{{ solucao.nome }}</h3>
+                                <p>{{ solucao.descricao }}</p>
+                                {% if solucao.nota_demo %}
+                                <p class="lp-nota-demo">
+                                    <i class="bi bi-key" aria-hidden="true"></i> {{ solucao.nota_demo }}
+                                </p>
+                                {% endif %}
+                            </div>
+                            <div class="ui-card__foot lp-solucao__foot">
+                                <a class="lp-link-app" href="{{ solucao.url }}" target="_blank" rel="noopener">
+                                    Abrir a aplicação <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                                </a>
+                                <span class="ui-muted" style="font-size:.75rem">Abre em nova aba</span>
+                            </div>
+                        </article>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== SERVICOS ===================== -->
+        <section class="lp-secao lp-secao--alt" id="servicos">
+            <div class="container">
+                <div class="lp-secao__head">
+                    <span class="ui-eyebrow">Serviços</span>
+                    <h2>Do banco à tela</h2>
+                    <p>
+                        Além das aplicações, atendo projetos que precisam transformar dado
+                        público em produto.
+                    </p>
+                </div>
+
+                <div class="row g-4">
+                    {% for servico in servicos %}
+                    <div class="col-12 col-md-4">
+                        <article class="ui-card lp-servico">
+                            <div class="ui-card__body">
+                                <span class="lp-icone" aria-hidden="true"><i class="{{ servico.icone }}"></i></span>
+                                <h3>{{ servico.titulo }}</h3>
+                                <p>{{ servico.texto }}</p>
+                            </div>
+                        </article>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ===================== FOOTER / CONTATO ===================== -->
+    <footer class="ui-footer lp-rodape" id="contato">
+        <div class="container">
+            <div class="lp-rodape__grid">
+                <div>
+                    <p class="lp-rodape__marca">
+                        <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                        busquecnpj
+                    </p>
+                    <p>
+                        Consulta de empresas sobre os dados públicos da Receita
+                        Federal, com busca por proximidade e chat com IA.
+                    </p>
+                </div>
+
+                <div>
+                    <p class="lp-rodape__titulo">Contato</p>
+                    <ul class="lp-lista">
+                        <li>
+                            <a href="{{ url_github }}" target="_blank" rel="noopener">
+                                <i class="bi bi-github" aria-hidden="true"></i>github.com/antoniorosasse
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ url_portfolio }}" target="_blank" rel="noopener">
+                                <i class="bi bi-person-badge" aria-hidden="true"></i>Portfólio
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="lp-rodape__titulo">Sistemas</p>
+                    <ul class="lp-lista">
+                        {% for solucao in solucoes %}
+                        <li>
+                            <a href="{{ solucao.url }}" target="_blank" rel="noopener">
+                                <i class="{{ solucao.icone }}" aria-hidden="true"></i>{{ solucao.nome }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                        <li>
+                            <a href="{{ sistemas.as400_app }}" target="_blank" rel="noopener">
+                                <i class="bi bi-person-lines-fill" aria-hidden="true"></i>IBM i · DB2 · Pessoas
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div>
+                    <p class="lp-rodape__titulo">Sistemas no ar</p>
+                    <ul class="lp-lista">
+                        {% for sistema in status.sistemas %}
+                        <li>
+                            <a href="{{ sistema.url }}" target="_blank" rel="noopener">{{ sistema.nome }}</a>
+                            <span class="ui-badge ui-badge--{{ sistema.status_cor }}">{{ sistema.rotulo }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <p class="mt-3 mb-0" style="font-size:.75rem">
+                        {% if versao %}Versão {{ versao }} · {% endif %}Django {{ versao_django }} · {{ ambiente }}
+                    </p>
+                </div>
+            </div>
+
+            <div class="lp-rodape__base">
+                <span>Dados públicos · Lei de Acesso à Informação</span>
+                <span>
+                    Inclui dados do GeoLite2 criados pela MaxMind,
+                    disponíveis em <a href="https://www.maxmind.com" target="_blank" rel="noopener">maxmind.com</a>.
+                </span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/interface-corporativa.js' %}?v=20261120" defer></script>
+</body>
+</html>
