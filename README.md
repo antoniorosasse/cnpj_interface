@@ -1102,7 +1102,9 @@ Ver `.env.example` para a lista completa. As principais:
 - `DEEPSEEK_API_KEY` - chave da API do chat
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrão: `deepseek-chat`)
 - `CHAT_DEEPSEEK_BASE_URL` - endpoint compatível OpenAI (padrão: `https://api.deepseek.com`)
-- `AS400_*` - conexão com o IBM i (`AS400_JDBC_JAR` aponta pro `lib/jt400.jar`; usada pelo `testar_simple.py` e pelas conexões de `core/conexoes.py`)
+- `AS400_*` - **removidos**: o `cnpj_interface` não fala mais com o IBM i
+  (a classe `ConexaoAS400` e o `testar_simple.py` saíram; o `lib/jt400.jar`
+  fica só no `as400_interface`)
 - `GEOIP_FONTE` - fonte da localização dos IPs: `maxmind` (padrão, base local),
   `ip-api` (`http://ip-api.com/batch`) ou `ipapi` (`https://ipapi.co`)
 - `GEOIP_CIDADE_MMDB` - caminho do `GeoLite2-City.mmdb` (vazio = `geoip/GeoLite2-City.mmdb`)
@@ -1135,3 +1137,14 @@ MongoDB de uma vez.
 - [ProjetoCargaDados](https://github.com/antoniorosasse/ProjetoCargaDados) - carrega os dados que este projeto consulta
 - [as400_interface](https://github.com/antoniorosasse/as400_interface)
 - [menu_interface](https://github.com/antoniorosasse/menu_interface)
+
+
+## Interface corporativa (20/11/2026)
+
+A interface usa a paleta #0267c1, #0075c4, #efa00b, #d65108 e #591f0a, com superficies claras e tema escuro. A lista mantem os filtros e cursores originais. Detalhes abrem em painel lateral usando a propria rota Django, sem duplicar SQL ou criar uma API paralela. Ctrl/Cmd+clique e a opcao de pagina completa continuam disponiveis. Sem JavaScript, formularios, links e detalhes funcionam por navegacao tradicional.
+
+O estilo global tambem se aplica a proximidade, estatisticas, chat, historico e login. PDF, contato/Maps, sessoes, CSRF, historico, regras de acesso e consultas de dados permanecem no codigo original. O filtro por socios do prototipo nao foi incluido: a lista original nao oferece esse contrato. O campo principal pesquisa razao social; nome fantasia e CNPJ ficam em Mais filtros, respeitando a semantica existente.
+
+As estatisticas e a IA desta versao usam as integracoes reais configuradas no projeto; nao ha dados ficticios ou respostas simuladas adicionadas pela interface.
+
+Arquivos: static/css/interface-corporativa.css, static/js/interface-corporativa.js, base/lista/detalhe/proximidade em core/templates/core/. Nao exige migracoes nem novas dependencias. Validar com python manage.py check, python manage.py test core e homologacao visual usando um ambiente de dados de teste antes de publicar.

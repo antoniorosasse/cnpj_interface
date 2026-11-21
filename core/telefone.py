@@ -22,7 +22,7 @@ PREFIXO_CELULAR = '9'
 CODIGO_BRASIL = '55'
 
 
-def _digitos(valor) -> str:
+def digitos(valor) -> str:
     """Mantem so os digitos de um campo (que pode vir None, int ou str)."""
     return ''.join(c for c in str(valor or '') if c.isdigit())
 
@@ -33,8 +33,8 @@ def montar_whatsapp_url(ddd, telefone, mensagem: str = '') -> str:
 
     mensagem vira o texto pre-preenchido (?text=), opcional.
     """
-    ddd = _digitos(ddd)
-    telefone = _digitos(telefone)
+    ddd = digitos(ddd)
+    telefone = digitos(telefone)
 
     if len(ddd) != 2 or not DDD_MIN <= int(ddd) <= DDD_MAX:
         return ''

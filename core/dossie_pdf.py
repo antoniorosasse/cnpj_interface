@@ -15,10 +15,13 @@ Regras do documento:
 Sem acentos no codigo. O texto que vai para o papel tem acento.
 """
 
-import re
 from datetime import date, datetime
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
+
+from django.utils import timezone
+
+from .telefone import digitos
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -76,12 +79,8 @@ def esc(valor, padrao='-'):
     return texto.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def _digitos(valor):
-    return re.sub(r'\D', '', str(valor or ''))
-
-
 def formatar_cnpj(valor):
-    d = _digitos(valor)
+    d = digitos(valor)
     if len(d) != 14:
         return str(valor or '-')
     return f'{d[0:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:14]}'
@@ -89,7 +88,7 @@ def formatar_cnpj(valor):
 
 def mascarar_cpf(valor):
     """CPF (11 digitos) sai mascarado; CNPJ de socio PJ sai formatado."""
-    d = _digitos(valor)
+    d = digitos(valor)
     if len(d) == 14:
         return formatar_cnpj(d)
     if len(d) == 11:
@@ -102,7 +101,7 @@ def formatar_cnpj_basico(valor):
     A base entrega do socio PJ apenas o cnpj_basico (8 digitos, sem ordem/DV).
     Formata como 41.246.569 e deixa claro que e a raiz do CNPJ.
     """
-    d = _digitos(valor)
+    d = digitos(valor)
     if len(d) == 8:
         return f'{d[0:2]}.{d[2:5]}.{d[5:8]}'
     return str(valor or '-')
@@ -397,7 +396,7 @@ def gerar_pdf_dossie(dados, agora=None):
     estabelecimentos = dados.get('estabelecimentos') or []
     socios = dados.get('socios') or []
     total_filiais = dados.get('total_filiais', 0)
-    agora = agora or datetime.now()
+    agora = agora or timezone.localtime()
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(

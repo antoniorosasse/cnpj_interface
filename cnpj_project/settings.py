@@ -253,12 +253,7 @@ LOGIN_REDIRECT_URL = '/inicio/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 # ==================== CONFIGURAÇÕES DOS BANCOS (para conexões diretas, se necessário) ====================
-AS400_HOST = os.getenv('AS400_HOST')
-AS400_USER = os.getenv('AS400_USER')
-AS400_PASSWORD = os.getenv('AS400_PASSWORD')
-AS400_LIBRARY = os.getenv('AS400_LIBRARY')
-AS400_JDBC_JAR = os.getenv('AS400_JDBC_JAR')
-
+# AS400_* saiu daqui junto com a classe ConexaoAS400: nenhuma view usa o IBM i.
 PG_HOST = os.getenv('PG_HOST')
 PG_PORT = os.getenv('PG_PORT')
 PG_DB = os.getenv('PG_DB')

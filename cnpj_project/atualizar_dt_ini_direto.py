@@ -13,7 +13,6 @@ Uso:
 """
 
 import pandas as pd
-import psycopg2
 import time
 import os
 import glob
@@ -24,6 +23,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    from pg import conectar
+except ImportError:  # rodando como -m cnpj_project.atualizar_dt_ini_*
+    from cnpj_project.pg import conectar
+
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
@@ -31,30 +35,13 @@ PARQUET_DIR = "/home/neto/DataSetsTeste/base_cnpj"  # ← JÁ AJUSTADO!
 PARQUET_PATTERN = "Estabelecimentos*.parquet"
 CHUNK_SIZE = 500000  # 500 mil registros
 
-DB_CONFIG = {
-    'dbname': os.getenv('PG_DB', 'bancocnpj'),
-    'user': os.getenv('PG_USER', 'arosasse'),
-    'password': os.getenv('PG_PASSWORD'),
-    'host': os.getenv('PG_HOST', 'localhost'),
-    'port': os.getenv('PG_PORT', '5432'),
-}
-
-
 # ============================================================
 # FUNÇÕES
 # ============================================================
+
+
 def formatar_tempo(segundos):
     return str(timedelta(seconds=int(segundos)))
-
-
-def conectar_postgresql():
-    return psycopg2.connect(
-        dbname=DB_CONFIG['dbname'],
-        user=DB_CONFIG['user'],
-        password=DB_CONFIG['password'],
-        host=DB_CONFIG['host'],
-        port=DB_CONFIG['port']
-    )
 
 
 def processar_arquivo(arquivo, cur, conn):
@@ -207,7 +194,7 @@ def main():
         print(f"   {i}. {os.path.basename(arq)} ({tamanho_mb:.1f} MB)")
     print()
     
-    conn = conectar_postgresql()
+    conn = conectar()
     cur = conn.cursor()
     print("✅ Conectado ao PostgreSQL")
     

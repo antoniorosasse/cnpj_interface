@@ -10,7 +10,6 @@ Uso:
 """
 
 import pandas as pd
-import psycopg2
 from psycopg2.extras import execute_values
 import time
 import os
@@ -22,6 +21,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    from pg import conectar
+except ImportError:  # rodando como -m cnpj_project.atualizar_dt_ini_*
+    from cnpj_project.pg import conectar
+
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
@@ -31,17 +35,11 @@ PARQUET_PATTERN = "Estabelecimentos*.parquet"
 CHUNK_SIZE = 100000
 BATCH_SIZE = 10000
 
-DB_CONFIG: Dict[str, Any] = {
-    'dbname': os.getenv('PG_DB', 'bancocnpj'),
-    'user': os.getenv('PG_USER', 'arosasse'),
-    'password': os.getenv('PG_PASSWORD'),
-    'host': os.getenv('PG_HOST', 'localhost'),
-    'port': os.getenv('PG_PORT', '5432'),
-}
-
 # ============================================================
 # FUNÇÕES
 # ============================================================
+
+
 def formatar_tempo(segundos):
     """Formata segundos em HH:MM:SS"""
     return str(timedelta(seconds=int(segundos)))
@@ -82,17 +80,6 @@ def listar_arquivos():
     padrao = os.path.join(PARQUET_DIR, PARQUET_PATTERN)
     arquivos = sorted(glob.glob(padrao))
     return arquivos
-
-
-def conectar_postgresql():
-    """Conecta ao PostgreSQL"""
-    return psycopg2.connect(
-        dbname=DB_CONFIG['dbname'],
-        user=DB_CONFIG['user'],
-        password=DB_CONFIG['password'],
-        host=DB_CONFIG['host'],
-        port=DB_CONFIG['port']
-    )
 
 
 def processar_arquivo(arquivo, cur, conn, stats):
@@ -233,7 +220,7 @@ def main():
     print()
 
     try:
-        conn = conectar_postgresql()
+        conn = conectar()
         cur = conn.cursor()
         print("✅ Conectado ao PostgreSQL")
     except Exception as e:

@@ -17,6 +17,11 @@ from django.template.loader import render_to_string
 from django.test import SimpleTestCase, RequestFactory, override_settings
 from django.urls import get_resolver, reverse
 
+from core.consultas_lista import (
+    SQL_LISTA_CNPJ,
+    SQL_LISTA_RAZAO_SOCIAL,
+    montar_filtros,
+)
 from core.dossie_pdf import (
     esc,
     formatar_cnpj,
@@ -600,7 +605,7 @@ class ListaEmpresasTemplateTests(SimpleTestCase):
     # -------------------------------------------------- colunas novas
     def test_cabecalho_tem_cidade_e_filiais(self):
         html = self._render()
-        self.assertIn('>Cidade</th>', html)
+        self.assertIn('>Município / UF</th>', html)   # cidade vem de c_municipios_geo
         self.assertIn('>Filiais</th>', html)
 
     def test_linha_mostra_o_nome_do_municipio(self):
@@ -609,11 +614,12 @@ class ListaEmpresasTemplateTests(SimpleTestCase):
 
     def test_linha_mostra_a_quantidade_de_filiais(self):
         html = self._render()
-        self.assertIn('3 filial(is)', html)
+        # Na interface corporativa a coluna "Filiais" e' numerica (sem "filial(is)")
+        self.assertIn('<td class="ui-extra-column">3</td>', html)
 
-    def test_empresa_sem_filial_mostra_traco(self):
+    def test_empresa_sem_filial_mostra_zero(self):
         html = self._render([self._empresa(total_filiais=0)])
-        self.assertNotIn('0 filial(is)', html)
+        self.assertIn('<td class="ui-extra-column">0</td>', html)
 
     # -------------------------------------------------- filtro de cidade
     def test_cidade_escolhida_fica_selecionada(self):
@@ -668,11 +674,12 @@ class ListaEmpresasTemplateTests(SimpleTestCase):
         self.assertNotIn('name="page"', html)
 
     # -------------------------------------------------- ver detalhes
-    def test_ver_detalhes_abre_em_nova_aba(self):
+    def test_detalhes_abrem_no_painel_lateral(self):
+        """A ficha abre no painel da propria lista; Ctrl/Cmd+clique segue o link."""
         html = self._render()
-        self.assertIn('title="Ver detalhes (nova aba)"', html)
-        self.assertIn('target="_blank" rel="noopener"', html)
         self.assertIn('/empresa/02831172000190/', html)
+        self.assertIn('data-company-detail', html)
+        self.assertIn('id="ui-details-panel"', html)
 
 
 
@@ -717,7 +724,7 @@ class MarcaENavegacaoTests(SimpleTestCase):
 
     def test_marca_no_topo_e_no_rodape(self):
         html = self._render()
-        self.assertIn('</i> busquecnpj', html)                      # navbar
+        self.assertIn('busca CNPJ', html)                           # navbar (marca corporativa)
         self.assertIn('busquecnpj — Consulta de empresas', html)    # rodape
         self.assertNotIn('Sistema CNPJ', html)
 
@@ -2253,3 +2260,55 @@ class EstatisticasTemplateTests(SimpleTestCase):
         self.assertIn('Recalculando...', html)
         self.assertIn('disabled', html)
 
+
+
+class ConsultasListaTests(SimpleTestCase):
+    """WHERE extra e SQL da lista de empresas (core/consultas_lista.py).
+
+    Nada aqui toca no banco: montar_filtros so produz texto e parametros.
+    """
+
+    def test_sem_filtro_nao_gera_where(self):
+        self.assertEqual(montar_filtros(), ('', []))
+
+    def test_cnpj_de_14_digitos_usa_indice_composto(self):
+        sql, params = montar_filtros(cnpj='12345678000199')
+        self.assertEqual(sql, ' AND e.cnpj_basico = %s AND e.cnpj_ordem = %s AND e.cnpj_dv = %s')
+        self.assertEqual(params, ['12345678', '0001', '99'])
+
+    def test_cnpj_parcial_usa_like_prefixado(self):
+        sql, params = montar_filtros(cnpj='123')
+        self.assertEqual(sql, ' AND e.cnpj_basico LIKE %s')
+        self.assertEqual(params, ['123%'])
+
+    def test_situacao_usa_o_codigo_recebido(self):
+        sql, params = montar_filtros(situacao_codigo=8)
+        self.assertEqual(sql, ' AND e.cd_sit_cadastro = %s')
+        self.assertEqual(params, [8])
+
+    def test_situacao_none_nao_filtra(self):
+        self.assertEqual(montar_filtros(situacao_codigo=None), ('', []))
+
+    def test_uf_vai_em_maiuscula(self):
+        self.assertEqual(montar_filtros(uf='pr')[1], ['PR'])
+
+    def test_simples_e_mei(self):
+        sql, params = montar_filtros(simples='S', mei='N')
+        self.assertIn("EXISTS (SELECT 1 FROM c_simples", sql)
+        self.assertIn("NOT EXISTS (SELECT 1 FROM c_simples", sql)
+        self.assertEqual(params, [])
+
+    def test_nome_fantasia_passa_o_termo_duas_vezes(self):
+        # UNION matriz + filial: dois %s, dois parametros
+        sql, params = montar_filtros(nome_fantasia='MERCADO')
+        self.assertEqual(sql.count('%s'), 2)
+        self.assertEqual(params, ['%MERCADO%', '%MERCADO%'])
+
+    def test_sql_da_lista_so_muda_o_join_de_empresas(self):
+        self.assertIn('INNER JOIN c_empresas', SQL_LISTA_RAZAO_SOCIAL)
+        self.assertIn('LEFT JOIN c_empresas', SQL_LISTA_CNPJ)
+        self.assertIn('WHERE e.cd_matriz_filial = 1', SQL_LISTA_CNPJ)
+        self.assertEqual(
+            SQL_LISTA_RAZAO_SOCIAL.replace('INNER JOIN c_empresas', 'JOIN c_empresas'),
+            SQL_LISTA_CNPJ.replace('LEFT JOIN c_empresas', 'JOIN c_empresas'),
+        )
