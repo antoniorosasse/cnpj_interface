@@ -1,96 +1,301 @@
-/* Melhoria progressiva: consultas, URLs e respostas continuam no Django. */
+/* Melhoria progressiva: consultas, URLs e respostas continuam no Django.
+   Este arquivo cuida do tema, da busca global, do toast, de copiar CNPJ,
+   dos filtros avancados, do painel lateral (drawer) e das abas do detalhe.
+   Nenhum seletor do contrato e renomeado aqui. */
 (function () {
     'use strict';
     var root = document.documentElement;
     var toastTimer;
+
+    /* ---------------------------------------------------------------- tema */
+    function pintaTema(t) {
+        root.setAttribute('data-theme', t);
+        root.setAttribute('data-bs-theme', t);
+        var icone = document.getElementById('icone-tema');
+        var botao = document.getElementById('btn-tema');
+        var meta = document.getElementById('meta-tema');
+        if (icone) { icone.className = t === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
+        if (botao) { botao.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false'); }
+        if (meta) { meta.setAttribute('content', t === 'dark' ? '#070e18' : '#f5f8fb'); }
+    }
+    function temaAtual() { return root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
+    pintaTema(temaAtual());
+
+    var botaoTema = document.getElementById('btn-tema');
+    if (botaoTema && !botaoTema.dataset.uiTema) {
+        botaoTema.dataset.uiTema = '1';
+        botaoTema.addEventListener('click', function () {
+            var novo = temaAtual() === 'dark' ? 'light' : 'dark';
+            try { localStorage.setItem('sistema-tema', novo); } catch (e) { /* modo privado */ }
+            pintaTema(novo);
+        });
+    }
+
+    /* ---------------------------------------------------------------- toast */
     function toast(text) {
         var box = document.getElementById('ui-toast');
-        if (!box) { box = document.createElement('div'); box.id = 'ui-toast'; box.className = 'ui-toast'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
-        box.textContent = text; box.hidden = false;
-        clearTimeout(toastTimer); toastTimer = setTimeout(function () { box.hidden = true; }, 3000);
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'ui-toast';
+            box.className = 'ui-toast';
+            box.setAttribute('role', 'status');
+            box.setAttribute('aria-live', 'polite');
+            document.body.appendChild(box);
+        }
+        box.textContent = text;
+        box.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { box.hidden = true; }, 3200);
     }
-    async function copy(text) {
-        var focus = document.activeElement;
+
+    /* ---------------------------------------------------------- copiar CNPJ */
+    async function copiar(texto) {
+        var foco = document.activeElement;
         try {
-            if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); }
-            else { var input = document.createElement('textarea'); input.value = text; input.style.position = 'fixed'; input.style.opacity = '0'; document.body.appendChild(input); input.select(); var ok = document.execCommand('copy'); input.remove(); if (focus) { focus.focus(); } if (!ok) { throw new Error('clipboard'); } }
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(texto);
+            } else {
+                var campo = document.createElement('textarea');
+                campo.value = texto;
+                campo.style.position = 'fixed';
+                campo.style.opacity = '0';
+                document.body.appendChild(campo);
+                campo.select();
+                var ok = document.execCommand('copy');
+                campo.remove();
+                if (foco) { foco.focus(); }
+                if (!ok) { throw new Error('clipboard'); }
+            }
             toast('CNPJ copiado.');
-        } catch (error) { toast('Não foi possível copiar. Selecione o CNPJ e copie manualmente.'); }
+        } catch (erro) {
+            toast('Não foi possível copiar. Selecione o CNPJ e copie manualmente.');
+        }
     }
-    document.addEventListener('click', function (event) {
-        var button = event.target.closest('[data-copy-cnpj]');
-        if (button) { event.preventDefault(); copy(button.dataset.copyCnpj); }
+    document.addEventListener('click', function (evento) {
+        var botao = evento.target.closest('[data-copy-cnpj]');
+        if (botao) { evento.preventDefault(); copiar(botao.dataset.copyCnpj); }
     });
-    document.querySelectorAll('.ui-navbar a.nav-link').forEach(function (link) {
-        var url = new URL(link.href, location.href);
-        if (url.origin === location.origin && url.pathname === location.pathname) { link.classList.add('active'); link.setAttribute('aria-current', 'page'); }
-    });
-    /* Relaciona labels e campos dos formularios originais. */
-    document.querySelectorAll('form label').forEach(function (label, index) {
+
+    /* ------------------------------------------------------- busca global */
+    /* Sem JS o form envia razao_social. Com JS, a partir de 8 digitos
+       (ignorando pontuacao) o valor vira o parametro cnpj da mesma view. */
+    var buscaGlobal = document.querySelector('[data-ui-global-search]');
+    if (buscaGlobal) {
+        var campoBusca = buscaGlobal.querySelector('input[name="razao_social"]');
+        var campoCnpj = buscaGlobal.querySelector('[data-ui-global-cnpj]');
+        buscaGlobal.addEventListener('submit', function () {
+            if (!campoBusca || !campoCnpj) { return; }
+            var digitos = campoBusca.value.replace(/\D/g, '');
+            if (digitos.length >= 8) {
+                campoCnpj.value = digitos;
+                campoCnpj.disabled = false;
+                campoBusca.disabled = true;
+            } else {
+                campoCnpj.value = '';
+                campoCnpj.disabled = true;
+            }
+        });
+    }
+
+    /* --------------------------------------- labels de formularios antigos */
+    document.querySelectorAll('form label').forEach(function (label, indice) {
         if (label.htmlFor) { return; }
-        var field = label.parentElement.querySelector('input:not([type=hidden]), select, textarea');
-        if (field) { if (!field.id) { field.id = 'ui-field-' + index; } label.htmlFor = field.id; }
+        var campo = label.parentElement.querySelector('input:not([type=hidden]), select, textarea');
+        if (campo) {
+            if (!campo.id) { campo.id = 'ui-field-' + indice; }
+            label.htmlFor = campo.id;
+        }
     });
+
+    /* ------------------------------------------------- filtros avancados */
     var advanced = document.getElementById('ui-advanced');
     var advancedButton = document.getElementById('ui-advanced-toggle');
     if (advanced && advancedButton) {
-        var used = Array.from(advanced.querySelectorAll('input, select')).some(function (field) { return field.value && field.name !== 'ordem'; });
-        advanced.hidden = !used; advancedButton.hidden = false; advancedButton.setAttribute('aria-expanded', String(used));
-        advancedButton.addEventListener('click', function () { advanced.hidden = !advanced.hidden; advancedButton.setAttribute('aria-expanded', String(!advanced.hidden)); });
-    }
-    /* Uma troca de UF nao deve reenviar o municipio da UF anterior. */
-    var uf = document.querySelector('.ui-search-form select[name=uf]');
-    if (uf) { uf.removeAttribute('onchange'); uf.addEventListener('change', function () { var city = uf.form.querySelector('[name=municipio]'); if (city) { city.value = ''; } if (uf.form.requestSubmit) { uf.form.requestSubmit(); } else { uf.form.submit(); } }); }
-    var panel = document.getElementById('ui-details-panel');
-    if (panel) {
-        var content = document.getElementById('ui-details-content');
-        var layout = document.getElementById('ui-results-layout');
-        var close = document.getElementById('ui-details-close');
-        var full = document.getElementById('ui-details-full');
-        var status = document.getElementById('ui-panel-status');
-        var opener = null;
-        var pending;
-        function closePanel() { if (pending) { pending.abort(); } panel.hidden = true; layout.classList.remove('ui-has-detail'); document.body.classList.remove('ui-panel-open'); content.replaceChildren(); document.querySelectorAll('.ui-row-selected').forEach(function (row) { row.classList.remove('ui-row-selected'); }); if (opener && opener.isConnected) { opener.focus(); } }
-        close.addEventListener('click', closePanel);
-        document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !panel.hidden) { closePanel(); } });
-        document.addEventListener('click', function (event) {
-            var link = event.target.closest('a[data-company-detail]');
-            if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) { return; }
-            var url = new URL(link.href, location.href);
-            if (url.origin !== location.origin) { return; }
-            event.preventDefault(); if (!panel.contains(link)) { opener = link; } full.href = url.href;
-            status.textContent = 'Carregando ficha cadastral...'; status.hidden = false;
-            document.querySelectorAll('.ui-row-selected').forEach(function (row) { row.classList.remove('ui-row-selected'); });
-            var row = link.closest('tr'); if (row) { row.classList.add('ui-row-selected'); }
-            panel.hidden = false; layout.classList.add('ui-has-detail'); document.body.classList.add('ui-panel-open'); content.replaceChildren(); close.focus();
-            if (pending) { pending.abort(); } pending = new AbortController();
-            var controller = pending;
-            fetch(url.href, {credentials:'same-origin', signal:controller.signal, headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(response){
-                if (!response.ok || new URL(response.url).origin !== location.origin) { throw new Error('request'); } return response.text();
-            }).then(function(html){
-                if (controller.signal.aborted) { return; }
-                var doc = new DOMParser().parseFromString(html, 'text/html'); var page = doc.querySelector('.ui-detail-page');
-                if (!page) { throw new Error('detail'); }
-                page.querySelectorAll('script').forEach(function(script){script.remove()});
-                page.querySelectorAll('a[href]').forEach(function(anchor){var target=new URL(anchor.getAttribute('href'), url.href);anchor.href=target.href;if(target.origin===location.origin&&/\/empresa\/[^/]+\/$/.test(target.pathname)){anchor.setAttribute('data-company-detail','');anchor.removeAttribute('target')}});
-                content.replaceChildren(document.importNode(page,true)); initializeDetailTabs(content.querySelector('.ui-detail-page > .row > .col'));status.hidden=true;
-            }).catch(function(error){if(error.name!=='AbortError'){status.hidden=false;status.textContent='Não foi possível carregar a ficha. Use Abrir página completa para continuar.'}});
+        var usados = Array.from(advanced.querySelectorAll('input, select')).some(function (campo) {
+            return campo.value && campo.name !== 'ordem';
+        });
+        advanced.hidden = !usados;
+        advancedButton.hidden = false;
+        advancedButton.setAttribute('aria-expanded', String(usados));
+        advancedButton.addEventListener('click', function () {
+            advanced.hidden = !advanced.hidden;
+            advancedButton.setAttribute('aria-expanded', String(!advanced.hidden));
         });
     }
+
+    /* Uma troca de UF nao deve reenviar o municipio da UF anterior. */
+    var uf = document.querySelector('.ui-search-form select[name=uf]');
+    if (uf) {
+        uf.removeAttribute('onchange');
+        uf.addEventListener('change', function () {
+            var cidade = uf.form.querySelector('[name=municipio]');
+            if (cidade) { cidade.value = ''; }
+            if (uf.form.requestSubmit) { uf.form.requestSubmit(); } else { uf.form.submit(); }
+        });
+    }
+
+    /* ------------------------------------------------------ painel lateral */
+    var painel = document.getElementById('ui-details-panel');
+    if (painel) {
+        var conteudo = document.getElementById('ui-details-content');
+        var layout = document.getElementById('ui-results-layout');
+        var fechar = document.getElementById('ui-details-close');
+        var completo = document.getElementById('ui-details-full');
+        var status = document.getElementById('ui-panel-status');
+        var origem = null;
+        var pendente;
+        var mobile = window.matchMedia('(max-width: 991.98px)');
+
+        function focaveis() {
+            return Array.from(painel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+                .filter(function (elemento) { return elemento.offsetParent !== null; });
+        }
+        function fechaPainel() {
+            if (pendente) { pendente.abort(); }
+            painel.hidden = true;
+            painel.removeAttribute('aria-busy');
+            if (layout) { layout.classList.remove('ui-has-detail'); }
+            document.body.classList.remove('ui-panel-open');
+            if (status) { status.hidden = true; status.classList.remove('is-loading'); }
+            if (conteudo) { conteudo.replaceChildren(); }
+            document.querySelectorAll('.ui-row-selected').forEach(function (linha) { linha.classList.remove('ui-row-selected'); });
+            if (origem && origem.isConnected) { origem.focus(); }
+        }
+        if (fechar) { fechar.addEventListener('click', fechaPainel); }
+
+        document.addEventListener('keydown', function (evento) {
+            if (painel.hidden) { return; }
+            if (evento.key === 'Escape') { evento.preventDefault(); fechaPainel(); return; }
+            /* Prende o foco apenas no drawer de tela cheia (mobile). */
+            if (evento.key === 'Tab' && mobile.matches) {
+                var lista = focaveis();
+                if (!lista.length) { return; }
+                var primeiro = lista[0];
+                var ultimo = lista[lista.length - 1];
+                if (evento.shiftKey && document.activeElement === primeiro) { evento.preventDefault(); ultimo.focus(); }
+                else if (!evento.shiftKey && document.activeElement === ultimo) { evento.preventDefault(); primeiro.focus(); }
+            }
+        });
+
+        document.addEventListener('click', function (evento) {
+            var link = evento.target.closest('a[data-company-detail]');
+            if (!link || evento.ctrlKey || evento.metaKey || evento.shiftKey || evento.altKey || evento.button !== 0) { return; }
+            var url = new URL(link.href, location.href);
+            if (url.origin !== location.origin) { return; }
+            evento.preventDefault();
+            if (!painel.contains(link)) { origem = link; }
+            if (completo) { completo.href = url.href; }
+            if (status) {
+                status.textContent = 'Carregando ficha cadastral...';
+                status.hidden = false;
+                status.classList.add('is-loading');
+            }
+            document.querySelectorAll('.ui-row-selected').forEach(function (linha) { linha.classList.remove('ui-row-selected'); });
+            var linha = link.closest('tr');
+            if (linha) { linha.classList.add('ui-row-selected'); }
+            painel.hidden = false;
+            painel.setAttribute('aria-busy', 'true');
+            if (layout) { layout.classList.add('ui-has-detail'); }
+            document.body.classList.add('ui-panel-open');
+            if (conteudo) { conteudo.replaceChildren(); }
+            if (fechar) { fechar.focus(); }
+            if (pendente) { pendente.abort(); }
+            pendente = new AbortController();
+            var controlador = pendente;
+            fetch(url.href, {
+                credentials: 'same-origin',
+                signal: controlador.signal,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            }).then(function (resposta) {
+                if (!resposta.ok || new URL(resposta.url).origin !== location.origin) { throw new Error('request'); }
+                return resposta.text();
+            }).then(function (html) {
+                if (controlador.signal.aborted) { return; }
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var pagina = doc.querySelector('.ui-detail-page');
+                if (!pagina) { throw new Error('detail'); }
+                pagina.querySelectorAll('script').forEach(function (script) { script.remove(); });
+                pagina.querySelectorAll('a[href]').forEach(function (anchor) {
+                    var alvo = new URL(anchor.getAttribute('href'), url.href);
+                    anchor.href = alvo.href;
+                    if (alvo.origin === location.origin && /\/empresa\/[^/]+\/$/.test(alvo.pathname)) {
+                        anchor.setAttribute('data-company-detail', '');
+                        anchor.removeAttribute('target');
+                    }
+                });
+                if (conteudo) {
+                    conteudo.replaceChildren(document.importNode(pagina, true));
+                    initializeDetailTabs(conteudo.querySelector('.ui-detail-page > .row > .col'));
+                }
+                painel.removeAttribute('aria-busy');
+                if (status) { status.hidden = true; status.classList.remove('is-loading'); }
+            }).catch(function (erro) {
+                if (erro.name === 'AbortError') { return; }
+                painel.removeAttribute('aria-busy');
+                if (status) {
+                    status.hidden = false;
+                    status.classList.remove('is-loading');
+                    status.textContent = 'Não foi possível carregar a ficha. Use Abrir página completa para continuar.';
+                }
+            });
+        });
+    }
+
+    /* -------------------------------------------------- abas do detalhe */
     /* As abas reorganizam os blocos originais sem descartar campos. */
     function initializeDetailTabs(detail) {
-    if (detail) {
-        var cards = Array.from(detail.children).filter(function (element) { return element.classList.contains('card'); });
-        if (cards.length > 1) {
-            var tabs = document.createElement('div'); tabs.className = 'ui-detail-tabs'; tabs.setAttribute('role','tablist'); tabs.setAttribute('aria-label','Seções da ficha');
-            var groups = [['resumo','Resumo',[]],['socios','Sócios',[]],['estabelecimentos','Filiais e matriz',[]]];
-            cards.slice(1).forEach(function (card) { var title = card.querySelector('.card-header'); var text = title ? title.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : ''; groups[/socios/.test(text)?1:/estabelecimentos/.test(text)?2:0][2].push(card); });
-            groups = groups.filter(function (group) { return group[2].length; });
-            function select(index) { groups.forEach(function (group, i) { group[2].forEach(function (card) { card.hidden = i !== index; }); var button = tabs.children[i]; button.setAttribute('aria-selected',String(i===index)); button.tabIndex=i===index?0:-1; }); }
-            groups.forEach(function (group, index) { var button=document.createElement('button'); button.type='button'; button.textContent=group[1]; button.id='ui-tab-'+group[0]; button.setAttribute('role','tab'); var ids=[]; group[2].forEach(function(card,i){card.id='ui-section-'+group[0]+'-'+i;card.setAttribute('role','tabpanel');card.setAttribute('aria-labelledby',button.id);ids.push(card.id)});button.setAttribute('aria-controls',ids.join(' '));button.addEventListener('click',function(){select(index)});button.addEventListener('keydown',function(event){if(['ArrowLeft','ArrowRight','Home','End'].indexOf(event.key)<0)return;event.preventDefault();var next=event.key==='Home'?0:event.key==='End'?groups.length-1:(index+(event.key==='ArrowRight'?1:groups.length-1))%groups.length;select(next);tabs.children[next].focus()});tabs.appendChild(button); });
-            cards[0].after(tabs); select(0);
+        if (!detail) { return; }
+        var cards = Array.from(detail.children).filter(function (elemento) {
+            return elemento.classList.contains('card');
+        });
+        if (cards.length <= 1) { return; }
+        var tabs = document.createElement('div');
+        tabs.className = 'ui-detail-tabs';
+        tabs.setAttribute('role', 'tablist');
+        tabs.setAttribute('aria-label', 'Seções da ficha');
+        var grupos = [['resumo', 'Resumo', []], ['socios', 'Sócios', []], ['estabelecimentos', 'Filiais e matriz', []]];
+        cards.slice(1).forEach(function (card) {
+            var titulo = card.querySelector('.card-header');
+            var texto = titulo ? titulo.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+            grupos[/socios/.test(texto) ? 1 : /estabelecimentos/.test(texto) ? 2 : 0][2].push(card);
+        });
+        grupos = grupos.filter(function (grupo) { return grupo[2].length; });
+        function seleciona(indice) {
+            grupos.forEach(function (grupo, i) {
+                grupo[2].forEach(function (card) { card.hidden = i !== indice; });
+                var botao = tabs.children[i];
+                botao.setAttribute('aria-selected', String(i === indice));
+                botao.tabIndex = i === indice ? 0 : -1;
+            });
         }
-    }
+        grupos.forEach(function (grupo, indice) {
+            var botao = document.createElement('button');
+            botao.type = 'button';
+            botao.textContent = grupo[1];
+            botao.id = 'ui-tab-' + grupo[0];
+            botao.setAttribute('role', 'tab');
+            var ids = [];
+            grupo[2].forEach(function (card, i) {
+                card.id = 'ui-section-' + grupo[0] + '-' + i;
+                card.setAttribute('role', 'tabpanel');
+                card.setAttribute('aria-labelledby', botao.id);
+                ids.push(card.id);
+            });
+            botao.setAttribute('aria-controls', ids.join(' '));
+            botao.addEventListener('click', function () { seleciona(indice); });
+            botao.addEventListener('keydown', function (evento) {
+                if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(evento.key) < 0) { return; }
+                evento.preventDefault();
+                var proximo = evento.key === 'Home' ? 0
+                    : evento.key === 'End' ? grupos.length - 1
+                    : (indice + (evento.key === 'ArrowRight' ? 1 : grupos.length - 1)) % grupos.length;
+                seleciona(proximo);
+                tabs.children[proximo].focus();
+            });
+            tabs.appendChild(botao);
+        });
+        cards[0].after(tabs);
+        seleciona(0);
     }
     initializeDetailTabs(document.querySelector('.ui-detail-page > .row > .col'));
 })();

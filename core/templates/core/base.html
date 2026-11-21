@@ -1,11 +1,10 @@
-<!-- /home/neto/cnpj_interface/core/templates/core/base.html -->
 {% load static %}
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-br" data-theme="light" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#212529">
+    <meta name="theme-color" id="meta-tema" content="#f5f8fb">
     <title>{% block title %}busquecnpj{% endblock %}</title>
     <script>
     /* Tema claro/escuro: aplica ANTES do CSS carregar para nao piscar.
@@ -19,136 +18,156 @@
         if (t !== 'dark' && t !== 'light') {
             t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
-        
+
         document.documentElement.setAttribute('data-theme', t);
         document.documentElement.setAttribute('data-bs-theme', t);
+        var meta = document.getElementById('meta-tema');
+        if (meta) { meta.setAttribute('content', t === 'dark' ? '#070e18' : '#f5f8fb'); }
     })();
     </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="{% static 'css/sistema.css' %}?v=1">
-    <style>
-        .text-uppercase {
-            text-transform: uppercase;
-        }
-        .table-hover tbody tr:hover {
-            background-color: rgba(13, 110, 253, 0.05);
-        }
-    </style>
     {% block extra_css %}{% endblock %}
-    <link rel="stylesheet" href="{% static 'css/interface-corporativa.css' %}?v=20261120">
+    {# portal.css carrega por ultimo: e a camada visual nova, sobre Bootstrap e sistema.css #}
+    <link rel="stylesheet" href="{% static 'css/portal.css' %}?v=20261120">
 </head>
-<body>
+<body class="ui-body">
     <a class="ui-skip" href="#conteudo">Ir para o conteúdo</a>
-    <nav class="navbar navbar-expand-lg ui-navbar">
-        <div class="container">
-            {# Marca e "Inicio" levam a pagina inicial do produto (landing do #}
-            {# menu_interface); a lista de empresas fica no item Empresas. #}
-            <a class="navbar-brand" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
-                <span class="ui-brand-mark" aria-hidden="true"><span></span></span> busca CNPJ
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    {# Link sempre visivel: volta para a pagina inicial do produto #}
-                    {# (landing em :8000/site/ no dev e busquecnpj.com.br em prod). #}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
-                            <i class="bi bi-house-door"></i> Início
-                        </a>
-                    </li>
+
+    <header class="ui-topbar">
+        <nav class="navbar navbar-expand-lg ui-navbar" aria-label="Navegação principal">
+            <div class="container ui-topbar__inner">
+                {# Marca e "Inicio" levam a pagina inicial do produto (landing do #}
+                {# menu_interface); a lista de empresas fica no item Empresas. #}
+                <a class="navbar-brand" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
+                    <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                    <span class="ui-brand-text">
+                        <span class="ui-brand-name">busca CNPJ</span>
+                        <span class="ui-brand-tag">Consulta e inteligência de empresas</span>
+                    </span>
+                </a>
+
+                <div class="collapse navbar-collapse" id="navbarNav">
                     {% if 'chat.busquecnpj.com.br' not in request.get_host %}
+                    {# Busca global: sem JS envia razao_social; o JS troca para cnpj #}
+                    {# quando o valor tem 8 ou mais digitos. Mesma view da lista. #}
+                    <form class="ui-global-search" role="search" method="get" action="{% url 'core:lista' %}" data-ui-global-search>
+                        <i class="bi bi-search" aria-hidden="true"></i>
+                        <label class="visually-hidden" for="ui-busca-global">Buscar por CNPJ ou razão social</label>
+                        <input type="search" id="ui-busca-global" name="razao_social" placeholder="Buscar CNPJ ou razão social" autocomplete="off" spellcheck="false">
+                        <input type="hidden" name="cnpj" value="" disabled data-ui-global-cnpj>
+                    </form>
+                    {% endif %}
+
+                    <ul class="navbar-nav ui-menu">
+                        {# Link sempre visivel: volta para a pagina inicial do produto #}
+                        {# (landing em :8000/site/ no dev e busquecnpj.com.br em prod). #}
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'core:lista' %}">
+                            <a class="nav-link ui-menu-link" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
+                                <i class="bi bi-house-door" aria-hidden="true"></i> Início
+                            </a>
+                        </li>
+                        {% if 'chat.busquecnpj.com.br' not in request.get_host %}
+                        <li class="nav-item">
+                            <a class="nav-link ui-menu-link{% if request.resolver_match.url_name == 'lista' or request.resolver_match.url_name == 'detalhe' or request.resolver_match.url_name == 'dossie' %} is-active{% endif %}" href="{% url 'core:lista' %}"{% if request.resolver_match.url_name == 'lista' or request.resolver_match.url_name == 'detalhe' or request.resolver_match.url_name == 'dossie' %} aria-current="page"{% endif %}>
                                 <i class="bi bi-list-ul"></i> Empresas
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'core:proximidade' %}" target="_blank" rel="noopener">
-                                <i class="bi bi-geo-alt"></i> Proximidade
+                            <a class="nav-link ui-menu-link{% if request.resolver_match.url_name == 'proximidade' %} is-active{% endif %}" href="{% url 'core:proximidade' %}" target="_blank" rel="noopener" title="Abre em nova aba"{% if request.resolver_match.url_name == 'proximidade' %} aria-current="page"{% endif %}>
+                                <i class="bi bi-geo-alt" aria-hidden="true"></i> Proximidade
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'core:estatisticas' %}" target="_blank" rel="noopener"
-                               title="Abre em nova aba">
-                                <i class="bi bi-bar-chart"></i> Estatísticas
-                            </a>
-                        </li>
-                    {% endif %}
-                    <li class="nav-item">
-                        {# O Chat IA abre em outra aba, como Proximidade e Estatisticas. #}
-                        {# Dentro do proprio host do chat o link fica na mesma aba. #}
-                        <a class="nav-link" href="{% url 'chat:chat' %}"
-                           {% if 'chat.busquecnpj.com.br' not in request.get_host %}target="_blank" rel="noopener"
-                           title="Abre em nova aba"{% endif %}>
-                            <i class="bi bi-chat-dots"></i> Chat IA
-                        </a>
-                    </li>
-                    {% if user.is_authenticated %}
-                        {% if user.is_superuser %}
-                        <li class="nav-item">
-                            <a class="nav-link" href="/admin/auth/user/" target="_blank">
-                                <i class="bi bi-people"></i> Usuários
+                            <a class="nav-link ui-menu-link{% if request.resolver_match.url_name == 'estatisticas' or request.resolver_match.url_name == 'recalcular_totais' %} is-active{% endif %}" href="{% url 'core:estatisticas' %}" target="_blank" rel="noopener" title="Abre em nova aba"{% if request.resolver_match.url_name == 'estatisticas' or request.resolver_match.url_name == 'recalcular_totais' %} aria-current="page"{% endif %}>
+                                <i class="bi bi-bar-chart" aria-hidden="true"></i> Estatísticas
                             </a>
                         </li>
                         {% endif %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button"
-                               data-bs-toggle="dropdown">
-                                <i class="bi bi-person-circle"></i> {{ user.username }}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li>
-                                    <a class="dropdown-item" href="/admin/password_change/">
-                                        <i class="bi bi-key"></i> Trocar senha
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <form method="post" action="{% url 'logout' %}" class="d-inline">
-                                        {% csrf_token %}
-                                        <button type="submit" class="dropdown-item">
-                                            <i class="bi bi-box-arrow-right"></i> Sair
-                                        </button>
-                                    </form>
-                                </li>
-                            </ul>
-                        </li>
-                    {% else %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'login' %}">
-                                <i class="bi bi-box-arrow-in-right"></i> Entrar
+                            {# O Chat IA abre em outra aba, como Proximidade e Estatisticas. #}
+                            {# Dentro do proprio host do chat o link fica na mesma aba. #}
+                            <a class="nav-link ui-menu-link{% if request.resolver_match.url_name == 'chat' or request.resolver_match.url_name == 'historico' or request.resolver_match.url_name == 'conversa' %} is-active{% endif %}" href="{% url 'chat:chat' %}" {% if 'chat.busquecnpj.com.br' not in request.get_host %}target="_blank" rel="noopener" title="Abre em nova aba"{% endif %}{% if request.resolver_match.url_name == 'chat' or request.resolver_match.url_name == 'historico' or request.resolver_match.url_name == 'conversa' %} aria-current="page"{% endif %}>
+                                <i class="bi bi-chat-dots" aria-hidden="true"></i> Chat IA
                             </a>
                         </li>
-                    {% endif %}
-                </ul>
-            </div>
-            <button type="button" id="btn-tema" class="btn btn-sm btn-outline-light ms-2" aria-label="Alternar tema claro/escuro">
-                <i class="bi bi-moon-stars" id="icone-tema"></i>
-            </button>
-        </div>
-    </nav>
+                    </ul>
 
-    <main class="container mt-4" id="conteudo">
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    {% if user.is_authenticated %}
+                    <div class="ui-user dropdown">
+                        <a class="dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="ui-avatar" aria-hidden="true">{{ user.username|slice:":2"|upper }}</span>
+                            <span class="ui-user-name">{{ user.username }}</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            {% if user.is_superuser %}
+                            <li>
+                                <a class="dropdown-item" href="/admin/auth/user/" target="_blank" rel="noopener">
+                                    <i class="bi bi-people" aria-hidden="true"></i> Usuários
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            {% endif %}
+                            <li>
+                                <a class="dropdown-item" href="/admin/password_change/">
+                                    <i class="bi bi-key" aria-hidden="true"></i> Trocar senha
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form method="post" action="{% url 'logout' %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Sair
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                    {% else %}
+                    <a class="ui-login-link" href="{% url 'login' %}">
+                        <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar
+                    </a>
+                    {% endif %}
                 </div>
-            {% endfor %}
+
+                <div class="ui-topbar__actions">
+                    <button type="button" id="btn-tema" class="ui-theme-switch" role="switch" aria-checked="false" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro">
+                        <span class="ui-theme-knob"><i class="bi bi-moon-stars" id="icone-tema" aria-hidden="true"></i></span>
+                    </button>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir menu de navegação">
+                        <span class="navbar-toggler-icon"><i class="bi bi-list" aria-hidden="true"></i></span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="ui-main container" id="conteudo" tabindex="-1">
+        {% if messages %}
+            <div class="ui-flash">
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle" aria-hidden="true"></i>
+                        <div>{{ message }}</div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+                    </div>
+                {% endfor %}
+            </div>
         {% endif %}
 
         {% block content %}
         {% endblock %}
     </main>
 
-    <footer class="mt-5 py-3 bg-body-tertiary">
-        <div class="container text-center text-body-secondary small">
-            <p class="mb-0">busquecnpj — Consulta de empresas</p>
-            <p class="mb-0 mt-1">
+    <footer class="ui-footer">
+        <div class="container ui-footer__inner">
+            <div class="ui-footer__brand">
+                <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                <span>busquecnpj — Consulta de empresas</span>
+            </div>
+            <p class="ui-footer__note">
                 Este produto inclui dados do GeoLite2 criados pela MaxMind,
                 disponíveis em
                 <a href="https://www.maxmind.com" target="_blank" rel="noopener">maxmind.com</a>.
@@ -157,26 +176,6 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    /* Botao de tema (aplica junto com data-bs-theme para o Bootstrap escurecer sozinho) */
-    (function () {
-        var html = document.documentElement;
-        var btn = document.getElementById('btn-tema');
-        var icone = document.getElementById('icone-tema');
-        if (!btn) { return; }
-        function pinta(t) {
-            html.setAttribute('data-theme', t);
-            html.setAttribute('data-bs-theme', t);
-            if (icone) { icone.className = t === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
-        }
-        pinta(html.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
-        btn.addEventListener('click', function () {
-            var novo = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            try { localStorage.setItem('sistema-tema', novo); } catch (e) {} 
-            pinta(novo);
-        });
-    })();
-    </script>
     {% block extra_js %}{% endblock %}
     <script src="{% static 'js/interface-corporativa.js' %}?v=20261120" defer></script>
 </body>
