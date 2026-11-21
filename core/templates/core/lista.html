@@ -1,142 +1,345 @@
 {% extends 'core/base.html' %}
-{% load num_filters %}
+{% load static num_filters %}
 {% block title %}Consultar empresas - busca CNPJ{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261121">{% endblock %}
 {% block content %}
-<div class="ui-page-heading"><h1>Encontre a empresa certa.</h1><p>Consulte dados cadastrais e explore oportunidades de negócio.</p></div>
-{% if aviso %}<div class="alert alert-warning alert-dismissible fade show">{{ aviso }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar aviso"></button></div>{% endif %}
-<div class="card ui-search-card"><div class="card-body"><form method="get" class="ui-search-form" action="{% url 'core:lista' %}">
-<div class="ui-main-search">
-                        <label class="form-label">Razão Social</label>
-                        <input type="text" name="razao_social" class="form-control text-uppercase" 
-                               placeholder="Ex: MORAIS" value="{{ razao_social }}" style="text-transform: uppercase;">
+<div class="consulta-lista">
+
+    <div class="ui-page-head consulta-head">
+        <div>
+            <p class="ui-eyebrow">Consulta de empresas</p>
+            <h1>Encontre a empresa certa.</h1>
+            <p>Consulte dados cadastrais e explore oportunidades de negócio.</p>
+        </div>
+        <p class="consulta-head__note">
+            <i class="bi bi-database" aria-hidden="true"></i>
+            Base pública de CNPJ
+        </p>
+    </div>
+
+    {% if aviso %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="bi bi-lightbulb" aria-hidden="true"></i>
+        <div>{{ aviso }}</div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar aviso"></button>
+    </div>
+    {% endif %}
+
+    <section class="ui-card consulta-filtros" aria-labelledby="consulta-filtros-titulo">
+        <div class="ui-card__head consulta-filtros__head">
+            <div>
+                <h2 class="ui-card__title" id="consulta-filtros-titulo">
+                    <i class="bi bi-funnel" aria-hidden="true"></i> Filtros da consulta
+                </h2>
+                <p class="consulta-filtros__hint">Razão social, localização e situação cadastral. Use "Mais filtros" para refinar.</p>
+            </div>
+            <a class="consulta-link-limpar" href="{% url 'core:lista' %}">
+                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Limpar filtros
+            </a>
+        </div>
+        <div class="ui-card__body">
+            <form method="get" class="ui-search-form" action="{% url 'core:lista' %}">
+                <div class="consulta-busca">
+                    <label class="form-label" for="busca-razao-social">Razão Social</label>
+                    <div class="ui-input-icon">
+                        <i class="bi bi-search" aria-hidden="true"></i>
+                        <input type="text" name="razao_social" id="busca-razao-social"
+                               class="form-control text-uppercase"
+                               placeholder="Ex: MORAIS" value="{{ razao_social }}"
+                               style="text-transform: uppercase;" autocomplete="off">
                     </div>
-<div class="ui-search-actions"><button type="submit" class="btn btn-primary"><i class="bi bi-search" aria-hidden="true"></i>Buscar empresas</button><a href="{% url 'core:lista' %}" class="btn btn-secondary">Limpar</a></div>
-<div class="ui-filter-wide">
-                        <label class="form-label">Estado (UF)</label>
-                        <select name="uf" class="form-select" onchange="this.form.submit()">
-                            <option value="">Todos</option>
-                            {% for sigla, nome in lista_ufs %}
-                            <option value="{{ sigla }}" {% if uf == sigla %}selected{% endif %}>{{ nome }}</option>
-                            {% endfor %}
-                        </select>
-                    </div><div class="ui-filter-wide">
-                        <label class="form-label">Cidade</label>
-                        <select name="municipio" class="form-select"
-                                {% if not uf %}disabled title="Escolha o estado primeiro"{% endif %}>
-                            <option value="">{% if uf %}Todas{% else %}— escolha a UF —{% endif %}</option>
-                            {% for m in lista_municipios %}
-                            <option value="{{ m.cd_municipio }}" {% if municipio == m.cd_municipio|stringformat:"s" %}selected{% endif %}>{{ m.nome }}</option>
-                            {% endfor %}
-                        </select>
-                    </div><div class="ui-filter-wide">
-                        <label class="form-label">Situação</label>
-                        <select name="situacao" class="form-select">
-                            <option value="">Todas</option>
-                            <option value="NULA" {% if situacao == 'NULA' %}selected{% endif %}>Nula</option>
-                            <option value="ATIVA" {% if situacao == 'ATIVA' %}selected{% endif %}>Ativa</option>
-                            <option value="SUSPENSA" {% if situacao == 'SUSPENSA' %}selected{% endif %}>Suspensa</option>
-                            <option value="INAPTA" {% if situacao == 'INAPTA' %}selected{% endif %}>Inapta</option>
-                            <option value="BAIXADA" {% if situacao == 'BAIXADA' %}selected{% endif %}>Baixada</option>
-                        </select>
+                </div>
+                <div class="consulta-campo">
+                    <label class="form-label" for="filtro-uf">Estado (UF)</label>
+                    <select name="uf" id="filtro-uf" class="form-select" onchange="this.form.submit()">
+                        <option value="">Todos</option>
+                        {% for sigla, nome in lista_ufs %}
+                        <option value="{{ sigla }}" {% if uf == sigla %}selected{% endif %}>{{ nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="consulta-campo consulta-campo--cidade">
+                    <label class="form-label" for="filtro-municipio">Cidade</label>
+                    <select name="municipio" id="filtro-municipio" class="form-select"
+                            {% if not uf %}disabled title="Escolha o estado primeiro"{% endif %}>
+                        <option value="">{% if uf %}Todas{% else %}— escolha a UF —{% endif %}</option>
+                        {% for m in lista_municipios %}
+                        <option value="{{ m.cd_municipio }}" {% if municipio == m.cd_municipio|stringformat:"s" %}selected{% endif %}>{{ m.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="consulta-campo">
+                    <label class="form-label" for="filtro-situacao">Situação</label>
+                    <select name="situacao" id="filtro-situacao" class="form-select">
+                        <option value="">Todas</option>
+                        <option value="NULA" {% if situacao == 'NULA' %}selected{% endif %}>Nula</option>
+                        <option value="ATIVA" {% if situacao == 'ATIVA' %}selected{% endif %}>Ativa</option>
+                        <option value="SUSPENSA" {% if situacao == 'SUSPENSA' %}selected{% endif %}>Suspensa</option>
+                        <option value="INAPTA" {% if situacao == 'INAPTA' %}selected{% endif %}>Inapta</option>
+                        <option value="BAIXADA" {% if situacao == 'BAIXADA' %}selected{% endif %}>Baixada</option>
+                    </select>
+                </div>
+                <div class="consulta-avancado-toggle">
+                    <button type="button" id="ui-advanced-toggle" class="btn btn-outline-secondary"
+                            aria-expanded="true" aria-controls="ui-advanced" hidden>
+                        <i class="bi bi-sliders" aria-hidden="true"></i> Mais filtros
+                    </button>
+                </div>
+                <div class="consulta-acoes">
+                    <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i> Limpar
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search" aria-hidden="true"></i> Buscar empresas
+                    </button>
+                </div>
+                <div class="consulta-avancado" id="ui-advanced">
+                    <div class="consulta-campo">
+                        <label class="form-label" for="filtro-nome-fantasia">Nome Fantasia</label>
+                        <input type="text" name="nome_fantasia" id="filtro-nome-fantasia"
+                               class="form-control text-uppercase"
+                               placeholder="Ex: MERCADO" value="{{ nome_fantasia }}"
+                               style="text-transform: uppercase;">
                     </div>
-<div class="ui-advanced-toggle"><button type="button" id="ui-advanced-toggle" class="btn btn-outline-secondary" aria-expanded="true" aria-controls="ui-advanced" hidden><i class="bi bi-sliders" aria-hidden="true"></i>Mais filtros</button></div>
-<div class="ui-advanced-fields" id="ui-advanced"><div class="">
-                        <label class="form-label">Nome Fantasia</label>
-                        <input type="text" name="nome_fantasia" class="form-control text-uppercase" 
-                               placeholder="Ex: MERCADO" value="{{ nome_fantasia }}" style="text-transform: uppercase;">
-                    </div><div class="">
-                        <label class="form-label">CNPJ</label>
-                        <input type="text" name="cnpj" class="form-control" 
-                               placeholder="Ex: 12345678000199" value="{{ cnpj }}" maxlength="18">
-                    </div><div class="">
-                        <label class="form-label">Simples</label>
-                        <select name="simples" class="form-select">
+                    <div class="consulta-campo">
+                        <label class="form-label" for="filtro-cnpj">CNPJ</label>
+                        <input type="text" name="cnpj" id="filtro-cnpj" class="form-control"
+                               placeholder="Ex: 12345678000199" value="{{ cnpj }}" maxlength="18"
+                               inputmode="numeric">
+                    </div>
+                    <div class="consulta-campo">
+                        <label class="form-label" for="filtro-simples">Simples</label>
+                        <select name="simples" id="filtro-simples" class="form-select">
                             <option value="">Todos</option>
                             <option value="S" {% if simples == 'S' %}selected{% endif %}>Sim</option>
                             <option value="N" {% if simples == 'N' %}selected{% endif %}>Não</option>
                         </select>
-                    </div><div class="">
-                        <label class="form-label">MEI</label>
-                        <select name="mei" class="form-select">
+                    </div>
+                    <div class="consulta-campo">
+                        <label class="form-label" for="filtro-mei">MEI</label>
+                        <select name="mei" id="filtro-mei" class="form-select">
                             <option value="">Todos</option>
                             <option value="S" {% if mei == 'S' %}selected{% endif %}>Sim</option>
                             <option value="N" {% if mei == 'N' %}selected{% endif %}>Não</option>
                         </select>
-                    </div><div class="">
-                        <label class="form-label">Ordenar por</label>
-                        <select name="ordem" class="form-select">
+                    </div>
+                    <div class="consulta-campo">
+                        <label class="form-label" for="filtro-ordem">Ordenar por</label>
+                        <select name="ordem" id="filtro-ordem" class="form-select">
                             <option value="cnpj" {% if ordem == 'cnpj' %}selected{% endif %}>CNPJ</option>
                             <option value="razao_social" {% if ordem == 'razao_social' %}selected{% endif %}>Razão Social</option>
                         </select>
-                    </div></div>
-</form></div></div>
-<div id="ui-results-layout" class="ui-results-layout"><div class="ui-results-list">
-<div class="ui-results-heading"><div><h2>Resultados da busca</h2><p>{% if total_estimado %}Mais de 100.000 empresas encontradas{% else %}{{ total|format_number }} empresas encontradas{% endif %}</p></div></div>
-<div class="table-responsive"><table class="table table-hover align-middle ui-results-table"><thead><tr><th scope="col">Empresa</th><th scope="col">Município / UF</th><th scope="col">Situação</th><th scope="col" class="ui-extra-column">Filiais</th><th scope="col" class="ui-extra-column">Simples / MEI</th><th scope="col" class="ui-extra-column">Início da atividade</th><th scope="col">Detalhes</th></tr></thead><tbody>
-{% for empresa in empresas %}<tr><td><a class="ui-company-name" data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}">{{ empresa.razao_social }}</a><div class="ui-company-sub">{{ empresa.nm_fantasia|default:"-" }}</div><div class="ui-company-meta"><code>{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code><button type="button" class="ui-copy" data-copy-cnpj="{{ empresa.cnpj_completo }}" aria-label="Copiar CNPJ de {{ empresa.razao_social }}"><i class="bi bi-copy" aria-hidden="true"></i></button></div></td>
-<td>{{ empresa.municipio_nome|default:"-" }}{% if empresa.uf %} / {{ empresa.uf }}{% endif %}</td>
-<td>{% if empresa.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>{% elif empresa.situacao_descricao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>{% elif empresa.situacao_descricao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>{% else %}<span class="badge bg-secondary">{{ empresa.situacao_descricao|default:"-" }}</span>{% endif %}</td>
-<td class="ui-extra-column">{{ empresa.total_filiais|default:"0" }}</td><td class="ui-extra-column">Simples: {% if empresa.op_simples == 'S' %}Sim{% else %}Não{% endif %}<br>MEI: {% if empresa.op_mei == 'S' %}Sim{% else %}Não{% endif %}</td><td class="ui-extra-column">{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
-<td><a data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary" aria-label="Ver detalhes de {{ empresa.razao_social }}"><i class="bi bi-chevron-right" aria-hidden="true"></i></a></td></tr>
-{% empty %}<tr><td colspan="7" class="text-center py-5"><h3>Nenhuma empresa encontrada.</h3><p class="text-muted mt-2">Tente outro termo ou amplie os filtros da consulta.</p><a href="{% url 'core:lista' %}" class="btn btn-outline-primary">Limpar filtros</a></td></tr>{% endfor %}
-</tbody></table></div>
-<!-- Paginação -->
-        {% if total_paginas > 1 %}
-        <nav aria-label="Paginação">
-            <ul class="pagination justify-content-center">
-                {% if page > 1 %}
-                <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&dir=prev{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-left"></i></a></li>
-                {% else %}
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
-                {% endif %}
-                
-                <li class="page-item active">
-                    <span class="page-link">
-                        Página {{ page }} de {% if total_estimado %}+{{ total_paginas|format_number }}{% else %}{{ total_paginas|format_number }}{% endif %}
+                    </div>
+                </div>
+            </form>
+
+            {# Chips usam {% querystring %} (precisa do request no contexto); sem request eles nao renderizam. #}
+            {% if request %}{% if razao_social or nome_fantasia or cnpj or uf or municipio or situacao or simples or mei %}
+            <div class="consulta-ativos">
+                <span class="consulta-ativos__label"><i class="bi bi-funnel-fill" aria-hidden="true"></i> Filtros ativos</span>
+                <div class="ui-chips">
+                    {% if razao_social %}
+                    <a class="ui-chip" href="{% querystring razao_social=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Razão social">
+                        Razão social: <strong>{{ razao_social }}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if nome_fantasia %}
+                    <a class="ui-chip" href="{% querystring nome_fantasia=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Nome fantasia">
+                        Fantasia: <strong>{{ nome_fantasia }}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if cnpj %}
+                    <a class="ui-chip" href="{% querystring cnpj=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro CNPJ">
+                        CNPJ: <strong>{{ cnpj }}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if uf %}
+                    <a class="ui-chip" href="{% querystring uf=None municipio=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Estado">
+                        UF: <strong>{{ uf }}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if municipio %}
+                    <a class="ui-chip" href="{% querystring municipio=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Cidade">
+                        Cidade: <strong>{% for m in lista_municipios %}{% if municipio == m.cd_municipio|stringformat:"s" %}{{ m.nome }}{% endif %}{% endfor %}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if situacao %}
+                    <a class="ui-chip" href="{% querystring situacao=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Situação">
+                        Situação: <strong>{% if situacao == 'NULA' %}Nula{% elif situacao == 'ATIVA' %}Ativa{% elif situacao == 'SUSPENSA' %}Suspensa{% elif situacao == 'INAPTA' %}Inapta{% elif situacao == 'BAIXADA' %}Baixada{% else %}{{ situacao }}{% endif %}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if simples %}
+                    <a class="ui-chip" href="{% querystring simples=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro Simples">
+                        Simples: <strong>{% if simples == 'S' %}Sim{% else %}Não{% endif %}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                    {% if mei %}
+                    <a class="ui-chip" href="{% querystring mei=None page=None last_cnpj=None last_razao=None dir=None a_partir_de=None first_cnpj=None first_razao=None last_page=None %}" aria-label="Remover filtro MEI">
+                        MEI: <strong>{% if mei == 'S' %}Sim{% else %}Não{% endif %}</strong>
+                        <span class="ui-chip__x" aria-hidden="true"><i class="bi bi-x-lg"></i></span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}{% endif %}
+        </div>
+    </section>
+
+    <div id="ui-results-layout" class="ui-results-layout consulta-resultados">
+        <div class="ui-results-list">
+            <section class="ui-card consulta-resultados__card" aria-labelledby="consulta-resultados-titulo">
+                <div class="ui-card__head consulta-resultados__head">
+                    <div>
+                        <h2 class="ui-card__title" id="consulta-resultados-titulo">Resultados da busca</h2>
+                        <p class="consulta-resultados__sub">
+                            {% if total_estimado %}Mais de 100.000 empresas encontradas{% else %}{{ total|format_number }} empresas encontradas{% endif %}
+                        </p>
+                    </div>
+                    <span class="ui-badge ui-badge--neutral">
+                        <i class="bi bi-sort-down" aria-hidden="true"></i>
+                        {% if ordem == 'razao_social' %}Razão social{% else %}CNPJ{% endif %}
                     </span>
-                </li>
-                
-                {% if has_next %}
-                <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&dir=next{% if razao_social %}&razao_social={{ razao_social }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}"><i class="bi bi-chevron-right"></i></a></li>
+                </div>
+
+                {% if empresas %}
+                <div class="consulta-tabela">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle ui-results-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Empresa</th>
+                                    <th scope="col">Município / UF</th>
+                                    <th scope="col">Situação</th>
+                                    <th scope="col" class="ui-extra-column">Filiais</th>
+                                    <th scope="col" class="ui-extra-column">Simples / MEI</th>
+                                    <th scope="col" class="ui-extra-column">Início da atividade</th>
+                                    <th scope="col" class="consulta-col--acoes">Detalhes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for empresa in empresas %}
+                                <tr>
+                                    <td>
+                                        <a class="ui-company-name" data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}">{{ empresa.razao_social }}</a>
+                                        <div class="ui-company-sub">{{ empresa.nm_fantasia|default:"-" }}</div>
+                                        <div class="ui-company-meta">
+                                            <code>{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code>
+                                            <button type="button" class="ui-copy" data-copy-cnpj="{{ empresa.cnpj_completo }}" aria-label="Copiar CNPJ de {{ empresa.razao_social }}"><i class="bi bi-copy" aria-hidden="true"></i></button>
+                                        </div>
+                                    </td>
+                                    <td>{{ empresa.municipio_nome|default:"-" }}{% if empresa.uf %} / {{ empresa.uf }}{% endif %}</td>
+                                    <td>
+                                        {% if empresa.situacao_descricao == 'ATIVA' %}<span class="ui-badge ui-badge--ok">Ativa</span>
+                                        {% elif empresa.situacao_descricao == 'SUSPENSA' %}<span class="ui-badge ui-badge--warn">Suspensa</span>
+                                        {% elif empresa.situacao_descricao == 'INAPTA' %}<span class="ui-badge ui-badge--danger">Inapta</span>
+                                        {% else %}<span class="ui-badge ui-badge--neutral">{{ empresa.situacao_descricao|default:"-" }}</span>{% endif %}
+                                    </td>
+                                    <td class="ui-extra-column">{{ empresa.total_filiais|default:"0" }}</td>
+                                    <td class="ui-extra-column consulta-regime">
+                                        <span class="consulta-regime__linha">Simples: {% if empresa.op_simples == 'S' %}<strong class="ui-ink-soft">Sim</strong>{% else %}Não{% endif %}</span>
+                                        <span class="consulta-regime__linha">MEI: {% if empresa.op_mei == 'S' %}<strong class="ui-ink-soft">Sim</strong>{% else %}Não{% endif %}</span>
+                                    </td>
+                                    <td class="ui-extra-column ui-tnum">{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
+                                    <td class="consulta-col--acoes">
+                                        <a data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary consulta-detalhe-btn" aria-label="Ver detalhes de {{ empresa.razao_social }}">
+                                            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
                 {% else %}
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
+                <div class="ui-empty">
+                    <span class="ui-empty__icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+                    <p class="ui-empty__title">Nenhuma empresa encontrada</p>
+                    <p class="ui-empty__text">Tente outro termo ou amplie os filtros da consulta.</p>
+                    <a href="{% url 'core:lista' %}" class="btn btn-outline-primary btn-sm">Limpar filtros</a>
+                </div>
                 {% endif %}
 
-                <!-- Ir para: sem cursor na querystring a view usa OFFSET com
-                     enable_*scan desligado (25 s viraram 4-7 s) e, se o
-                     statement_timeout de 8 s estourar, repete sem OFFSET e
-                     mostra a primeira pagina com aviso. -->
-                {% if total_paginas %}
-                <li class="page-item ms-2">
-                    <form method="get" class="d-flex align-items-center gap-1">
-                        <input type="hidden" name="ordem" value="{{ ordem }}">
-                        {% if razao_social %}<input type="hidden" name="razao_social" value="{{ razao_social }}">{% endif %}
-                        {% if nome_fantasia %}<input type="hidden" name="nome_fantasia" value="{{ nome_fantasia }}">{% endif %}
-                        {% if cnpj %}<input type="hidden" name="cnpj" value="{{ cnpj }}">{% endif %}
-                        {% if uf %}<input type="hidden" name="uf" value="{{ uf }}">{% endif %}
-                        {% if municipio %}<input type="hidden" name="municipio" value="{{ municipio }}">{% endif %}
-                        {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
-                        {% if simples %}<input type="hidden" name="simples" value="{{ simples }}">{% endif %}
-                        {% if mei %}<input type="hidden" name="mei" value="{{ mei }}">{% endif %}
-                        <input type="number" name="page" min="1" value="{{ page }}"
-                               {% if not total_estimado %}max="{{ total_paginas }}"{% endif %}
-                               class="form-control form-control-sm" style="width: 5.5rem"
-                               aria-label="Ir para a página" title="Digite a página e clique em Ir">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">Ir</button>
-                    </form>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
-        
-        <p class="text-muted small">
-            <i class="bi bi-clock"></i> Mostrando {{ empresas|length }} de {% if total_estimado %}+100.000{% else %}{{ total|format_number }}{% endif %} empresas
-        </p>
-</div><aside id="ui-details-panel" class="ui-details-panel" aria-label="Ficha cadastral" hidden>
-    <div class="ui-panel-actions"><a id="ui-details-full" href="#" target="_blank" rel="noopener">Abrir página completa <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a><button id="ui-details-close" type="button" class="btn btn-outline-secondary btn-sm" aria-label="Fechar ficha cadastral"><span class="ui-mobile-close">Voltar</span><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
-    <p id="ui-panel-status" class="ui-panel-status" role="status" aria-live="polite"></p>
-    <div id="ui-details-content"></div>
-</aside></div>
+                <div class="ui-card__foot consulta-rodape">
+                    {% if total_paginas > 1 %}
+                    <nav aria-label="Paginação">
+                        <ul class="pagination justify-content-center">
+                            {% if page > 1 %}
+                            <li class="page-item"><a class="page-link" href="?page={{ page|add:-1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ first_cnpj }}&last_razao={{ first_razao }}&dir=prev{% if razao_social %}&razao_social={{ razao_social|urlencode }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia|urlencode }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}" aria-label="Página anterior"><i class="bi bi-chevron-left" aria-hidden="true"></i></a></li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left" aria-hidden="true"></i></span></li>
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left" aria-hidden="true"></i></span></li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Página {{ page }} de {% if total_estimado %}+{{ total_paginas|format_number }}{% else %}{{ total_paginas|format_number }}{% endif %}
+                                </span>
+                            </li>
+
+                            {% if has_next %}
+                            <li class="page-item"><a class="page-link" href="?page={{ page|add:1 }}&ordem={{ ordem }}&a_partir_de={{ a_partir_de }}&last_cnpj={{ last_cnpj }}&last_razao={{ last_razao }}&dir=next{% if razao_social %}&razao_social={{ razao_social|urlencode }}{% endif %}{% if nome_fantasia %}&nome_fantasia={{ nome_fantasia|urlencode }}{% endif %}{% if cnpj %}&cnpj={{ cnpj }}{% endif %}{% if uf %}&uf={{ uf }}{% endif %}{% if municipio %}&municipio={{ municipio }}{% endif %}{% if situacao %}&situacao={{ situacao }}{% endif %}{% if simples %}&simples={{ simples }}{% endif %}{% if mei %}&mei={{ mei }}{% endif %}" aria-label="Próxima página"><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right" aria-hidden="true"></i></span></li>
+                            {% endif %}
+
+                            <!-- Ir para: sem cursor na querystring a view usa OFFSET com
+                                 enable_*scan desligado (25 s viraram 4-7 s) e, se o
+                                 statement_timeout de 8 s estourar, repete sem OFFSET e
+                                 mostra a primeira pagina com aviso. -->
+                            {% if total_paginas %}
+                            <li class="page-item consulta-ir-para">
+                                <form method="get" class="d-flex align-items-center gap-1">
+                                    <input type="hidden" name="ordem" value="{{ ordem }}">
+                                    {% if razao_social %}<input type="hidden" name="razao_social" value="{{ razao_social }}">{% endif %}
+                                    {% if nome_fantasia %}<input type="hidden" name="nome_fantasia" value="{{ nome_fantasia }}">{% endif %}
+                                    {% if cnpj %}<input type="hidden" name="cnpj" value="{{ cnpj }}">{% endif %}
+                                    {% if uf %}<input type="hidden" name="uf" value="{{ uf }}">{% endif %}
+                                    {% if municipio %}<input type="hidden" name="municipio" value="{{ municipio }}">{% endif %}
+                                    {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
+                                    {% if simples %}<input type="hidden" name="simples" value="{{ simples }}">{% endif %}
+                                    {% if mei %}<input type="hidden" name="mei" value="{{ mei }}">{% endif %}
+                                    <input type="number" name="page" min="1" value="{{ page }}"
+                                           {% if not total_estimado %}max="{{ total_paginas }}"{% endif %}
+                                           class="form-control form-control-sm" style="width: 5.5rem"
+                                           aria-label="Ir para a página" title="Digite a página e clique em Ir">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">Ir</button>
+                                </form>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+
+                    <p class="consulta-mostrando">
+                        <i class="bi bi-clock" aria-hidden="true"></i>
+                        Mostrando {{ empresas|length }} de {% if total_estimado %}+100.000{% else %}{{ total|format_number }}{% endif %} empresas
+                    </p>
+                </div>
+            </section>
+        </div>
+
+        <aside id="ui-details-panel" class="ui-details-panel" aria-label="Ficha cadastral" hidden>
+            <div class="consulta-panel-head">
+                <p class="consulta-panel-title">Ficha cadastral</p>
+                <button id="ui-details-close" type="button" class="btn btn-ghost btn-sm" aria-label="Fechar ficha cadastral">
+                    <span class="ui-mobile-close">Voltar</span><i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </div>
+            <p id="ui-panel-status" class="ui-panel-status" role="status" aria-live="polite"></p>
+            <div id="ui-details-content"></div>
+            <div class="consulta-panel-foot">
+                <a id="ui-details-full" href="#" target="_blank" rel="noopener">Abrir página completa <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+                <span class="consulta-panel-hint">Esc fecha</span>
+            </div>
+        </aside>
+    </div>
+</div>
 {% endblock %}

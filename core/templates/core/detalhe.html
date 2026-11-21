@@ -1,103 +1,124 @@
 <!-- /home/neto/cnpj_interface/core/templates/core/detalhe.html -->
 {% extends 'core/base.html' %}
+{% load static %}
 
 {% block title %}{{ empresa.razao_social }} — busquecnpj{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261121">{% endblock %}
 
 {% block content %}
-<div class="ui-detail-page">
+<div class="ui-detail-page detail-page">
 <div class="row">
     <div class="col">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="{% if next_url %}{{ next_url }}{% else %}{% url 'core:lista' %}{% endif %}">Empresas</a></li>
-                <li class="breadcrumb-item active">{{ empresa.razao_social|truncatechars:40 }}</li>
+                <li class="breadcrumb-item"><a href="{% if next_url %}{{ next_url }}{% else %}{% url 'core:lista' %}{% endif %}">Empresas</a></li>
+                <li class="breadcrumb-item active" aria-current="page">{{ empresa.razao_social|truncatechars:40 }}</li>
             </ol>
         </nav>
 
         <!-- ============================================================ -->
-        <!-- CABEÇALHO DA EMPRESA -->
+        <!-- CABECALHO DA EMPRESA (ficha corporativa) -->
         <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                <h2 class="mb-0">
-                    <i class="bi bi-building"></i> {{ empresa.razao_social }}
-                </h2>
-                <small>
-                    <code class="text-white">{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code>
-                </small>
-            </div>
-            <div class="card-body">
-                <!-- Situação + Simples + MEI -->
-                <div class="row mb-3">
-                    <div class="col-md-3">
-                        <strong>Situação:</strong>
-                        {% if empresa.situacao_descricao == 'ATIVA' %}
-                            <span class="badge bg-success">Ativa</span>
-                        {% elif empresa.situacao_descricao == 'INAPTA' %}
-                            <span class="badge bg-danger">Inapta</span>
-                        {% elif empresa.situacao_descricao == 'SUSPENSA' %}
-                            <span class="badge bg-warning">Suspensa</span>
-                        {% elif empresa.situacao_descricao == 'BAIXADA' %}
-                            <span class="badge bg-secondary">Baixada</span>
-                        {% elif empresa.situacao_descricao == 'NULA' %}
-                            <span class="badge bg-dark">Nula</span>
-                        {% else %}
-                            <span class="badge bg-secondary">{{ empresa.situacao_descricao }}</span>
-                        {% endif %}
-                    </div>
-                    <div class="col-md-3">
-                        <strong>Simples:</strong>
-                        {% if empresa.op_simples == 'S' %}
-                            <span class="badge bg-success">SIM</span>
-                        {% else %}
-                            <span class="badge bg-secondary">NÃO</span>
-                        {% endif %}
-                    </div>
-                    <div class="col-md-3">
-                        <strong>MEI:</strong>
-                        {% if empresa.op_mei == 'S' %}
-                            <span class="badge bg-info">SIM</span>
-                        {% else %}
-                            <span class="badge bg-secondary">NÃO</span>
-                        {% endif %}
-                    </div>
-                    <div class="col-md-3">
-                        <strong>Tipo:</strong>
-                        <span class="badge bg-primary">MATRIZ</span>
+        <section class="card detail-hero">
+            <div class="detail-hero__top">
+                <div class="detail-hero__id">
+                    <span class="detail-hero__mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                    <div class="detail-hero__titles">
+                        <p class="ui-eyebrow">Ficha cadastral</p>
+                        <h1 class="detail-hero__name">{{ empresa.razao_social }}</h1>
+                        <p class="detail-hero__cnpj">
+                            <code>{{ empresa.cnpj_completo|slice:"0:2" }}.{{ empresa.cnpj_completo|slice:"2:5" }}.{{ empresa.cnpj_completo|slice:"5:8" }}/{{ empresa.cnpj_completo|slice:"8:12" }}-{{ empresa.cnpj_completo|slice:"12:14" }}</code>
+                            <button type="button" class="ui-copy" data-copy-cnpj="{{ empresa.cnpj_completo }}" aria-label="Copiar CNPJ de {{ empresa.razao_social }}" title="Copiar CNPJ">
+                                <i class="bi bi-copy" aria-hidden="true"></i>
+                            </button>
+                        </p>
                     </div>
                 </div>
+                <div class="detail-hero__badges ui-cluster">
+                    {% if empresa.situacao_descricao == 'ATIVA' %}
+                        <span class="ui-badge ui-badge--ok"><i class="bi bi-check-circle" aria-hidden="true"></i> Ativa</span>
+                    {% elif empresa.situacao_descricao == 'INAPTA' %}
+                        <span class="ui-badge ui-badge--danger"><i class="bi bi-x-circle" aria-hidden="true"></i> Inapta</span>
+                    {% elif empresa.situacao_descricao == 'SUSPENSA' %}
+                        <span class="ui-badge ui-badge--warn"><i class="bi bi-exclamation-circle" aria-hidden="true"></i> Suspensa</span>
+                    {% elif empresa.situacao_descricao == 'BAIXADA' %}
+                        <span class="ui-badge ui-badge--neutral">Baixada</span>
+                    {% elif empresa.situacao_descricao == 'NULA' %}
+                        <span class="ui-badge ui-badge--neutral">Nula</span>
+                    {% else %}
+                        <span class="ui-badge ui-badge--neutral">{{ empresa.situacao_descricao|default:"-" }}</span>
+                    {% endif %}
+                    <span class="ui-badge {% if empresa.op_simples == 'S' %}ui-badge--ok{% else %}ui-badge--neutral{% endif %}">Simples: {% if empresa.op_simples == 'S' %}SIM{% else %}NÃO{% endif %}</span>
+                    <span class="ui-badge {% if empresa.op_mei == 'S' %}ui-badge--info{% else %}ui-badge--neutral{% endif %}">MEI: {% if empresa.op_mei == 'S' %}SIM{% else %}NÃO{% endif %}</span>
+                    <span class="ui-badge ui-badge--info"><i class="bi bi-diagram-3" aria-hidden="true"></i> MATRIZ</span>
+                </div>
+            </div>
 
-                <div class="mt-3">
-                    <a href="{% url 'core:dossie' empresa.cnpj_completo %}"
-                       class="btn btn-outline-primary btn-sm"
-                       title="Baixar o dossiê completo desta empresa em PDF">
-                        <i class="bi bi-file-earmark-pdf"></i> Baixar dossiê em PDF
-                    </a>
+            <div class="detail-hero__facts">
+                <div class="detail-fact">
+                    <span class="detail-fact__label">Nome fantasia</span>
+                    <span class="detail-fact__value">{{ empresa.nm_fantasia|default:"-" }}</span>
+                </div>
+                <div class="detail-fact">
+                    <span class="detail-fact__label">Município / UF</span>
+                    <span class="detail-fact__value">{{ empresa.municipio_descricao|default:"-" }}{% if empresa.uf %} / {{ empresa.uf }}{% endif %}</span>
+                </div>
+                <div class="detail-fact">
+                    <span class="detail-fact__label">Data de abertura</span>
+                    <span class="detail-fact__value">{{ empresa.dt_ini|date:"d/m/Y"|default:"-" }}</span>
+                </div>
+                <div class="detail-fact">
+                    <span class="detail-fact__label">Porte</span>
+                    <span class="detail-fact__value">{{ empresa.porte_empresa_descricao|default:"-" }}</span>
                 </div>
             </div>
-        </div>
+
+            <div class="detail-hero__actions">
+                <a href="{% url 'core:dossie' empresa.cnpj_completo %}"
+                   class="btn btn-primary"
+                   title="Baixar o dossiê completo desta empresa em PDF">
+                    <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i> Baixar dossiê em PDF
+                </a>
+                {% if empresa.maps_url %}
+                <a href="{{ empresa.maps_url }}" target="_blank" rel="noopener" class="btn btn-secondary">
+                    <i class="bi bi-geo-alt-fill" aria-hidden="true"></i> Abrir no Google Maps
+                </a>
+                {% endif %}
+                {% if empresa.maps_nome_url %}
+                <a href="{{ empresa.maps_nome_url }}" target="_blank" rel="noopener" class="btn btn-secondary" title="Se o pino do endereço não estiver no lugar certo, busque pelo nome">
+                    <i class="bi bi-search" aria-hidden="true"></i> Buscar pelo nome
+                </a>
+                {% endif %}
+                {% if empresa.whatsapp_url %}
+                <a href="{{ empresa.whatsapp_url }}" target="_blank" rel="noopener"
+                   class="btn btn-secondary" title="Abrir conversa no WhatsApp (celular)">
+                    <i class="bi bi-whatsapp" aria-hidden="true"></i> WhatsApp
+                </a>
+                {% endif %}
+            </div>
+        </section>
 
         <!-- ============================================================ -->
         <!-- DADOS DA EMPRESA -->
         <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-secondary text-white">
-                <h4 class="mb-0"><i class="bi bi-info-circle"></i> Dados da Empresa</h4>
+        <section class="card detail-card">
+            <div class="card-header detail-card__head">
+                <h2 class="detail-card__title"><i class="bi bi-info-circle" aria-hidden="true"></i> Dados da Empresa</h2>
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <table class="table table-sm">
+                <div class="detail-grid">
+                    <table class="table table-sm detail-table">
+                        <tbody>
                             <tr>
-                                <th width="40%">Razão Social</th>
+                                <th scope="row">Razão Social</th>
                                 <td>{{ empresa.razao_social|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Nome Fantasia</th>
+                                <th scope="row">Nome Fantasia</th>
                                 <td>{{ empresa.nm_fantasia|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Natureza Jurídica</th>
+                                <th scope="row">Natureza Jurídica</th>
                                 <td>
                                     {% if empresa.nat_juridica %}
                                         {{ empresa.nat_juridica }} - {{ empresa.natureza_juridica_descricao|default:"-" }}
@@ -107,11 +128,11 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>Qualificação do Responsável</th>
+                                <th scope="row">Qualificação do Responsável</th>
                                 <td>{{ empresa.qual_resp|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Capital Social</th>
+                                <th scope="row">Capital Social</th>
                                 <td>
                                     {% if empresa.capital_social %}
                                         R$ {{ empresa.capital_social|floatformat:2 }}
@@ -121,31 +142,31 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>Porte da Empresa</th>
+                                <th scope="row">Porte da Empresa</th>
                                 <td>{{ empresa.porte_empresa_descricao|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Ente Federativo Responsável</th>
+                                <th scope="row">Ente Federativo Responsável</th>
                                 <td>{{ empresa.ente_fed_resp|default:"-" }}</td>
                             </tr>
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <table class="table table-sm">
+                        </tbody>
+                    </table>
+                    <table class="table table-sm detail-table">
+                        <tbody>
                             <tr>
-                                <th width="40%">Data de Abertura</th>
+                                <th scope="row">Data de Abertura</th>
                                 <td>{{ empresa.dt_ini|date:"d/m/Y"|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Data da Situação</th>
+                                <th scope="row">Data da Situação</th>
                                 <td>{{ empresa.dt_sit_cadastro|date:"d/m/Y"|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Motivo da Situação</th>
+                                <th scope="row">Motivo da Situação</th>
                                 <td>{{ empresa.motivo_sit_cadastro_descricao|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>CNAE Principal</th>
+                                <th scope="row">CNAE Principal</th>
                                 <td>
                                     {% if empresa.cnae_principal %}
                                         {{ empresa.cnae_principal }} - {{ empresa.cnae_principal_descricao|default:"-" }}
@@ -155,123 +176,110 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>CNAE Secundário</th>
+                                <th scope="row">CNAE Secundário</th>
                                 <td>{{ empresa.cnae_secundario|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Site</th>
+                                <th scope="row">Site</th>
                                 <td>{{ empresa.site|default:"-" }}</td>
                             </tr>
-                        </table>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-        </div>
 
-        <!-- ============================================================ -->
-        <!-- SIMPLES E MEI (COM DATAS) -->
-        <!-- ============================================================ -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card {% if empresa.op_simples == 'S' %}border-success{% else %}border-secondary{% endif %}">
-                    <div class="card-header {% if empresa.op_simples == 'S' %}bg-success{% else %}bg-secondary{% endif %} text-white">
-                        <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Simples Nacional</h5>
-                    </div>
-                    <div class="card-body">
+                <!-- Simples e MEI, com as datas de opcao/exclusao (sem card
+                     proprio para nao entrarem no agrupamento de abas do JS) -->
+                <div class="detail-regimes">
+                    <div class="detail-regime {% if empresa.op_simples == 'S' %}detail-regime--on{% else %}detail-regime--off{% endif %}">
+                        <h3 class="detail-regime__title"><i class="bi bi-file-earmark-text" aria-hidden="true"></i> Simples Nacional</h3>
                         {% if empresa.op_simples == 'S' %}
-                            <p><strong>Status:</strong> <span class="badge bg-success">SIM</span></p>
+                            <p><strong>Status:</strong> <span class="ui-badge ui-badge--ok">SIM</span></p>
                             <p><strong>Data de Opção:</strong> {{ empresa.dt_op_simples|date:"d/m/Y"|default:"-" }}</p>
                             <p><strong>Data de Exclusão:</strong> {{ empresa.dt_exc_simples|date:"d/m/Y"|default:"-" }}</p>
                         {% else %}
-                            <p class="text-muted">Não optante pelo Simples Nacional</p>
+                            <p class="ui-muted">Não optante pelo Simples Nacional</p>
                         {% endif %}
                     </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card {% if empresa.op_mei == 'S' %}border-info{% else %}border-secondary{% endif %}">
-                    <div class="card-header {% if empresa.op_mei == 'S' %}bg-info{% else %}bg-secondary{% endif %} text-white">
-                        <h5 class="mb-0"><i class="bi bi-person-badge"></i> MEI</h5>
-                    </div>
-                    <div class="card-body">
+                    <div class="detail-regime {% if empresa.op_mei == 'S' %}detail-regime--on{% else %}detail-regime--off{% endif %}">
+                        <h3 class="detail-regime__title"><i class="bi bi-person-badge" aria-hidden="true"></i> MEI</h3>
                         {% if empresa.op_mei == 'S' %}
-                            <p><strong>Status:</strong> <span class="badge bg-info">SIM</span></p>
+                            <p><strong>Status:</strong> <span class="ui-badge ui-badge--info">SIM</span></p>
                             <p><strong>Data de Opção:</strong> {{ empresa.dt_op_mei|date:"d/m/Y"|default:"-" }}</p>
                             <p><strong>Data de Exclusão:</strong> {{ empresa.dt_exc_mei|date:"d/m/Y"|default:"-" }}</p>
                         {% else %}
-                            <p class="text-muted">Não optante pelo MEI</p>
+                            <p class="ui-muted">Não optante pelo MEI</p>
                         {% endif %}
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- ============================================================ -->
-        <!-- ENDEREÇO E CONTATO -->
+        <!-- ENDERECO E CONTATO -->
         <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-secondary text-white">
-                <h4 class="mb-0"><i class="bi bi-geo-alt"></i> Endereço e Contato</h4>
+        <section class="card detail-card">
+            <div class="card-header detail-card__head">
+                <h2 class="detail-card__title"><i class="bi bi-geo-alt" aria-hidden="true"></i> Endereço e Contato</h2>
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <table class="table table-sm">
+                <div class="detail-grid">
+                    <table class="table table-sm detail-table">
+                        <tbody>
                             <tr>
-                                <th width="30%">Logradouro</th>
+                                <th scope="row">Logradouro</th>
                                 <td>{{ empresa.tip_logradouro|default:"" }} {{ empresa.logradouro|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Número</th>
+                                <th scope="row">Número</th>
                                 <td>{{ empresa.numero|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Complemento</th>
+                                <th scope="row">Complemento</th>
                                 <td>{{ empresa.complemento|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Bairro</th>
+                                <th scope="row">Bairro</th>
                                 <td>{{ empresa.bairro|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>CEP</th>
+                                <th scope="row">CEP</th>
                                 <td>{{ empresa.cep|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Município</th>
+                                <th scope="row">Município</th>
                                 <td>{{ empresa.municipio_descricao|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>UF</th>
+                                <th scope="row">UF</th>
                                 <td>{{ empresa.uf|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>País</th>
+                                <th scope="row">País</th>
                                 <td>{{ empresa.pais_descricao|default:"Brasil" }}</td>
                             </tr>
                             {% if empresa.maps_url or empresa.maps_nome_url %}
                             <tr>
-                                <th>Mapa</th>
-                                <td>
+                                <th scope="row">Mapa</th>
+                                <td class="detail-mapa">
                                     {% if empresa.maps_url %}
                                     <a href="{{ empresa.maps_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
-                                        <i class="bi bi-geo-alt-fill"></i> Abrir no Google Maps
+                                        <i class="bi bi-geo-alt-fill" aria-hidden="true"></i> Abrir no Google Maps
                                     </a>
                                     {% endif %}
                                     {% if empresa.maps_nome_url %}
                                     <a href="{{ empresa.maps_nome_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Se o pino do endereço não estiver no lugar certo, busque pelo nome">
-                                        <i class="bi bi-search"></i> Buscar pelo nome
+                                        <i class="bi bi-search" aria-hidden="true"></i> Buscar pelo nome
                                     </a>
                                     {% endif %}
                                 </td>
                             </tr>
                             {% endif %}
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <table class="table table-sm">
+                        </tbody>
+                    </table>
+                    <table class="table table-sm detail-table">
+                        <tbody>
                             <tr>
-                                <th width="30%">Telefone 1</th>
+                                <th scope="row">Telefone 1</th>
                                 <td>
                                     {% if empresa.ddd_1 and empresa.tel_1 %}
                                         ({{ empresa.ddd_1 }}) {{ empresa.tel_1 }}
@@ -282,13 +290,13 @@
                                     <a href="{{ empresa.whatsapp_url }}" target="_blank" rel="noopener"
                                        class="btn btn-sm btn-outline-success ms-1 py-0"
                                        title="Abrir conversa no WhatsApp (celular)">
-                                        <i class="bi bi-whatsapp"></i> WhatsApp
+                                        <i class="bi bi-whatsapp" aria-hidden="true"></i> WhatsApp
                                     </a>
                                     {% endif %}
                                 </td>
                             </tr>
                             <tr>
-                                <th>Telefone 2</th>
+                                <th scope="row">Telefone 2</th>
                                 <td>
                                     {% if empresa.ddd_2 and empresa.tel_2 %}
                                         ({{ empresa.ddd_2 }}) {{ empresa.tel_2 }}
@@ -298,7 +306,7 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>Fax</th>
+                                <th scope="row">Fax</th>
                                 <td>
                                     {% if empresa.ddd_fax and empresa.fax %}
                                         ({{ empresa.ddd_fax }}) {{ empresa.fax }}
@@ -308,7 +316,7 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>Email</th>
+                                <th scope="row">Email</th>
                                 <td>
                                     {% if empresa.email %}
                                         <a href="mailto:{{ empresa.email }}">{{ empresa.email }}</a>
@@ -318,29 +326,29 @@
                                 </td>
                             </tr>
                             <tr>
-                                <th>Situação Especial</th>
+                                <th scope="row">Situação Especial</th>
                                 <td>{{ empresa.sit_esp|default:"-" }}</td>
                             </tr>
                             <tr>
-                                <th>Data Sit. Especial</th>
+                                <th scope="row">Data Sit. Especial</th>
                                 <td>{{ empresa.dt_sit_esp|date:"d/m/Y"|default:"-" }}</td>
                             </tr>
-                        </table>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- ============================================================ -->
         <!-- ESTABELECIMENTOS (MATRIZ + FILIAIS) -->
         <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                <h4 class="mb-0">
-                    <i class="bi bi-shop"></i> Estabelecimentos 
-                    <span class="badge bg-light text-dark">{{ total_estabelecimentos }}</span>
-                    <small class="ms-2">({{ total_filiais }} filiais)</small>
-                </h4>
+        <section class="card detail-card">
+            <div class="card-header detail-card__head">
+                <h2 class="detail-card__title">
+                    <i class="bi bi-shop" aria-hidden="true"></i> Estabelecimentos
+                    <span class="ui-badge ui-badge--neutral">{{ total_estabelecimentos }}</span>
+                </h2>
+                <span class="detail-card__sub">({{ total_filiais }} filiais)</span>
             </div>
             <div class="card-body">
                 {% if estabelecimentos %}
@@ -393,7 +401,7 @@
                                     {% if est.whatsapp_url %}
                                     <a href="{{ est.whatsapp_url }}" target="_blank" rel="noopener"
                                        class="text-success ms-1" title="Abrir conversa no WhatsApp (celular)">
-                                        <i class="bi bi-whatsapp"></i>
+                                        <i class="bi bi-whatsapp" aria-hidden="true"></i>
                                     </a>
                                     {% endif %}
                                 </td>
@@ -403,14 +411,14 @@
                                 <td class="text-center text-nowrap" data-label="Mapa">
                                     {% if est.maps_url %}
                                         <a href="{{ est.maps_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="Abrir no Google Maps">
-                                            <i class="bi bi-geo-alt-fill"></i>
+                                            <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
                                         </a>
                                     {% else %}
                                         -
                                     {% endif %}
                                     {% if est.maps_nome_url %}
                                         <a href="{{ est.maps_nome_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Buscar pelo nome no Google Maps">
-                                            <i class="bi bi-search"></i>
+                                            <i class="bi bi-search" aria-hidden="true"></i>
                                         </a>
                                     {% endif %}
                                 </td>
@@ -420,20 +428,23 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted text-center py-4">Nenhum estabelecimento encontrado</p>
+                <div class="ui-empty">
+                    <span class="ui-empty__icon" aria-hidden="true"><i class="bi bi-shop"></i></span>
+                    <p class="ui-empty__title">Nenhum estabelecimento encontrado</p>
+                </div>
                 {% endif %}
             </div>
-        </div>
+        </section>
 
         <!-- ============================================================ -->
-        <!-- SÓCIOS -->
+        <!-- SOCIOS -->
         <!-- ============================================================ -->
-        <div class="card mb-4">
-            <div class="card-header bg-success text-white">
-                <h4 class="mb-0">
-                    <i class="bi bi-people"></i> Sócios 
-                    <span class="badge bg-light text-dark">{{ total_socios }}</span>
-                </h4>
+        <section class="card detail-card">
+            <div class="card-header detail-card__head">
+                <h2 class="detail-card__title">
+                    <i class="bi bi-people" aria-hidden="true"></i> Sócios
+                    <span class="ui-badge ui-badge--neutral">{{ total_socios }}</span>
+                </h2>
             </div>
             <div class="card-body">
                 {% if socios %}
@@ -472,7 +483,7 @@
                                     {% if socio.nome_representante %}
                                         {{ socio.nome_representante }}
                                         {% if socio.qualificacao_representante %}
-                                            <br><small class="text-body-secondary">{{ socio.qualificacao_representante }}</small>
+                                            <br><small class="ui-muted">{{ socio.qualificacao_representante }}</small>
                                         {% endif %}
                                     {% else %}
                                         -
@@ -484,16 +495,17 @@
                     </table>
                 </div>
                 {% else %}
-                <p class="text-muted text-center py-4">
-                    <i class="bi bi-info-circle"></i> Nenhum sócio cadastrado
-                </p>
+                <div class="ui-empty">
+                    <span class="ui-empty__icon" aria-hidden="true"><i class="bi bi-people"></i></span>
+                    <p class="ui-empty__title">Nenhum sócio cadastrado</p>
+                </div>
                 {% endif %}
             </div>
-        </div>
-        
-        <div class="mt-3">
+        </section>
+
+        <div class="detail-back">
             <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'core:lista' %}{% endif %}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Voltar
+                <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar
             </a>
         </div>
     </div>

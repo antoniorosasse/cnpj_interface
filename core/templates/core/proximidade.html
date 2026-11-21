@@ -1,90 +1,109 @@
 <!-- /home/neto/cnpj_interface/core/templates/core/proximidade.html -->
 {% extends 'core/base.html' %}
-{% load num_filters %}
+{% load static num_filters %}
+{% block title %}Proximidade - busca CNPJ{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261121">{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col">
-        <h1><i class="bi bi-geo-alt"></i> Empresas por proximidade</h1>
-        <p class="text-muted">
-            <i class="bi bi-info-circle"></i>
-            Informe um ponto de partida (CNPJ, CEP, cidade ou coordenada) e veja as
-            empresas num raio de até {{ raio_opcoes|last }} km, da mais perto para a mais longe.
-        </p>
+<div class="proximidade-page">
 
-        {% if erro %}
-        <div class="alert alert-warning">
-            <i class="bi bi-exclamation-triangle"></i> {{ erro }}
+    <div class="ui-page-head prox-head">
+        <div>
+            <p class="ui-eyebrow">Geolocalização</p>
+            <h1><i class="bi bi-geo-alt" aria-hidden="true"></i> Empresas por proximidade</h1>
+            <p>
+                Informe um ponto de partida (CNPJ, CEP, cidade ou coordenada) e veja as
+                empresas num raio de até {{ raio_opcoes|last }} km, da mais perto para a mais longe.
+            </p>
         </div>
-        {% endif %}
+    </div>
 
-        {% if aviso %}
-        <div class="alert alert-info">
-            <i class="bi bi-info-circle"></i> {{ aviso }}
-        </div>
-        {% endif %}
+    {% if erro %}
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+        <div>{{ erro }}</div>
+    </div>
+    {% endif %}
 
-        <div class="card mb-4">
-            <div class="card-body">
-                <form method="get" class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label">Ponto de partida</label>
-                        <input type="text" name="origem" class="form-control"
-                               placeholder="CNPJ, CEP, endereço, Cidade/UF ou -26.30,-48.84"
-                               value="{{ origem_txt }}">
-                        <div class="form-text">
-                            Ex.: Rua do Príncipe, 500, Joinville/SC · 89.201-000 · Joinville/SC · -26.30,-48.84
-                        </div>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Raio (km)</label>
-                        <select name="raio" class="form-select">
-                            {% for opcao in raio_opcoes %}
-                            <option value="{{ opcao }}" {% if raio == opcao %}selected{% endif %}>{{ opcao }} km</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Situação</label>
-                        <select name="situacao" class="form-select">
-                            <option value="">Todas</option>
-                            {% for codigo, rotulo in situacoes %}
-                            <option value="{{ codigo }}" {% if situacao == codigo %}selected{% endif %}>{{ rotulo }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="matrizes"
-                                   id="matrizes" value="1" {% if somente_matrizes %}checked{% endif %}>
-                            <label class="form-check-label" for="matrizes">
-                                Somente matrizes
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-md-2 d-flex align-items-end gap-2">
-                        <button type="submit" class="btn btn-primary flex-fill">
-                            <i class="bi bi-search"></i> Buscar
-                        </button>
-                        <a href="{% url 'core:proximidade' %}" class="btn btn-secondary flex-fill"
-                           title="Limpar o formulário e voltar ao início">
-                            <i class="bi bi-x-circle"></i> Limpar
-                        </a>
-                    </div>
-                </form>
+    {% if aviso %}
+    <div class="alert alert-info" role="alert">
+        <i class="bi bi-info-circle" aria-hidden="true"></i>
+        <div>{{ aviso }}</div>
+    </div>
+    {% endif %}
+
+    <section class="ui-card prox-filtros" aria-labelledby="prox-filtros-titulo">
+        <div class="ui-card__head prox-filtros__head">
+            <div>
+                <h2 class="ui-card__title" id="prox-filtros-titulo">
+                    <i class="bi bi-crosshair" aria-hidden="true"></i> Ponto de partida e raio
+                </h2>
+                <p class="prox-filtros__hint">Aceita CNPJ, CEP, endereço, Cidade/UF ou coordenada.</p>
             </div>
         </div>
+        <div class="ui-card__body">
+            <form method="get" class="prox-form">
+                <div class="prox-form__origem">
+                    <label class="form-label" for="prox-origem">Ponto de partida</label>
+                    <div class="ui-input-icon">
+                        <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                        <input type="text" name="origem" id="prox-origem" class="form-control"
+                               placeholder="CNPJ, CEP, endereço, Cidade/UF ou -26.30,-48.84"
+                               value="{{ origem_txt }}" autocomplete="off">
+                    </div>
+                    <div class="form-text">
+                        Ex.: Rua do Príncipe, 500, Joinville/SC · 89.201-000 · Joinville/SC · -26.30,-48.84
+                    </div>
+                </div>
+                <div class="prox-form__campo">
+                    <label class="form-label" for="prox-raio">Raio (km)</label>
+                    <select name="raio" id="prox-raio" class="form-select">
+                        {% for opcao in raio_opcoes %}
+                        <option value="{{ opcao }}" {% if raio == opcao %}selected{% endif %}>{{ opcao }} km</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="prox-form__campo">
+                    <label class="form-label" for="prox-situacao">Situação</label>
+                    <select name="situacao" id="prox-situacao" class="form-select">
+                        <option value="">Todas</option>
+                        {% for codigo, rotulo in situacoes %}
+                        <option value="{{ codigo }}" {% if situacao == codigo %}selected{% endif %}>{{ rotulo }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="prox-form__matrizes">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="matrizes"
+                               id="matrizes" value="1" {% if somente_matrizes %}checked{% endif %}>
+                        <label class="form-check-label" for="matrizes">
+                            Somente matrizes
+                        </label>
+                    </div>
+                </div>
+                <div class="prox-form__acoes">
+                    <a href="{% url 'core:proximidade' %}" class="btn btn-secondary"
+                       title="Limpar o formulário e voltar ao início">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i> Limpar
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search" aria-hidden="true"></i> Buscar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </section>
 
-        {% if origem %}
-        <p class="text-muted">
-            <i class="bi bi-pin-map"></i>
+    {% if origem %}
+    <div class="prox-resumo">
+        <p class="prox-resumo__origem">
+            <span class="prox-resumo__pin" aria-hidden="true"><i class="bi bi-pin-map-fill"></i></span>
             A partir de <strong>{{ origem.rotulo }}</strong>, raio de {{ raio }} km
             {% if somente_matrizes %}(somente matrizes){% else %}(matrizes e filiais){% endif %}
             {% for codigo, rotulo in situacoes %}{% if situacao == codigo %}(situação: {{ rotulo }}){% endif %}{% endfor %}
         </p>
-
-        <p class="text-muted mb-2">
-            <i class="bi bi-building"></i>
+        <p class="prox-resumo__total">
+            <i class="bi bi-building" aria-hidden="true"></i>
             {% if total is not None %}
                 <strong>{{ total|format_number }}</strong> empresa{{ total|pluralize }}
                 encontrada{{ total|pluralize }}
@@ -96,136 +115,162 @@
             {% if somente_matrizes %}· somente matrizes{% else %}· matrizes e filiais{% endif %}
             {% if situacao %}· situação: {% for codigo, rotulo in situacoes %}{% if situacao == codigo %}{{ rotulo }}{% endif %}{% endfor %}{% endif %}
         </p>
-
-        <div id="ui-results-layout" class="ui-results-layout"><div class="ui-results-list">
-<div class="table-responsive">
-            <table class="table table-hover table-striped align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Distância</th>
-                        <th>CNPJ</th>
-                        <th>Razão Social</th>
-                        <th>Nome Fantasia</th>
-                        <th>Endereço</th>
-                        <th>Município/UF</th>
-                        <th>Situação</th>
-                        <th>Tipo</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for linha in resultados %}
-                    <tr>
-                        <td class="text-nowrap">
-                            <span class="badge bg-primary">{{ linha.km|floatformat:2 }} km</span>
-                        </td>
-                        <td><code>{{ linha.cnpj_completo|slice:"0:2" }}.{{ linha.cnpj_completo|slice:"2:5" }}.{{ linha.cnpj_completo|slice:"5:8" }}/{{ linha.cnpj_completo|slice:"8:12" }}-{{ linha.cnpj_completo|slice:"12:14" }}</code></td>
-                        <td><strong>{{ linha.razao_social|default:"-"|truncatechars:40 }}</strong></td>
-                        <td>{{ linha.nm_fantasia|default:"-"|truncatechars:25 }}</td>
-                        <td>{{ linha.logradouro|default:"-"|truncatechars:30 }}{% if linha.numero %}, {{ linha.numero }}{% endif %}{% if linha.bairro %} - {{ linha.bairro|truncatechars:20 }}{% endif %}</td>
-                        <td>{{ linha.municipio_nome|default:"-" }}{% if linha.uf %} / {{ linha.uf }}{% endif %}</td>
-                        <td>
-                            {% if linha.situacao_descricao == 'ATIVA' %}<span class="badge bg-success">Ativa</span>
-                            {% elif linha.situacao_descricao == 'INAPTA' %}<span class="badge bg-danger">Inapta</span>
-                            {% elif linha.situacao_descricao == 'SUSPENSA' %}<span class="badge bg-warning">Suspensa</span>
-                            {% elif linha.situacao_descricao == 'BAIXADA' %}<span class="badge bg-secondary">Baixada</span>
-                            {% elif linha.situacao_descricao == 'NULA' %}<span class="badge bg-dark">Nula</span>
-                            {% else %}<span class="badge bg-secondary">{{ linha.situacao_descricao|default:"-" }}</span>{% endif %}
-                        </td>
-                        <td>
-                            {% if linha.cd_matriz_filial == 1 %}
-                            <span class="badge bg-success">Matriz</span>
-                            {% else %}
-                            <span class="badge bg-secondary">Filial</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-nowrap">
-                            <a href="{% url 'core:detalhe' linha.cnpj_completo %}?next={{ request.get_full_path|urlencode }}"
-                               target="_blank" rel="noopener"
-                               class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)" data-company-detail>
-                                <i class="bi bi-eye"></i>
-                            </a>
-                            {% if linha.maps_url %}
-                            <a href="{{ linha.maps_url }}" target="_blank" rel="noopener"
-                               class="btn btn-sm btn-outline-secondary" title="Abrir no Google Maps">
-                                <i class="bi bi-geo-alt-fill"></i>
-                            </a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="9" class="text-center py-4">
-                            <i class="bi bi-search" style="font-size: 2rem;"></i>
-                            <p class="mt-2 mb-0">Nenhuma empresa encontrada nesse raio.</p>
-                            <p class="text-muted small">Tente aumentar o raio, desmarcar "somente matrizes" ou trocar a situação.</p>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div></div><aside id="ui-details-panel" class="ui-details-panel" aria-label="Ficha cadastral" hidden>
-    <div class="ui-panel-actions"><a id="ui-details-full" href="#" target="_blank" rel="noopener">Abrir página completa <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a><button id="ui-details-close" type="button" class="btn btn-outline-secondary btn-sm" aria-label="Fechar ficha cadastral"><span class="ui-mobile-close">Voltar</span><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
-    <p id="ui-panel-status" class="ui-panel-status" role="status" aria-live="polite"></p>
-    <div id="ui-details-content"></div>
-</aside></div>
-
-        <!-- Paginação (keyset: avançar usa o cursor da última linha, voltar usa
-             a pilha `hist` da querystring; não existe OFFSET) -->
-        <nav aria-label="Paginação">
-            <ul class="pagination justify-content-center">
-                {% if pagina > 1 %}
-                <li class="page-item"><a class="page-link" href="{{ link_primeira }}" title="Primeira página"><i class="bi bi-chevron-double-left"></i></a></li>
-                <li class="page-item"><a class="page-link" href="{{ link_anterior }}" title="Página anterior"><i class="bi bi-chevron-left"></i></a></li>
-                {% else %}
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>
-                {% endif %}
-
-                <li class="page-item active">
-                    <span class="page-link">
-                        Página {{ pagina }}{% if total_paginas %} de {{ total_paginas|format_number }}{% endif %}
-                    </span>
-                </li>
-
-                {% if link_proxima %}
-                <li class="page-item"><a class="page-link" href="{{ link_proxima }}" title="Próxima página"><i class="bi bi-chevron-right"></i></a></li>
-                {% else %}
-                <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>
-                {% endif %}
-
-                {% if total_paginas and total_paginas > 1 %}
-                <li class="page-item ms-2">
-                    <form method="get" class="d-flex align-items-center gap-1">
-                        <input type="hidden" name="origem" value="{{ origem_txt }}">
-                        <input type="hidden" name="raio" value="{{ raio }}">
-                        {% if somente_matrizes %}<input type="hidden" name="matrizes" value="1">{% endif %}
-                        {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
-                        <input type="number" name="page" min="1" max="{{ total_paginas }}"
-                               value="{{ pagina }}" class="form-control form-control-sm"
-                               style="width: 5.5rem" aria-label="Ir para a página"
-                               title="Digite a página e clique em Ir">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">Ir</button>
-                    </form>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-
-        <p class="text-muted small">
-            <i class="bi bi-clock"></i> Mostrando {{ resultados|length }}
-            {% if total is not None %}de {{ total|format_number }}{% endif %}
-            empresa{{ resultados|length|pluralize }}
-            {% if somente_matrizes %}(somente matrizes){% else %}(matrizes e filiais){% endif %}
-            {% if total_paginas %}em {{ total_paginas|format_number }} página{{ total_paginas|pluralize }}{% endif %}
-            {% if situacao and total is None %}
-            <br><i class="bi bi-info-circle"></i> O total com filtro de situação vem de
-            <code>c_ceps_estab_sit</code>, que ainda não existe nesta base
-            (<code>ProjetoCargaDados: manage.py contar_estab_por_cep_situacao</code>).
-            Enquanto isso a paginação mostra só o número da página.
-            {% endif %}
-        </p>
-        {% endif %}
     </div>
+
+    <div id="ui-results-layout" class="ui-results-layout prox-resultados">
+        <div class="ui-results-list">
+            <section class="ui-card prox-resultados__card" aria-labelledby="prox-resultados-titulo">
+                <div class="ui-card__head prox-resultados__head">
+                    <div>
+                        <h2 class="ui-card__title" id="prox-resultados-titulo">Empresas no raio</h2>
+                        <p class="prox-resultados__sub">Ordenadas da mais perto para a mais longe.</p>
+                    </div>
+                    <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> até {{ raio }} km</span>
+                </div>
+
+                {% if resultados %}
+                <div class="consulta-tabela">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle sis-tabela">
+                            <thead class="sis-thead">
+                                <tr>
+                                    <th>Distância</th>
+                                    <th>CNPJ</th>
+                                    <th>Razão Social</th>
+                                    <th>Nome Fantasia</th>
+                                    <th>Endereço</th>
+                                    <th>Município/UF</th>
+                                    <th>Situação</th>
+                                    <th>Tipo</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for linha in resultados %}
+                                <tr>
+                                    <td class="text-nowrap">
+                                        <span class="ui-badge ui-badge--info ui-tnum"><i class="bi bi-geo" aria-hidden="true"></i> {{ linha.km|floatformat:2 }} km</span>
+                                    </td>
+                                    <td><code>{{ linha.cnpj_completo|slice:"0:2" }}.{{ linha.cnpj_completo|slice:"2:5" }}.{{ linha.cnpj_completo|slice:"5:8" }}/{{ linha.cnpj_completo|slice:"8:12" }}-{{ linha.cnpj_completo|slice:"12:14" }}</code></td>
+                                    <td><strong class="prox-razao">{{ linha.razao_social|default:"-"|truncatechars:40 }}</strong></td>
+                                    <td>{{ linha.nm_fantasia|default:"-"|truncatechars:25 }}</td>
+                                    <td>{{ linha.logradouro|default:"-"|truncatechars:30 }}{% if linha.numero %}, {{ linha.numero }}{% endif %}{% if linha.bairro %} - {{ linha.bairro|truncatechars:20 }}{% endif %}</td>
+                                    <td>{{ linha.municipio_nome|default:"-" }}{% if linha.uf %} / {{ linha.uf }}{% endif %}</td>
+                                    <td>
+                                        {% if linha.situacao_descricao == 'ATIVA' %}<span class="ui-badge ui-badge--ok">Ativa</span>
+                                        {% elif linha.situacao_descricao == 'INAPTA' %}<span class="ui-badge ui-badge--danger">Inapta</span>
+                                        {% elif linha.situacao_descricao == 'SUSPENSA' %}<span class="ui-badge ui-badge--warn">Suspensa</span>
+                                        {% elif linha.situacao_descricao == 'BAIXADA' %}<span class="ui-badge ui-badge--neutral">Baixada</span>
+                                        {% elif linha.situacao_descricao == 'NULA' %}<span class="ui-badge ui-badge--neutral">Nula</span>
+                                        {% else %}<span class="ui-badge ui-badge--neutral">{{ linha.situacao_descricao|default:"-" }}</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if linha.cd_matriz_filial == 1 %}
+                                        <span class="ui-badge ui-badge--info">Matriz</span>
+                                        {% else %}
+                                        <span class="ui-badge ui-badge--neutral">Filial</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-nowrap prox-acoes">
+                                        <a href="{% url 'core:detalhe' linha.cnpj_completo %}?next={{ request.get_full_path|urlencode }}"
+                                           target="_blank" rel="noopener"
+                                           class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)" data-company-detail>
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </a>
+                                        {% if linha.maps_url %}
+                                        <a href="{{ linha.maps_url }}" target="_blank" rel="noopener"
+                                           class="btn btn-sm btn-outline-secondary" title="Abrir no Google Maps">
+                                            <i class="bi bi-geo-alt-fill" aria-hidden="true"></i>
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% else %}
+                <div class="ui-empty">
+                    <span class="ui-empty__icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+                    <p class="ui-empty__title">Nenhuma empresa encontrada nesse raio</p>
+                    <p class="ui-empty__text">Tente aumentar o raio, desmarcar "somente matrizes" ou trocar a situação.</p>
+                </div>
+                {% endif %}
+
+                <div class="ui-card__foot consulta-rodape">
+                    <nav aria-label="Paginação">
+                        <ul class="pagination justify-content-center">
+                            {% if pagina > 1 %}
+                            <li class="page-item"><a class="page-link" href="{{ link_primeira }}" title="Primeira página"><i class="bi bi-chevron-double-left" aria-hidden="true"></i></a></li>
+                            <li class="page-item"><a class="page-link" href="{{ link_anterior }}" title="Página anterior"><i class="bi bi-chevron-left" aria-hidden="true"></i></a></li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left" aria-hidden="true"></i></span></li>
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left" aria-hidden="true"></i></span></li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Página {{ pagina }}{% if total_paginas %} de {{ total_paginas|format_number }}{% endif %}
+                                </span>
+                            </li>
+
+                            {% if link_proxima %}
+                            <li class="page-item"><a class="page-link" href="{{ link_proxima }}" title="Próxima página"><i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right" aria-hidden="true"></i></span></li>
+                            {% endif %}
+
+                            {% if total_paginas and total_paginas > 1 %}
+                            <li class="page-item consulta-ir-para">
+                                <form method="get" class="d-flex align-items-center gap-1">
+                                    <input type="hidden" name="origem" value="{{ origem_txt }}">
+                                    <input type="hidden" name="raio" value="{{ raio }}">
+                                    {% if somente_matrizes %}<input type="hidden" name="matrizes" value="1">{% endif %}
+                                    {% if situacao %}<input type="hidden" name="situacao" value="{{ situacao }}">{% endif %}
+                                    <input type="number" name="page" min="1" max="{{ total_paginas }}"
+                                           value="{{ pagina }}" class="form-control form-control-sm"
+                                           style="width: 5.5rem" aria-label="Ir para a página"
+                                           title="Digite a página e clique em Ir">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">Ir</button>
+                                </form>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+
+                    <p class="consulta-mostrando">
+                        <i class="bi bi-clock" aria-hidden="true"></i> Mostrando {{ resultados|length }}
+                        {% if total is not None %}de {{ total|format_number }}{% endif %}
+                        empresa{{ resultados|length|pluralize }}
+                        {% if somente_matrizes %}(somente matrizes){% else %}(matrizes e filiais){% endif %}
+                        {% if total_paginas %}em {{ total_paginas|format_number }} página{{ total_paginas|pluralize }}{% endif %}
+                        {% if situacao and total is None %}
+                        <br><i class="bi bi-info-circle" aria-hidden="true"></i> O total com filtro de situação vem de
+                        <code>c_ceps_estab_sit</code>, que ainda não existe nesta base
+                        (<code>ProjetoCargaDados: manage.py contar_estab_por_cep_situacao</code>).
+                        Enquanto isso a paginação mostra só o número da página.
+                        {% endif %}
+                    </p>
+                </div>
+            </section>
+        </div>
+
+        <aside id="ui-details-panel" class="ui-details-panel" aria-label="Ficha cadastral" hidden>
+            <div class="consulta-panel-head">
+                <p class="consulta-panel-title">Ficha cadastral</p>
+                <button id="ui-details-close" type="button" class="btn btn-ghost btn-sm" aria-label="Fechar ficha cadastral">
+                    <span class="ui-mobile-close">Voltar</span><i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
+            </div>
+            <p id="ui-panel-status" class="ui-panel-status" role="status" aria-live="polite"></p>
+            <div id="ui-details-content"></div>
+            <div class="consulta-panel-foot">
+                <a id="ui-details-full" href="#" target="_blank" rel="noopener">Abrir página completa <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+                <span class="consulta-panel-hint">Esc fecha</span>
+            </div>
+        </aside>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

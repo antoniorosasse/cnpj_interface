@@ -1,0 +1,572 @@
+/* portal-consulta.css - telas de consulta do portal (S2).
+   Lista de empresas, ficha do detalhe e busca por proximidade.
+   Carrega no bloco extra_css (antes de portal.css), por isso cada regra
+   especifica da pagina e escopada para vencer os componentes do design
+   system sem usar !important (a excecao sao os atributos hidden, que
+   precisam vencer o display definido aqui). */
+
+/* ==========================================================================
+   0. COMUM AS TRES TELAS
+   ========================================================================== */
+
+.consulta-lista .ui-page-head,
+.proximidade-page .ui-page-head { align-items: flex-start; }
+
+.consulta-head__note,
+.prox-head .prox-head__note {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0;
+    padding: .35rem .7rem;
+    border: 1px solid var(--p-line);
+    border-radius: var(--p-r-pill);
+    background: var(--p-surface);
+    color: var(--p-muted);
+    font-size: .75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Cabecalho de cards usados nas paginas de consulta */
+.consulta-filtros .ui-card__head,
+.prox-filtros .ui-card__head { align-items: flex-start; }
+
+.consulta-filtros__hint,
+.prox-filtros__hint,
+.consulta-resultados__sub,
+.prox-resultados__sub {
+    max-width: 62ch;
+    margin: .3rem 0 0;
+    color: var(--p-muted);
+    font-size: .8125rem;
+}
+
+.consulta-filtros .ui-card__title,
+.prox-filtros .ui-card__title,
+.consulta-resultados .ui-card__title,
+.prox-resultados .ui-card__title { display: flex; align-items: center; gap: .45rem; }
+
+.consulta-link-limpar {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--p-muted);
+    font-size: .8125rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.consulta-link-limpar:hover { color: var(--p-danger); text-decoration: underline; }
+
+/* ==========================================================================
+   1. LISTA - barra de filtros
+   ========================================================================== */
+
+.consulta-lista .ui-search-form {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+}
+
+.consulta-lista .ui-search-form > * { min-width: 0; }
+
+.consulta-lista .ui-search-form > .consulta-busca { grid-column: span 5; }
+.consulta-lista .ui-search-form > .consulta-campo { grid-column: span 2; }
+.consulta-lista .ui-search-form > .consulta-campo--cidade { grid-column: span 3; }
+
+.consulta-lista .ui-search-form > .consulta-avancado-toggle {
+    grid-column: span 3;
+    display: flex;
+    align-items: flex-end;
+}
+.consulta-lista .consulta-avancado-toggle .btn { width: 100%; }
+
+.consulta-lista .ui-search-form > .consulta-acoes {
+    grid-column: span 9;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+.consulta-lista .ui-search-form > .consulta-avancado {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--p-line);
+    border-radius: var(--p-r-md);
+    background: var(--p-surface-2);
+}
+.consulta-lista .consulta-avancado[hidden],
+.consulta-lista #ui-details-panel[hidden] { display: none !important; }
+
+.consulta-lista .consulta-ativos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem .9rem;
+    margin-top: 1.1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--p-line-strong);
+}
+.consulta-ativos .ui-chip { text-decoration: none; }
+
+.consulta-ativos__label {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--p-muted);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+/* ==========================================================================
+   2. LISTA / PROXIMIDADE - cartao de resultados, tabela e rodape
+   ========================================================================== */
+
+.consulta-resultados__card,
+.prox-resultados__card { overflow: hidden; }
+
+/* Com o painel aberto a coluna da lista encolhe: as colunas extras saem de
+   cena para a tabela nao precisar de rolagem horizontal. */
+.consulta-resultados.ui-has-detail .ui-extra-column { display: none; }
+.consulta-resultados.ui-has-detail .ui-results-table { min-width: 0; }
+
+.consulta-resultados__head,
+.prox-resultados__head { padding: 1rem 1.15rem; }
+
+.consulta-tabela .table-responsive { border: 0; border-radius: 0; }
+.consulta-tabela .table { margin: 0; }
+
+.consulta-tabela .ui-results-table { min-width: 780px; }
+.consulta-lista .consulta-tabela .table thead th:first-child,
+.prox-resultados .consulta-tabela .table thead th:first-child { padding-left: 1.15rem; }
+.consulta-tabela .table tbody td:first-child { padding-left: 1.15rem; }
+.consulta-tabela .table tbody td:last-child,
+.consulta-tabela .table thead th:last-child { padding-right: 1.15rem; }
+
+.consulta-regime { line-height: 1.45; }
+.consulta-regime__linha { display: block; color: var(--p-muted); font-size: .75rem; }
+.consulta-regime__linha strong { color: var(--p-ink); }
+
+.consulta-detalhe-btn { display: inline-grid; place-items: center; min-width: 34px; }
+
+.prox-acoes .btn + .btn { margin-left: .25rem; }
+.prox-razao { color: var(--p-ink); font-size: .8125rem; font-weight: 650; }
+
+.consulta-rodape { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
+.consulta-rodape .pagination { margin: 0; }
+.consulta-rodape .consulta-ir-para { display: flex; align-items: center; }
+.consulta-rodape .consulta-ir-para .form-control { width: 5.5rem !important; }
+
+.consulta-mostrando {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem;
+    margin: 0;
+    color: var(--p-muted);
+    font-size: .75rem;
+}
+
+/* ==========================================================================
+   3. PAINEL LATERAL (drawer) - lista e proximidade
+   ========================================================================== */
+
+.consulta-lista #ui-details-panel,
+.proximidade-page #ui-details-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - var(--p-topbar-h) - 32px);
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--p-r-lg);
+    box-shadow: var(--p-shadow-2);
+}
+
+.consulta-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .85rem 1.1rem;
+    border-bottom: 1px solid var(--p-line);
+    background: linear-gradient(180deg, var(--p-surface-2), var(--p-surface));
+}
+.consulta-panel-title { margin: 0; color: var(--p-ink); font-size: .95rem; font-weight: 700; }
+
+.consulta-lista #ui-panel-status,
+.proximidade-page #ui-panel-status { margin: .75rem 1.1rem 0; }
+
+.consulta-lista #ui-details-content,
+.proximidade-page #ui-details-content {
+    flex: 1;
+    min-height: 0;
+    padding: 1rem 1.1rem;
+    overflow-y: auto;
+}
+
+.consulta-panel-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .75rem 1.1rem;
+    border-top: 1px solid var(--p-line);
+    background: var(--p-surface-2);
+    font-size: .8125rem;
+}
+.consulta-panel-foot > a { display: inline-flex; align-items: center; gap: .3rem; font-weight: 600; }
+.consulta-panel-hint { color: var(--p-muted); font-size: .6875rem; }
+
+.ui-details-panel .ui-detail-page .detail-page,
+.ui-details-panel #ui-details-content .ui-detail-page { min-width: 0; }
+
+/* ==========================================================================
+   4. DETALHE - ficha corporativa (hero + cards)
+   ========================================================================== */
+
+.ui-detail-page .detail-hero {
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #12344a;
+    background: linear-gradient(135deg, #0b1c2b 0%, #0d2c42 55%, #0b3a56 100%);
+    color: #f3f8fc;
+    box-shadow: var(--p-shadow-2);
+}
+
+.detail-hero__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: clamp(1rem, 2.2vw, 1.5rem);
+}
+
+.detail-hero__id { display: flex; align-items: flex-start; gap: .9rem; min-width: 0; }
+.detail-hero__mark {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border: 1px solid rgba(125, 211, 252, .35);
+    border-radius: 14px;
+    background: rgba(125, 211, 252, .14);
+    color: #7dd3fc;
+    font-size: 1.25rem;
+}
+.detail-hero__titles { min-width: 0; }
+
+.ui-detail-page .detail-hero .ui-eyebrow { margin-bottom: .2rem; color: rgba(226, 240, 250, .62); }
+
+.detail-hero__name {
+    margin: 0;
+    color: #ffffff;
+    font-size: clamp(1.15rem, 2.4vw, 1.7rem);
+    font-weight: 800;
+    letter-spacing: -.01em;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.detail-hero__cnpj {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+    margin: .45rem 0 0;
+}
+.detail-hero__cnpj code {
+    padding: .18rem .5rem;
+    border: 1px solid rgba(125, 211, 252, .28);
+    border-radius: var(--p-r-xs);
+    background: rgba(7, 30, 47, .55);
+    color: #bae6fd;
+    font-size: .8125rem;
+}
+.ui-detail-page .detail-hero .ui-copy { color: rgba(226, 240, 250, .72); }
+.ui-detail-page .detail-hero .ui-copy:hover { background: rgba(125, 211, 252, .16); color: #ffffff; }
+
+.detail-hero__badges { justify-content: flex-end; max-width: 46%; }
+.detail-hero__badges .ui-badge { border-color: rgba(255, 255, 255, .16); }
+
+.detail-hero__facts {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .75rem 1.25rem;
+    padding: .95rem clamp(1rem, 2.2vw, 1.5rem);
+    border-top: 1px solid rgba(125, 211, 252, .16);
+    background: rgba(5, 22, 35, .35);
+}
+.detail-fact { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.detail-fact__label {
+    color: rgba(226, 240, 250, .58);
+    font-size: .6875rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+.detail-fact__value { color: #f3f8fc; font-size: .875rem; font-weight: 650; overflow-wrap: anywhere; }
+
+.detail-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    padding: .95rem clamp(1rem, 2.2vw, 1.5rem);
+    border-top: 1px solid rgba(125, 211, 252, .16);
+}
+
+/* cards da ficha */
+.ui-detail-page .detail-card {
+    overflow: hidden;
+    margin-top: 1rem;
+}
+.ui-detail-page .detail-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .5rem;
+    border-left: 3px solid var(--p-accent);
+}
+.detail-card__title { display: inline-flex; align-items: center; gap: .45rem; color: var(--p-ink); font-size: .95rem; font-weight: 700; }
+.detail-card__title .bi { color: var(--p-accent); }
+.detail-card__sub { color: var(--p-muted); font-size: .75rem; }
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 1.75rem;
+    align-items: start;
+}
+
+.ui-detail-page .detail-table { margin: 0; }
+.ui-detail-page .detail-table > tbody > tr > th {
+    width: 42%;
+    padding: .5rem .6rem .5rem 0;
+    border-bottom: 1px solid var(--p-line);
+    color: var(--p-muted);
+    font-size: .75rem;
+    font-weight: 650;
+    vertical-align: top;
+}
+.ui-detail-page .detail-table > tbody > tr > td {
+    padding: .5rem 0;
+    border-bottom: 1px solid var(--p-line);
+    color: var(--p-ink);
+    font-size: .8125rem;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+.ui-detail-page .detail-table > tbody > tr:last-child > th,
+.ui-detail-page .detail-table > tbody > tr:last-child > td { border-bottom: 0; }
+
+.detail-regimes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px dashed var(--p-line-strong);
+}
+.detail-regime {
+    padding: .9rem 1rem;
+    border: 1px solid var(--p-line);
+    border-left: 3px solid var(--p-line-strong);
+    border-radius: var(--p-r-md);
+    background: var(--p-surface-2);
+}
+.detail-regime--on { border-left-color: var(--p-ok); }
+.detail-regime--off { border-left-color: var(--p-line-strong); }
+.detail-regime__title {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0 0 .5rem;
+    color: var(--p-ink);
+    font-size: .8125rem;
+    font-weight: 700;
+}
+.detail-regime__title .bi { color: var(--p-accent); }
+.detail-regime p { margin: .2rem 0; color: var(--p-ink-soft); font-size: .8125rem; }
+
+.detail-mapa { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+.detail-back { margin-top: 1.25rem; }
+
+/* tabelas de estabelecimentos/socios no detalhe */
+.ui-detail-page .detail-card .table-responsive { border: 1px solid var(--p-line); }
+.ui-detail-page .detail-card .tabela-cards { margin: 0; }
+
+/* detalhe dentro do painel lateral: compacta */
+#ui-details-content .detail-hero__top { padding: 1rem; }
+#ui-details-content .detail-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#ui-details-content .detail-hero__badges { justify-content: flex-start; max-width: none; }
+#ui-details-content .detail-hero__actions { padding: .85rem 1rem; }
+#ui-details-content .detail-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+#ui-details-content .detail-regimes { grid-template-columns: minmax(0, 1fr); }
+#ui-details-content .detail-card .card-body { padding: 1rem; }
+#ui-details-content .detail-back { display: none; }
+
+/* ==========================================================================
+   5. PROXIMIDADE - formulario, resumo e resultados
+   ========================================================================== */
+
+.prox-form {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: end;
+    margin: 0;
+}
+.prox-form__origem { grid-column: span 4; min-width: 0; }
+.prox-form__campo { grid-column: span 2; min-width: 0; }
+.prox-form__matrizes { grid-column: span 2; padding-bottom: .5rem; }
+.prox-form__acoes {
+    grid-column: span 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+.prox-form__origem .form-text { margin-top: .35rem; }
+
+.prox-resumo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem 1.25rem;
+    margin: 1.25rem 0 1rem;
+}
+.prox-resumo__origem,
+.prox-resumo__total {
+    display: block;
+    margin: 0;
+    color: var(--p-ink-soft);
+    font-size: .875rem;
+}
+.prox-resumo__origem strong { color: var(--p-ink); }
+.prox-resumo__total { color: var(--p-muted); }
+.prox-resumo__total strong { color: var(--p-ink); font-weight: 750; }
+.prox-resumo__pin {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-right: .3rem;
+    border-radius: 8px;
+    background: var(--p-accent-soft);
+    color: var(--p-accent);
+    font-size: .8rem;
+    vertical-align: middle;
+}
+.prox-resumo__total > .bi { margin-right: .25rem; color: var(--p-accent); }
+
+.prox-resultados .consulta-rodape { align-items: flex-start; }
+
+/* ==========================================================================
+   6. RESPONSIVO
+   ========================================================================== */
+
+@media (max-width: 1199.98px) {
+    .consulta-lista .ui-search-form > .consulta-busca { grid-column: span 4; }
+    .consulta-lista .ui-search-form > .consulta-campo { grid-column: span 2; }
+    .consulta-lista .ui-search-form > .consulta-campo--cidade { grid-column: span 4; }
+    .consulta-lista .ui-search-form > .consulta-avancado { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .prox-form__origem { grid-column: span 12; }
+    .prox-form__campo { grid-column: span 3; }
+    .prox-form__matrizes { grid-column: span 3; }
+    .prox-form__acoes { grid-column: span 3; }
+}
+
+@media (max-width: 991.98px) {
+    .consulta-lista #ui-details-panel,
+    .proximidade-page #ui-details-panel { max-height: none; height: 100%; }
+    .detail-hero__badges { justify-content: flex-start; max-width: none; }
+    .prox-form__campo { grid-column: span 4; }
+    .prox-form__matrizes { grid-column: span 4; }
+    .prox-form__acoes { grid-column: span 4; }
+}
+
+@media (max-width: 767.98px) {
+    .consulta-lista .ui-search-form > .consulta-busca,
+    .consulta-lista .ui-search-form > .consulta-campo,
+    .consulta-lista .ui-search-form > .consulta-campo--cidade,
+    .consulta-lista .ui-search-form > .consulta-avancado-toggle,
+    .consulta-lista .ui-search-form > .consulta-acoes { grid-column: span 12; }
+    .consulta-lista .ui-search-form > .consulta-acoes { justify-content: stretch; }
+    .consulta-lista .consulta-acoes .btn { flex: 1; }
+    .consulta-lista .ui-search-form > .consulta-avancado { grid-template-columns: minmax(0, 1fr); }
+
+    .consulta-filtros .ui-card__head,
+    .prox-filtros .ui-card__head { flex-direction: column; align-items: stretch; }
+    .consulta-link-limpar { align-self: flex-start; }
+
+    .consulta-lista .ui-extra-column,
+    .consulta-lista .consulta-col--acoes { display: none; }
+    .consulta-tabela .ui-results-table { min-width: 0; }
+    .consulta-lista .ui-results-table td,
+    .consulta-lista .ui-results-table th { white-space: normal; }
+    .consulta-lista .ui-results-table > :not(caption) > * > * { padding: .6rem .5rem; }
+    .consulta-lista .ui-results-table { font-size: .8125rem; }
+    .consulta-tabela .ui-results-table td:first-child,
+    .consulta-tabela .ui-results-table th:first-child { padding-left: .75rem; }
+    .consulta-tabela .ui-results-table td:last-child,
+    .consulta-tabela .ui-results-table th:last-child { padding-right: .75rem; }
+
+    .consulta-rodape { flex-direction: column; align-items: stretch; }
+    .consulta-rodape .pagination { justify-content: flex-start !important; }
+    .consulta-rodape .consulta-ir-para { width: 100%; }
+    .consulta-rodape .consulta-ir-para form { width: 100%; }
+    .consulta-rodape .consulta-ir-para .form-control { flex: 1; width: auto !important; }
+
+    .consulta-panel-foot { flex-direction: column; align-items: flex-start; }
+
+    .detail-hero__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .detail-grid { grid-template-columns: minmax(0, 1fr); }
+    .detail-regimes { grid-template-columns: minmax(0, 1fr); }
+
+    .prox-form__campo { grid-column: span 6; }
+    .prox-form__matrizes { grid-column: span 6; }
+    .prox-form__acoes { grid-column: span 12; justify-content: stretch; }
+    .prox-form__acoes .btn { flex: 1; }
+    .prox-resumo { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 575.98px) {
+    .consulta-lista .consulta-acoes { flex-direction: column; }
+    .consulta-lista .consulta-acoes .btn { width: 100%; flex: none; }
+    .consulta-head__note { white-space: normal; }
+    .detail-hero__facts { grid-template-columns: minmax(0, 1fr); }
+    .detail-hero__id { gap: .7rem; }
+    .detail-hero__mark { width: 38px; height: 38px; border-radius: 11px; font-size: 1rem; }
+    .consulta-resultados .consulta-resultados__head,
+    .prox-resultados .prox-resultados__head { flex-direction: column; align-items: flex-start; }
+}
+
+/* ==========================================================================
+   7. IMPRESSAO
+   ========================================================================== */
+
+@media print {
+    .consulta-filtros,
+    .prox-filtros,
+    .consulta-ativos,
+    .consulta-rodape,
+    .detail-hero__actions,
+    .consulta-panel-head,
+    .consulta-panel-foot { display: none !important; }
+    .ui-detail-page .detail-hero { border-color: #cccccc; background: #ffffff; color: #000000; }
+    .detail-hero__name, .detail-fact__value { color: #000000; }
+    .detail-hero__facts { background: transparent; border-color: #dddddd; }
+    .detail-fact__label { color: #555555; }
+}
