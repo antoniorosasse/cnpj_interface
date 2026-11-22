@@ -693,7 +693,7 @@ O pipeline **é um RAG** (retrieval-augmented generation) — mas um RAG sobre
 vetorial no CNAE + execução de SQL, e o que entra no prompt do LLM são as
 **linhas recuperadas**, não pedaços de texto de uma base vetorial. Detalhes na
 seção [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
-`~/Projetos/docs/PROJETOS.md` (seção 7.1).
+`~/ProjetosPython/Projetos/docs/PROJETOS.md` (seção 7.1).
 
 ## Pipeline
 

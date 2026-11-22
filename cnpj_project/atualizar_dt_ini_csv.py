@@ -1,4 +1,4 @@
-# /home/neto/cnpj_interface/atualizar_dt_ini_csv.py
+# /home/neto/ProjetosPython/cnpj_interface/atualizar_dt_ini_csv.py
 """
 Script para atualizar dt_ini usando CSV + COPY (MUITO mais rápido)
 
@@ -10,7 +10,7 @@ Estratégia:
 5. Dropa a tabela temporária
 
 Uso:
-    cd /home/neto/cnpj_interface
+    cd /home/neto/ProjetosPython/cnpj_interface
     source venv/bin/activate
     python atualizar_dt_ini_csv.py
 """

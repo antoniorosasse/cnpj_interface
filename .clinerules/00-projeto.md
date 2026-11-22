@@ -8,10 +8,10 @@ neste workspace. Mantenha-o enxuto e versionado no git.
 | Assunto | Arquivo |
 |---|---|
 | Regras globais (valem nos 4 projetos: menu, as400, cnpj, carga) | `~/Documentos/Cline/Rules/00-sistema-arosasse.md` |
-| Estado atual, pendencias, decisoes e arquitetura | `/home/neto/Projetos/docs/PROJETOS.md` |
-| Comandos (dev/prod, queries, git, djLint) | `/home/neto/Projetos/docs/COMANDOS.md` |
-| Historico detalhado (com commits e erros) | `/home/neto/Projetos/docs/HISTORICO.md` |
-| Briefing portatil (para colar em outra IA) | `/home/neto/Projetos/docs/TODOS_PROJETOS.md` |
+| Estado atual, pendencias, decisoes e arquitetura | `/home/neto/ProjetosPython/Projetos/docs/PROJETOS.md` |
+| Comandos (dev/prod, queries, git, djLint) | `/home/neto/ProjetosPython/Projetos/docs/COMANDOS.md` |
+| Historico detalhado (com commits e erros) | `/home/neto/ProjetosPython/Projetos/docs/HISTORICO.md` |
+| Briefing portatil (para colar em outra IA) | `/home/neto/ProjetosPython/Projetos/docs/TODOS_PROJETOS.md` |
 | Este arquivo | regras especificas do `cnpj_interface` |
 
 Nao repita aqui o que ja esta nas regras globais (R1-R16) nem duplique o estado
@@ -24,10 +24,10 @@ Uma conversa pode comecar neste repositorio e mexer em outro (`.env` do vizinho,
 mas o spec de cada repo **nao** e carregado automaticamente: antes de editar
 fora daqui, **leia** o `.clinerules/00-projeto.md` do projeto que vai ser tocado.
 
-- `/home/neto/menu_interface/.clinerules/00-projeto.md`
-- `/home/neto/IBM/as400_interface/.clinerules/00-projeto.md`
-- `/home/neto/cnpj_interface/.clinerules/00-projeto.md`
-- `/home/neto/ProjetoCargaDados/.clinerules/00-projeto.md`
+- `/home/neto/ProjetosPython/menu_interface/.clinerules/00-projeto.md`
+- `/home/neto/ProjetosPython/IBM/as400_interface/.clinerules/00-projeto.md`
+- `/home/neto/ProjetosPython/cnpj_interface/.clinerules/00-projeto.md`
+- `/home/neto/ProjetosPython/ProjetoCargaDados/.clinerules/00-projeto.md`
 
 O que muda de um para o outro e o spec do repo (stack, schema, comandos,
 decisoes que nao se reabrem).

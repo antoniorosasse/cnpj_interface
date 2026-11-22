@@ -1,10 +1,10 @@
-# /home/neto/cnpj_interface/atualizar_dt_ini_todos.py
+# /home/neto/ProjetosPython/cnpj_interface/atualizar_dt_ini_todos.py
 """
 Script para atualizar a coluna dt_ini da tabela c_estabelecimentos
 a partir de MÚLTIPLOS arquivos Parquet (Estabelecimentos0.parquet, ...)
 
 Uso:
-    cd /home/neto/cnpj_interface
+    cd /home/neto/ProjetosPython/cnpj_interface
     source venv/bin/activate
     python atualizar_dt_ini_todos.py
 """

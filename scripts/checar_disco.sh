@@ -5,7 +5,7 @@
 # Uso:
 #   scripts/checar_disco.sh                # limite padrao 85% em /
 #   scripts/checar_disco.sh --limite 90    # outro limite
-#   scripts/checar_disco.sh --caminho /home/neto/backups
+#   scripts/checar_disco.sh --caminho /home/neto/ProjetosPython/backups
 #
 # Sai com 1 (e escreve no log) quando o uso passa do limite, para o cron
 # marcar a tarefa como falha. Se ALERTA_WEBHOOK estiver no .env, dispara

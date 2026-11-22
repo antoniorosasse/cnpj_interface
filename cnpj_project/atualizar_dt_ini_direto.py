@@ -1,4 +1,4 @@
-# /home/neto/cnpj_interface/atualizar_dt_ini_direto.py
+# /home/neto/ProjetosPython/cnpj_interface/atualizar_dt_ini_direto.py
 """
 Script OTIMIZADO para atualizar dt_ini:
 - Lê Parquet
@@ -7,7 +7,7 @@ Script OTIMIZADO para atualizar dt_ini:
 - Atualiza tabela principal via JOIN
 
 Uso:
-    cd /home/neto/cnpj_interface
+    cd /home/neto/ProjetosPython/cnpj_interface
     source venv/bin/activate
     python atualizar_dt_ini_direto.py
 """

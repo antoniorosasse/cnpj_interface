@@ -13,7 +13,7 @@
 set -euo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIR_BACKUP="/home/neto/backups"
+DIR_BACKUP="/home/neto/ProjetosPython/backups"
 MANTER_DIAS=14
 
 while [[ $# -gt 0 ]]; do
