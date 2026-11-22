@@ -25,7 +25,7 @@ mas o spec de cada repo **nao** e carregado automaticamente: antes de editar
 fora daqui, **leia** o `.clinerules/00-projeto.md` do projeto que vai ser tocado.
 
 - `/home/neto/ProjetosPython/menu_interface/.clinerules/00-projeto.md`
-- `/home/neto/ProjetosPython/IBM/as400_interface/.clinerules/00-projeto.md`
+- `/home/neto/ProjetosPython/as400_interface/.clinerules/00-projeto.md`
 - `/home/neto/ProjetosPython/cnpj_interface/.clinerules/00-projeto.md`
 - `/home/neto/ProjetosPython/ProjetoCargaDados/.clinerules/00-projeto.md`
 
