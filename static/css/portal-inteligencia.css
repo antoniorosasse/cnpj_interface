@@ -156,3 +156,56 @@
 .hist-page .hist-item .form-deletar { margin: 0; }
 .hist-page .hist-vazio { padding: 2.5rem 1rem; text-align: center; }
 .hist-page .hist-vazio .bi { color: var(--p-muted); font-size: 1.8rem; }
+
+/* ==========================================================================
+   LAYOUT AMPLO (modelo 2) — padrao desde 23/11
+   Sidebar vira gaveta e o thread ocupa a largura toda. ?layout=padrao
+   remove a classe .chat-wide e devolve o layout antigo com a coluna fixa.
+   ========================================================================== */
+.chat-drawer-toggle { display: none; }
+
+.chat-page.chat-wide .layout-chat { display: block; }
+.chat-page.chat-wide .chat-main { width: 100%; }
+
+.chat-page.chat-wide .chat-drawer-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin-bottom: .75rem;
+    padding: .45rem .75rem;
+    border: 1px solid var(--p-line-strong);
+    border-radius: var(--p-r-sm);
+    background: var(--p-surface);
+    color: var(--p-ink-soft);
+    font-size: .875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.chat-page.chat-wide .chat-drawer-toggle:hover { border-color: var(--p-accent); color: var(--p-accent); }
+
+.chat-page.chat-wide .sidebar-conversas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 1055;
+    width: 320px;
+    max-width: 85vw;
+    margin: 0;
+    padding: 1rem;
+    overflow-y: auto;
+    background: var(--p-surface);
+    border-right: 1px solid var(--p-line);
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+}
+.chat-page.chat-wide .sidebar-conversas.aberta {
+    transform: none;
+    box-shadow: 8px 0 24px rgba(15, 27, 38, .18);
+}
+.chat-page.chat-wide .chat-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(15, 27, 38, .35);
+}

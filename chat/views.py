@@ -203,6 +203,8 @@ def chat_view(request):
         'conversas': conversas,
         'mensagens_json': json.dumps(mensagens_json, default=str),
         'ultima_lista_linhas': ultima_lista_linhas,
+        # Layout amplo e' o padrao desde 23/11; ?layout=padrao volta ao antigo.
+        'layout_padrao': request.GET.get('layout') == 'padrao',
         # Quantas linhas do resultado o resposta_natural manda pro prompt.
         # Vai pro template pra nota de RAG mostrar numeros reais, sem
         # duplicar o 20 no HTML/JS.

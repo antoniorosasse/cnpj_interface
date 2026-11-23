@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="chat-page">
+<div class="chat-page{% if not layout_padrao %} chat-wide{% endif %}">
 
     {# ============================================================ #}
     {# CABECALHO #}
@@ -24,6 +24,12 @@
                 recuperou, nunca da memória do modelo.
             </p>
         </div>
+        <a class="btn btn-sm btn-outline-secondary align-self-start"
+           href="{% if layout_padrao %}{% url 'chat:chat' %}{% else %}?layout=padrao{% endif %}"
+           rel="nofollow" title="Alternar entre o layout amplo e o layout antigo com a coluna de conversas">
+            {% if layout_padrao %}<i class="bi bi-arrows-angle-expand" aria-hidden="true"></i> Layout amplo
+            {% else %}<i class="bi bi-layout-sidebar" aria-hidden="true"></i> Layout com coluna{% endif %}
+        </a>
     </div>
 
     <div class="alert alert-info" role="note">
@@ -35,7 +41,7 @@
     <div class="layout-chat">
 
         <!-- SIDEBAR DE CONVERSAS -->
-        <aside class="sidebar-conversas" aria-label="Suas conversas">
+        <aside class="sidebar-conversas" id="sidebar-conversas" aria-label="Suas conversas">
             <form method="post" action="{% url 'chat:nova' %}" class="mb-2">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-primary btn-sm w-100">
@@ -68,8 +74,14 @@
 
         </aside>
 
+        <div class="chat-backdrop" id="chat-backdrop" hidden></div>
+
         <!-- CONTEUDO DO CHAT -->
         <div class="chat-main">
+            <button type="button" class="chat-drawer-toggle" id="chat-drawer-toggle"
+                    aria-controls="sidebar-conversas" aria-expanded="false">
+                <i class="bi bi-list" aria-hidden="true"></i> Conversas
+            </button>
 
             {% if mensagens_json == '[]' %}
             <div class="chat-boas-vindas">
@@ -638,6 +650,28 @@
     });
 
     renderThreadInicial();
+
+    // Drawer do protótipo "layout amplo" (inofensivo no layout padrão)
+    (function () {
+        var botao = document.getElementById('chat-drawer-toggle');
+        var sidebar = document.getElementById('sidebar-conversas');
+        var fundo = document.getElementById('chat-backdrop');
+        if (!botao || !sidebar || !fundo) { return; }
+        function fechar() {
+            sidebar.classList.remove('aberta');
+            fundo.hidden = true;
+            botao.setAttribute('aria-expanded', 'false');
+        }
+        botao.addEventListener('click', function () {
+            var aberta = sidebar.classList.toggle('aberta');
+            fundo.hidden = !aberta;
+            botao.setAttribute('aria-expanded', aberta ? 'true' : 'false');
+        });
+        fundo.addEventListener('click', fechar);
+        document.addEventListener('keydown', function (evento) {
+            if (evento.key === 'Escape') { fechar(); }
+        });
+    })();
 })();
 </script>
 {% endblock %}
