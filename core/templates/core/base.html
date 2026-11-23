@@ -39,7 +39,7 @@
         <nav class="navbar navbar-expand-lg ui-navbar" aria-label="Navegação principal">
             <div class="container ui-topbar__inner">
                 {# Marca e "Inicio" levam a landing comercial do proprio cnpj #}
-                {# (/site/); a lista de empresas fica no item Empresas. #}
+                {# (raiz do dominio); a lista de empresas fica no item Empresas. #}
                 <a class="navbar-brand" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
                     <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
                     <span class="ui-brand-text">
@@ -62,7 +62,7 @@
 
                     <ul class="navbar-nav ui-menu">
                         {# Link sempre visivel: volta para a landing do cnpj #}
-                        {# (/site/ no dev; busquecnpj.com.br em producao). #}
+                        {# (raiz do dominio: :8002/ no dev; busquecnpj.com.br em producao). #}
                         <li class="nav-item">
                             <a class="nav-link ui-menu-link" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
                                 <i class="bi bi-house-door" aria-hidden="true"></i> Início

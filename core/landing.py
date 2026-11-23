@@ -38,7 +38,7 @@ PORTA_AS400_DEV = 8001
 PORTA_MENU_DEV = 8000
 CAMINHO_PORTFOLIO_DEV = '/menu/'
 
-URL_CNPJ_PROD = 'https://cnpj.busquecnpj.com.br'
+URL_CNPJ_PROD = 'https://busquecnpj.com.br'
 URL_CHAT_PROD = 'https://chat.busquecnpj.com.br'
 URL_AS400_PROD = 'https://as400.busquecnpj.com.br'
 URL_PORTFOLIO_PROD = 'https://arosasse.tec.br/'
@@ -76,7 +76,7 @@ def urls_dos_apps(request):
         'chat': chat,
         'as400': as400,
         'portfolio': portfolio,
-        'empresas': f'{cnpj}/',
+        'empresas': f'{cnpj}/empresas/',
         'proximidade': f'{cnpj}/proximidade/',
         'estatisticas': f'{cnpj}/estatisticas/',
         'chat_ia': f'{chat}/chat/',

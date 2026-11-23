@@ -87,8 +87,14 @@ class _LandingBase(SimpleTestCase):
 
 
 class RotaESecoesTests(_LandingBase):
-    def test_rota_site_responde_200_no_template_novo(self):
-        self.assertEqual(reverse('core:landing'), '/site/')
+    def test_site_antigo_redireciona_301_para_a_raiz(self):
+        """/site/ era o endereco antigo da landing: 301 para a raiz."""
+        resp = self.client.get('/site/')
+        self.assertEqual(resp.status_code, 301)
+        self.assertEqual(resp['Location'], '/')
+
+    def test_raiz_serve_a_landing(self):
+        self.assertEqual(reverse('core:landing'), '/')
         resp = self.get()
         self.assertEqual(resp.status_code, 200)
         self.assertTemplateUsed(resp, 'core/landing.html')
@@ -137,9 +143,9 @@ class UrlsDosAppsTests(_LandingBase):
     @override_settings(DEBUG=False)
     def test_producao_usa_os_subdominios(self):
         html = self.get().content.decode()
-        self.assertIn('https://cnpj.busquecnpj.com.br/', html)
-        self.assertIn('https://cnpj.busquecnpj.com.br/proximidade/', html)
-        self.assertIn('https://cnpj.busquecnpj.com.br/estatisticas/', html)
+        self.assertIn('https://busquecnpj.com.br/', html)
+        self.assertIn('https://busquecnpj.com.br/proximidade/', html)
+        self.assertIn('https://busquecnpj.com.br/estatisticas/', html)
         self.assertIn('https://chat.busquecnpj.com.br/chat/', html)
         self.assertIn('https://as400.busquecnpj.com.br/', html)
         self.assertIn('https://arosasse.tec.br/', html)
@@ -154,10 +160,10 @@ class UrlsDosAppsTests(_LandingBase):
         self.assertIn('http://192.168.3.132:8000/menu/', html)
 
     def test_urls_dos_apps_monta_caminhos_e_producao(self):
-        request = RequestFactory().get('/site/', HTTP_HOST='testserver')
+        request = RequestFactory().get('/', HTTP_HOST='testserver')
         with override_settings(DEBUG=False):
             urls = urls_dos_apps(request)
-        self.assertEqual(urls['empresas'], 'https://cnpj.busquecnpj.com.br/')
+        self.assertEqual(urls['empresas'], 'https://busquecnpj.com.br/empresas/')
         self.assertEqual(urls['chat_ia'], 'https://chat.busquecnpj.com.br/chat/')
         self.assertEqual(urls['as400_app'], 'https://as400.busquecnpj.com.br/')
         self.assertEqual(urls['portfolio'], 'https://arosasse.tec.br/')
@@ -248,11 +254,11 @@ class SiteHomeUrlTests(SimpleTestCase):
 
     @override_settings(DEBUG=True)
     def test_em_debug_aponta_para_o_site_do_proprio_app(self):
-        self.assertEqual(url_inicio_do_produto(None), 'http://localhost:8002/site/')
+        self.assertEqual(url_inicio_do_produto(None), 'http://localhost:8002/')
         html = self._render_base()
         # marca + item "Inicio" usam o mesmo site_home_url
-        self.assertEqual(html.count('href="http://testserver/site/"'), 2)
-        self.assertNotIn(':8000/site/', html)
+        self.assertEqual(html.count('href="http://testserver/"'), 2)
+        self.assertNotIn('site/', html)
 
     def test_em_producao_aponta_para_o_dominio_raiz(self):
         self.assertEqual(url_inicio_do_produto(None), 'https://busquecnpj.com.br/')

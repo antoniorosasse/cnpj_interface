@@ -156,9 +156,9 @@ def inicio_do_produto(request):
 
     Destino do LOGIN_REDIRECT_URL e da troca de senha: depois de entrar, o
     usuario vai para a pagina inicial do produto (busquecnpj.com.br em
-    producao, preview em :8002/site/ no dev), nao direto para o chat.
+    producao, preview em :8002/ no dev), nao direto para o chat.
 
-    A lista de empresas continua em Empresas (raiz do site).
+    A lista de empresas fica em /empresas/.
     """
     return redirect(url_inicio_do_produto(request))
 

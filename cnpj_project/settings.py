@@ -24,9 +24,9 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # ==================== PAGINA INICIAL DO PRODUTO (landing) ====================
 # O "Inicio" do menu e a marca (core/base.html) apontam para a landing
-# comercial de busquecnpj.com.br, servida pelo menu_interface; a lista de
-# empresas continua em Empresas. Vazio = padrao por ambiente, resolvido em
-# core/context_processors.py: dev http://<host>:8000/site/ e producao
+# comercial, servida por este proprio app na raiz do dominio (desde 23/11/2026);
+# a lista de empresas fica em /empresas/. Vazio = padrao por ambiente,
+# resolvido em core/context_processors.py: dev http://<host>:8002/ e producao
 # https://busquecnpj.com.br/.
 SITE_HOME_URL = os.getenv('SITE_HOME_URL', '').strip()
 

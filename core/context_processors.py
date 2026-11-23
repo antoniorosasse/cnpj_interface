@@ -9,7 +9,7 @@ from django.conf import settings
 
 
 # Porta do runserver local do cnpj_interface: e' ele quem serve a landing
-# do produto em /site/ (o menu_interface fica na 8000, so portfolio).
+# do produto na raiz do dominio (o menu_interface fica na 8000, so portfolio).
 PORTA_CNPJ_DEV = 8002
 
 # Producao: a landing e' o dominio raiz do produto (servido por este app).
@@ -18,13 +18,13 @@ SITE_HOME_PRODUCAO = 'https://busquecnpj.com.br/'
 
 def url_inicio_do_produto(request=None):
     """
-    URL da pagina inicial do produto (landing comercial em /site/).
+    URL da pagina inicial do produto (landing comercial, na raiz do dominio).
 
     Ordem de resolucao:
       1. SITE_HOME_URL do .env, quando definida (vence sempre);
-      2. DEBUG=True  -> request.build_absolute_uri('/site/')
-                        (ex.: http://127.0.0.1:8002/site/ no runserver);
-                        sem request -> http://localhost:8002/site/
+      2. DEBUG=True  -> request.build_absolute_uri('/')
+                        (ex.: http://127.0.0.1:8002/ no runserver);
+                        sem request -> http://localhost:8002/
       3. producao    -> https://busquecnpj.com.br/
 
     A landing agora e' servida por este proprio app (core:landing), entao o
@@ -39,8 +39,8 @@ def url_inicio_do_produto(request=None):
         return url
     if settings.DEBUG:
         if request is not None:
-            return request.build_absolute_uri('/site/')
-        return f'http://localhost:{PORTA_CNPJ_DEV}/site/'
+            return request.build_absolute_uri('/')
+        return f'http://localhost:{PORTA_CNPJ_DEV}/'
     return SITE_HOME_PRODUCAO
 
 

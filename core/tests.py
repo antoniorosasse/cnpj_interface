@@ -743,7 +743,7 @@ class MarcaENavegacaoTests(SimpleTestCase):
     def test_em_desenvolvimento_inicio_aponta_para_o_preview_da_landing(self):
         """No dev a landing e' servida por este app em /site/ (core:landing)."""
         html = re.sub(r'\s+', ' ', self._render())
-        self.assertIn('href="http://testserver/site/"', html)
+        self.assertIn('href="http://testserver/"', html)
 
     @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
     def test_url_do_env_vence_o_padrao(self):
@@ -752,9 +752,9 @@ class MarcaENavegacaoTests(SimpleTestCase):
         self.assertEqual(html.count('href="https://exemplo.test/inicio/"'), 2)
 
     def test_empresas_continua_apontando_para_a_lista(self):
-        """O item Empresas nao muda: continua na lista de empresas (raiz)."""
+        """O item Empresas nao muda: continua na lista, agora em /empresas/."""
         html = re.sub(r'\s+', ' ', self._render())
-        self.assertIn('href="/"', html)
+        self.assertIn('href="/empresas/"', html)
         self.assertIn('bi-list-ul"></i> Empresas', html)
 
     @override_settings(ALLOWED_HOSTS=['testserver', 'chat.busquecnpj.com.br'])
@@ -799,7 +799,7 @@ class InicioDoProdutoTests(SimpleTestCase):
         """No dev a landing e' servida por este app em /site/ (core:landing)."""
         resposta = self.client.get('/inicio/')
         self.assertEqual(resposta.status_code, 302)
-        self.assertEqual(resposta['Location'], 'http://testserver/site/')
+        self.assertEqual(resposta['Location'], 'http://testserver/')
 
     @override_settings(SITE_HOME_URL='https://exemplo.test/inicio/')
     def test_inicio_respeita_a_url_do_env(self):
