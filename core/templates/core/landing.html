@@ -191,7 +191,7 @@
         .lp-rodape { margin-top: 0; }
         .lp-rodape__grid {
             display: grid;
-            grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
+            grid-template-columns: 1.4fr 1fr 1fr;
             gap: 2rem;
             padding-block: clamp(2.25rem, 4vw, 3.25rem) 1.75rem;
         }
@@ -521,6 +521,9 @@
                         Consulta de empresas sobre os dados públicos da Receita
                         Federal, com busca por proximidade e chat com IA.
                     </p>
+                    <p class="mt-3 mb-0" style="font-size:.75rem">
+                        {% if versao %}Versão {{ versao }} · {% endif %}Django {{ versao_django }} · {{ ambiente }}
+                    </p>
                 </div>
 
                 <div>
@@ -557,20 +560,6 @@
                     </ul>
                 </div>
 
-                <div>
-                    <p class="lp-rodape__titulo">Sistemas no ar</p>
-                    <ul class="lp-lista">
-                        {% for sistema in status.sistemas %}
-                        <li>
-                            <a href="{{ sistema.url }}" target="_blank" rel="noopener">{{ sistema.nome }}</a>
-                            <span class="ui-badge ui-badge--{{ sistema.status_cor }}">{{ sistema.rotulo }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                    <p class="mt-3 mb-0" style="font-size:.75rem">
-                        {% if versao %}Versão {{ versao }} · {% endif %}Django {{ versao_django }} · {{ ambiente }}
-                    </p>
-                </div>
             </div>
 
             <div class="lp-rodape__base">
