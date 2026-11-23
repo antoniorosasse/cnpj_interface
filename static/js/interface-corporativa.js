@@ -192,7 +192,14 @@
             }
             document.querySelectorAll('.ui-row-selected').forEach(function (linha) { linha.classList.remove('ui-row-selected'); });
             var linha = link.closest('tr');
-            if (linha) { linha.classList.add('ui-row-selected'); }
+            if (linha) {
+                linha.classList.add('ui-row-selected');
+                /* No desktop o painel e' lateral: rola a pagina ate' a linha
+                   para o contexto ficar visivel (no mobile o drawer e' a tela). */
+                if (!mobile.matches && linha.scrollIntoView) {
+                    linha.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }
+            }
             painel.hidden = false;
             painel.setAttribute('aria-busy', 'true');
             if (layout) { layout.classList.add('ui-has-detail'); }

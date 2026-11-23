@@ -66,7 +66,8 @@ class SQLExecutionError(Exception):
 # FUNCAO PRINCIPAL
 # ============================================================
 
-def executar_sql(validation: Optional[ValidationResult]) -> dict:
+def executar_sql(validation: Optional[ValidationResult],
+                 max_rows: Optional[int] = None) -> dict:
     """
     Executa o SQL de um ValidationResult e devolve as linhas.
 
@@ -80,6 +81,9 @@ def executar_sql(validation: Optional[ValidationResult]) -> dict:
         'total_linhas': int,
         'truncado': bool,
       }
+
+    max_rows: teto de linhas desta execucao. None = CHAT_SQL_MAX_ROWS (tela).
+    O export do chat passa um teto maior, sem mudar o comportamento da tela.
     """
     if validation is None or not validation.sql:
         return {
@@ -93,7 +97,7 @@ def executar_sql(validation: Optional[ValidationResult]) -> dict:
         }
 
     sql = validation.sql
-    max_rows = _get_max_rows()
+    max_rows = max_rows or _get_max_rows()
     timeout_ms = _get_timeout() * 1000
     cfg = _get_config()
 

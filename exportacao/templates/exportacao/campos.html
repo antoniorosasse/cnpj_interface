@@ -1,0 +1,47 @@
+{% extends 'core/base.html' %}
+{% block title %}Escolher campos — busca CNPJ{% endblock %}
+{% block content %}
+<main class="ui-main container py-4" id="conteudo">
+    <h1 class="h4 mb-1">Escolher os campos do arquivo</h1>
+    <p class="ui-muted mb-4">
+        Marque o que você quer receber. Os filtros da consulta atual continuam valendo.
+    </p>
+
+    <form method="get" action="{% url acao %}">
+        {% for nome, valor in filtros.items %}
+            {% if valor %}<input type="hidden" name="{{ nome }}" value="{{ valor }}">{% endif %}
+        {% endfor %}
+
+        <div class="row g-3 mb-4">
+            {% for chave, rotulo in colunas %}
+            <div class="col-12 col-sm-6 col-lg-4">
+                <label class="form-check d-flex gap-2 align-items-center">
+                    <input class="form-check-input" type="checkbox" name="campos" value="{{ chave }}"
+                           {% if not escolhidos or chave in escolhidos %}checked{% endif %}>
+                    <span class="form-check-label">{{ rotulo }}</span>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 align-items-end">
+            <div>
+                <label class="form-label" for="formato">Formato</label>
+                <select class="form-select" name="formato" id="formato">
+                    <option value="csv">CSV (Excel)</option>
+                    <option value="json">JSON</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-download" aria-hidden="true"></i> Baixar
+            </button>
+            <a class="btn btn-link" href="{% url voltar_nome %}{{ voltar }}">Voltar à consulta</a>
+        </div>
+
+        <p class="ui-muted mt-4 mb-0" style="font-size:.85rem">
+            Visitantes baixam uma amostra de 20 linhas. Contas com créditos baixam a
+            lista completa — cada CNPJ novo consome 1 crédito (reexportar em 30 dias não cobra).
+        </p>
+    </form>
+</main>
+{% endblock %}

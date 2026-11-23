@@ -163,6 +163,29 @@ def inicio_do_produto(request):
     return redirect(url_inicio_do_produto(request))
 
 
+def _linhas_exportacao(request, total):
+    """
+    Quantas linhas o arquivo vai trazer (rotulo do botao de export).
+
+    Anonimo: amostra. Cliente: min(total, saldo, teto). Staff: min(total, teto).
+    """
+    user = getattr(request, 'user', None)
+    teto = getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000)
+    if user is not None and user.is_authenticated and (user.is_staff or user.is_superuser):
+        limite, amostra = teto, False
+    else:
+        from exportacao.servicos import cliente_do_usuario
+        cliente = cliente_do_usuario(user)
+        if cliente is None:
+            limite, amostra = getattr(settings, 'EXPORTACAO_AMOSTRA_LINHAS', 20), True
+        else:
+            limite = min(teto, max(0, cliente.saldo_creditos))
+            amostra = False
+    if total is None:
+        return None, amostra
+    return min(int(total), limite), amostra
+
+
 def lista_empresas(request):
     """
     Lista empresas - ordenacao por CNPJ ou RAZAO SOCIAL (keyset)
@@ -183,6 +206,7 @@ def lista_empresas(request):
     situacao = request.GET.get('situacao', '').strip().upper()
     simples = request.GET.get('simples', '').strip()
     mei = request.GET.get('mei', '').strip()
+    cnae = request.GET.get('cnae', '').strip()
     municipio = request.GET.get('municipio', '').strip()
     ordem = request.GET.get('ordem', 'cnpj')
     # A ordenacao por nome fantasia foi removida: o keyset por nm_fantasia
@@ -205,6 +229,27 @@ def lista_empresas(request):
         direction = 'next'
         last_cnpj = ''
         last_razao = ''
+
+    # ============================================================
+    # 1.0 LIMITE DIARIO DO VISITANTE ANONIMO
+    # ============================================================
+    # Conta so' pesquisa nova (pagina 1 sem ponteiro): paginar nunca consome.
+    # Conta gratuita (logada) tem limite maior; quem tem credito nao tem limite.
+    pesquisa_usada = pesquisa_limite = None
+    from exportacao.servicos import aplicar_cookie_visitante, registrar_navegacao
+    nova_pesquisa = page <= 1 and not last_cnpj
+    estado = registrar_navegacao(request, nova_pesquisa)
+    if nova_pesquisa:
+        pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']
+    if not estado['permitido']:
+        resposta = render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'limite',
+            'mensagem': (f"Voce usou {estado['usados']} de {estado['limite']} "
+                         + ("pesquisas" if nova_pesquisa else "paginas")
+                         + " hoje. Crie uma conta gratuita ou compre creditos "
+                           "para nao ter limite."),
+        }, status=429)
+        return aplicar_cookie_visitante(request, resposta)
 
     # ============================================================
     # 1.1 LOG DE ACESSO (lista de empresas)
@@ -291,6 +336,7 @@ def lista_empresas(request):
                 situacao_codigo=situacao_codigo,
                 simples=simples,
                 mei=mei,
+                cnae=cnae,
             )
             
             # ============================================================
@@ -299,7 +345,7 @@ def lista_empresas(request):
             total = None
 
             # Caso 1: Sem filtros -> Total geral direto da tabela de totais (0.2 ms)
-            filtros_ativos = [razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei, municipio_id]
+            filtros_ativos = [razao_social, nome_fantasia, cnpj, cnae, uf, situacao, simples, mei, municipio_id]
             if not any(filtros_ativos):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
@@ -310,7 +356,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 2: Filtro apenas por UF
-            elif uf and not any([razao_social, nome_fantasia, cnpj, situacao, simples, mei, municipio_id]):
+            elif uf and not any([razao_social, nome_fantasia, cnpj, cnae, situacao, simples, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'uf' AND chave = %s
@@ -320,7 +366,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 3: Filtro apenas por Situação
-            elif situacao and not any([razao_social, nome_fantasia, cnpj, uf, simples, mei, municipio_id]):
+            elif situacao and not any([razao_social, nome_fantasia, cnpj, cnae, uf, simples, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'situacao' AND chave = %s
@@ -330,7 +376,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 4: Filtro apenas por Simples
-            elif simples == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, mei, municipio_id]):
+            elif simples == 'S' and not any([razao_social, nome_fantasia, cnpj, cnae, uf, situacao, mei, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'simples' AND chave = 'S'
@@ -340,7 +386,7 @@ def lista_empresas(request):
                     total = res['valor']
 
             # Caso 5: Filtro apenas por MEI
-            elif mei == 'S' and not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, municipio_id]):
+            elif mei == 'S' and not any([razao_social, nome_fantasia, cnpj, cnae, uf, situacao, simples, municipio_id]):
                 cur.execute("""
                     SELECT valor FROM c_estatisticas_totais 
                     WHERE categoria = 'mei' AND chave = 'S'
@@ -353,7 +399,8 @@ def lista_empresas(request):
             total_estimado = False
             if total is None:
                 from django.core.cache import cache
-                cache_key = f"cnt_{razao_social}_{nome_fantasia}_{cnpj}_{uf}_{situacao}_{simples}_{mei}_{municipio_id}"
+                cache_key = (f"cnt_{razao_social}_{nome_fantasia}_{cnpj}_{cnae}_{uf}_"
+                             f"{situacao}_{simples}_{mei}_{municipio_id}")
                 total_em_cache = cache.get(cache_key)
 
                 if total_em_cache is not None:
@@ -600,6 +647,8 @@ def lista_empresas(request):
         'ordem': ordem,
         'total': total,
         'total_paginas': total_paginas,
+        'exportacao_linhas': _linhas_exportacao(request, total)[0],
+        'exportacao_amostra': _linhas_exportacao(request, total)[1],
         'page': page,
         'has_next': has_next,
         'has_previous': page > 1,
@@ -610,10 +659,17 @@ def lista_empresas(request):
         'lista_ufs': LISTA_UFS,
         'lista_municipios': lista_municipios,
         'total_estimado': total_estimado,
-        'aviso': aviso or ('💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, uf, situacao, simples, mei, municipio_id]) else None),
+        'cnae': cnae,
+        'pesquisa_usada': pesquisa_usada,
+        'pesquisa_limite': pesquisa_limite,
+        'aviso': aviso or ('💡 Use os filtros para buscar empresas específicas' if not any([razao_social, nome_fantasia, cnpj, cnae, uf, situacao, simples, mei, municipio_id]) else None),
     }
     
-    return render(request, 'core/lista.html', context)
+    resposta = render(request, 'core/lista.html', context)
+    # Grava o cookie do visitante tambem no caminho normal: sem isso cada
+    # request sem cookie criava um visitante novo e o limite diario nunca somava.
+    from exportacao.servicos import aplicar_cookie_visitante
+    return aplicar_cookie_visitante(request, resposta)
 
 
 def proximidade(request):
@@ -792,6 +848,8 @@ def proximidade(request):
         'total': total,
         'pagina': pagina,
         'total_paginas': total_paginas,
+        'exportacao_linhas': _linhas_exportacao(request, total)[0],
+        'exportacao_amostra': _linhas_exportacao(request, total)[1],
         'link_primeira': link_primeira,
         'link_anterior': link_anterior,
         'link_proxima': link_proxima,

@@ -158,6 +158,15 @@ def chat_view(request):
     cid = _conversa_id(conversa)
     mensagens = repo.mensagens_da_conversa(cid) if cid else []
 
+    # Quantidade de linhas da ultima resposta com lista (rotulo do botao de export)
+    ultima_lista_linhas = None
+    for msg in reversed(list(mensagens)):
+        tem_sql = bool(msg.get('sql') if isinstance(msg, dict) else getattr(msg, 'sql', ''))
+        if tem_sql:
+            valor = msg.get('total_linhas') if isinstance(msg, dict) else getattr(msg, 'total_linhas', None)
+            ultima_lista_linhas = valor
+            break
+
     def _serializar_msg(m):
         """Converte uma mensagem (dict do Mongo ou obj do Postgres) em dict."""
         if isinstance(m, dict):
@@ -193,6 +202,7 @@ def chat_view(request):
         'conversa_id_atual': _conversa_id(conversa),
         'conversas': conversas,
         'mensagens_json': json.dumps(mensagens_json, default=str),
+        'ultima_lista_linhas': ultima_lista_linhas,
         # Quantas linhas do resultado o resposta_natural manda pro prompt.
         # Vai pro template pra nota de RAG mostrar numeros reais, sem
         # duplicar o 20 no HTML/JS.

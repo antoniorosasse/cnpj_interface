@@ -108,9 +108,47 @@ def _remover_ignorar(pergunta: str) -> str:
     return ' '.join(palavras_filtradas)
 
 @lru_cache(maxsize=1)
+def _caminho_cache_local():
+    """
+    Devolve o snapshot local do modelo no cache do Hugging Face, se existir.
+
+    O HF Hub pode falhar (rede, SSL, rate limit) mesmo com o modelo ja'
+    baixado; nesse caso carregar do cache evita o erro "modelo indisponivel".
+    """
+    base = os.path.expanduser('~/.cache/huggingface/hub')
+    pasta = os.path.join(base, 'models--' + MODELO_NOME.replace('/', '--'), 'snapshots')
+    if not os.path.isdir(pasta):
+        return None
+    for nome in sorted(os.listdir(pasta)):
+        caminho = os.path.join(pasta, nome)
+        if os.path.isfile(os.path.join(caminho, 'config.json')):
+            return caminho
+    return None
+
+
 def _get_modelo():
-    """Carrega o modelo uma vez (singleton)."""
+    """
+    Carrega o modelo uma vez (singleton).
+
+    EMBEDDING_OFFLINE: '1' forca offline; '0' forca online; 'auto' (padrao)
+    usa o cache local quando ele existe. Carregar do cache tambem e' mais
+    rapido (nao faz a checagem no Hub a cada processo).
+    """
+    modo = os.getenv('EMBEDDING_OFFLINE', 'auto').strip().lower()
+    local = _caminho_cache_local()
+    if modo == '1' or (modo == 'auto' and local):
+        os.environ.setdefault('HF_HUB_OFFLINE', '1')
+        os.environ.setdefault('TRANSFORMERS_OFFLINE', '1')
+        logger.info('Modelo de embedding a partir do cache local: %s', local)
+
     from sentence_transformers import SentenceTransformer
+
+    if local and modo != '0':
+        try:
+            return SentenceTransformer(local)
+        except Exception:
+            logger.exception('Falha ao carregar o modelo do cache; tentando o Hub')
+
     logger.info('Carregando modelo de embedding: %s', MODELO_NOME)
     return SentenceTransformer(MODELO_NOME)
 

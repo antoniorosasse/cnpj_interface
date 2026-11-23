@@ -45,6 +45,22 @@ DEFAULT_FROM_EMAIL = os.getenv(
     'DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@busquecnpj.com.br'
 )
 
+# ==================== EXPORTACAO E LIMITE DIARIO ====================
+# Amostra que o anonimo baixa (sem consumir credito) e teto por arquivo.
+EXPORTACAO_AMOSTRA_LINHAS = int(os.getenv('EXPORTACAO_AMOSTRA_LINHAS', '20') or 20)
+EXPORTACAO_MAX_LINHAS = int(os.getenv('EXPORTACAO_MAX_LINHAS', '50000') or 50000)
+# Pesquisas/dia: anonimo, conta gratuita e teto agregado por IP.
+PESQUISAS_DIA_ANONIMO = int(os.getenv('PESQUISAS_DIA_ANONIMO', '5') or 5)
+PESQUISAS_DIA_CONTA = int(os.getenv('PESQUISAS_DIA_CONTA', '10') or 10)
+PESQUISAS_DIA_IP = int(os.getenv('PESQUISAS_DIA_IP', '20') or 20)
+# Paginacao: teto bem maior, para navegar sem punicao, mas sem permitir varrer
+# a base 20 linhas por request.
+PAGINAS_DIA_ANONIMO = int(os.getenv('PAGINAS_DIA_ANONIMO', '300') or 300)
+PAGINAS_DIA_CONTA = int(os.getenv('PAGINAS_DIA_CONTA', '3000') or 3000)
+PAGINAS_DIA_IP = int(os.getenv('PAGINAS_DIA_IP', '3000') or 3000)
+# Teto de linhas no export do chat (o executor do chat corta em CHAT_SQL_MAX_ROWS).
+EXPORTACAO_CHAT_MAX_LINHAS = int(os.getenv('EXPORTACAO_CHAT_MAX_LINHAS', '5000') or 5000)
+
 # ==================== CSRF ====================
 # Origens confiaveis para requisicoes POST com CSRF (Django 4+)
 CSRF_TRUSTED_ORIGINS = [
@@ -78,6 +94,7 @@ INSTALLED_APPS = [
     'core',  # App principal
     'chat',
     'contato',  # Formulario de contato da pagina do produto
+    'exportacao',  # Exportacao CSV/JSON, creditos e limite diario
 ]
 
 # ==================== CACHE ====================

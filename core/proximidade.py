@@ -516,6 +516,9 @@ SQL_PROXIMOS = """
            e.uf,
            COALESCE(mg.nome, c.nome_municipio) AS municipio_nome,
            e.ddd_1 || e.tel_1 AS telefone_1,
+           e.email,
+           e.cnae_principal,
+           cn.nm_cnae AS atividade_principal,
            e.cd_sit_cadastro,
            CASE e.cd_sit_cadastro
                WHEN 1 THEN 'NULA'
@@ -531,6 +534,7 @@ SQL_PROXIMOS = """
       FROM ceps c
       JOIN c_estabelecimentos e ON e.cep = c.cep
       LEFT JOIN c_municipios_geo mg ON mg.cd_municipio = e.municipio
+      LEFT JOIN c_cnaes cn ON cn.cnae = e.cnae_principal
      WHERE c.km <= %(raio)s
        {filtro_matriz}
        {filtro_situacao}

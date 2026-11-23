@@ -1,0 +1,28 @@
+{% extends 'core/base.html' %}
+{% block title %}Limite de uso — busca CNPJ{% endblock %}
+{% block content %}
+<main class="ui-main container py-5" id="conteudo">
+    <div class="ui-card mx-auto" style="max-width: 640px;">
+        <div class="ui-card__body">
+            <h1 class="h4 mb-3">
+                {% if motivo == 'limite' %}Você atingiu o limite do dia
+                {% elif motivo == 'sem_creditos' %}Exportação sem créditos
+                {% elif motivo == 'login' %}Entre para baixar
+                {% elif motivo == 'origem' %}Origem não encontrada
+                {% elif motivo == 'conversa' or motivo == 'sem_lista' %}Nenhuma lista para baixar
+                {% elif motivo == 'sql' %}Não foi possível montar a lista
+                {% else %}Erro ao preparar o arquivo{% endif %}
+            </h1>
+            <p class="mb-4">{{ mensagem }}</p>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-primary" href="{% url 'inicio' %}">Voltar ao início</a>
+                <a class="btn btn-secondary" href="{% url 'core:lista' %}">Ver empresas</a>
+            </div>
+            <p class="ui-muted mt-4 mb-0" style="font-size:.85rem">
+                Contas gratuitas têm limite maior e assinantes com créditos não têm
+                limite de pesquisa — só a exportação consome crédito.
+            </p>
+        </div>
+    </div>
+</main>
+{% endblock %}

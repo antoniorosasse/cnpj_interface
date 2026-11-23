@@ -570,3 +570,25 @@
     .detail-hero__facts { background: transparent; border-color: #dddddd; }
     .detail-fact__label { color: #555555; }
 }
+
+/* Coluna CNAE da lista: codigo em destaque e descricao discreta embaixo. */
+.ui-cnae-codigo {
+    display: block;
+    font-weight: 600;
+    font-size: .8rem;
+    font-variant-numeric: tabular-nums;
+}
+.ui-cnae-desc {
+    display: block;
+    color: var(--p-muted);
+    font-size: .72rem;
+    line-height: 1.25;
+}
+
+/* Descricao do CNAE na tabela: no maximo 2 linhas, para a linha nao crescer. */
+.ui-cnae-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}

@@ -36,6 +36,17 @@
 
         <!-- SIDEBAR DE CONVERSAS -->
         <aside class="sidebar-conversas" aria-label="Suas conversas">
+            <form method="post" action="{% url 'chat:nova' %}" class="mb-2">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Nova conversa
+                </button>
+            </form>
+
+            <a href="{% url 'chat:historico' %}" class="link-historico">
+                Ver histórico completo
+            </a>
+
             <h6>Conversas</h6>
             {% if conversas %}
                 <ul>
@@ -55,16 +66,6 @@
                 <div class="vazio">Nenhuma conversa ainda.</div>
             {% endif %}
 
-            <form method="post" action="{% url 'chat:nova' %}">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-primary btn-sm w-100">
-                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Nova conversa
-                </button>
-            </form>
-
-            <a href="{% url 'chat:historico' %}" class="link-historico">
-                Ver histórico completo
-            </a>
         </aside>
 
         <!-- CONTEUDO DO CHAT -->
@@ -106,6 +107,16 @@
             <a href="{% url 'core:lista' %}" class="btn btn-secondary">
                 <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar para Empresas
             </a>
+            <a href="{% url 'exportacao:exportar_chat' %}?formato=csv"
+               class="btn btn-outline-primary" rel="nofollow"
+               title="Baixar a última lista desta conversa em CSV">
+                <i class="bi bi-filetype-csv" aria-hidden="true"></i> Baixar última lista (CSV)<span id="export-chat-count">{% if ultima_lista_linhas %} ({{ ultima_lista_linhas }} linhas){% endif %}</span>
+            </a>
+            <a href="{% url 'exportacao:exportar_chat' %}?formato=json"
+               class="btn btn-outline-primary" rel="nofollow"
+               title="Baixar a última lista desta conversa em JSON">
+                <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
+            </a>
         </div>
     {% endif %}
 
@@ -126,6 +137,14 @@
 
     const conversaId = {{ conversa.pk|default:"null" }};
     const mensagensIniciais = {{ mensagens_json|default:"[]"|safe }};
+    // Mantem a contagem real de linhas no botao de export do chat.
+    function atualizarContagemExport(n) {
+        var el = document.getElementById('export-chat-count');
+        if (el && typeof n === 'number' && n > 0) {
+            el.textContent = ' (' + n + ' linhas)';
+        }
+    }
+
     // Contador global para gerar ids unicos por tabela renderizada
     let tabelaIdx = 0;
     // Mapa: idTabela -> {colunas, rows}. Populado por renderTabela().
@@ -255,6 +274,7 @@
                                 html += '</div>';
                             }
                             html += renderTabela(a.colunas, a.rows);
+                            atualizarContagemExport(a.total_linhas);
                             html += '</div></div>';
                         }
                         html += '</div>';
@@ -580,6 +600,7 @@
             }
 
             // 3) SQL colapsavel + tabela + (grafico)
+            atualizarContagemExport(dados.total_linhas);
             const infoTxt = `${dados.total_linhas} linha(s) · ${dados.tempo_ms}ms`;
             const badgeOk = dados.truncado
                 ? `<span class="badge-aviso">truncado em ${dados.limit_valor}</span>`

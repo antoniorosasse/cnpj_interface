@@ -61,7 +61,8 @@ SQL_LISTA_CNPJ = SQL_LISTA_BASE.format(
 
 
 def montar_filtros(razao_social='', nome_fantasia='', cnpj='', uf='',
-                   municipio_id=None, situacao_codigo=None, simples='', mei=''):
+                   municipio_id=None, situacao_codigo=None, simples='', mei='',
+                   cnae=''):
     """Monta o WHERE extra da lista e os parametros da query.
 
     Devolve (filtros_sql, filtros_params). O texto comeca com " AND " porque
@@ -104,6 +105,19 @@ def montar_filtros(razao_social='', nome_fantasia='', cnpj='', uf='',
         else:
             filtros_sql += " AND e.cnpj_basico LIKE %s"
             filtros_params.append(f'{cnpj}%')  # Busca prefixada aproveita B-tree
+
+    if cnae:
+        # cnae_principal e' INTEGER (7 digitos). Codigo aceito como prefixo vira
+        # faixa numerica (BETWEEN), que aproveita indice; texto busca a descricao.
+        digitos = ''.join(c for c in cnae if c.isdigit())
+        if digitos:
+            faltam = max(0, 7 - len(digitos))
+            base = int(digitos) * (10 ** faltam)
+            filtros_sql += " AND e.cnae_principal BETWEEN %s AND %s"
+            filtros_params.extend([base, base + (10 ** faltam) - 1])
+        else:
+            filtros_sql += " AND c.nm_cnae ILIKE %s"
+            filtros_params.append(f'%{cnae}%')
 
     if uf:
         # O select de UF sempre vem preenchido; e.municipio e o codigo TOM

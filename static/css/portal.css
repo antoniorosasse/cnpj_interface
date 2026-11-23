@@ -1370,7 +1370,12 @@ hr { border: 0; border-top: 1px solid var(--p-line); opacity: 1; margin: 1.5rem 
 .ui-details-panel .ui-detail-page .card-header h2 { overflow-wrap: anywhere; }
 .ui-details-panel .ui-detail-page .table td { overflow-wrap: anywhere; }
 .ui-details-panel .ui-detail-page .table th { min-width: 110px; }
-.ui-panel-open { overflow: hidden; }
+/* O painel de detalhe e' um drawer: no desktop a pagina continua rolando
+   (o bloqueio global impedia subir/descer com a ficha aberta); no mobile o
+   drawer ocupa a tela e o bloqueio continua necessario. */
+@media (max-width: 991.98px) {
+    .ui-panel-open { overflow: hidden; }
+}
 .ui-mobile-close { display: none; }
 
 @media (max-width: 991.98px) {

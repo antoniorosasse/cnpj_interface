@@ -125,7 +125,26 @@
                         <h2 class="ui-card__title" id="prox-resultados-titulo">Empresas no raio</h2>
                         <p class="prox-resultados__sub">Ordenadas da mais perto para a mais longe.</p>
                     </div>
-                    <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> até {{ raio }} km</span>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> até {{ raio }} km</span>
+                        {% if resultados %}
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{% url 'exportacao:exportar_proximidade' %}?{{ request.GET.urlencode }}&formato=csv"
+                           rel="nofollow" title="Baixar CSV desta busca">
+                            <i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV{% if exportacao_linhas %} ({{ exportacao_linhas|format_number }}{% if exportacao_amostra %} de amostra{% endif %}){% endif %}
+                        </a>
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{% url 'exportacao:exportar_proximidade' %}?{{ request.GET.urlencode }}&formato=json"
+                           rel="nofollow" title="Baixar JSON desta busca">
+                            <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON{% if exportacao_linhas %} ({{ exportacao_linhas|format_number }}{% if exportacao_amostra %} de amostra{% endif %}){% endif %}
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{% url 'exportacao:personalizar' %}?{{ request.GET.urlencode }}"
+                           rel="nofollow" title="Escolher quais campos baixar">
+                            <i class="bi bi-sliders2" aria-hidden="true"></i> Campos
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
 
                 {% if resultados %}
@@ -140,6 +159,7 @@
                                     <th>Nome Fantasia</th>
                                     <th>Endereço</th>
                                     <th>Município/UF</th>
+                                    <th class="ui-extra-column">CNAE</th>
                                     <th>Situação</th>
                                     <th>Tipo</th>
                                     <th>Ações</th>
@@ -156,6 +176,12 @@
                                     <td>{{ linha.nm_fantasia|default:"-"|truncatechars:25 }}</td>
                                     <td>{{ linha.logradouro|default:"-"|truncatechars:30 }}{% if linha.numero %}, {{ linha.numero }}{% endif %}{% if linha.bairro %} - {{ linha.bairro|truncatechars:20 }}{% endif %}</td>
                                     <td>{{ linha.municipio_nome|default:"-" }}{% if linha.uf %} / {{ linha.uf }}{% endif %}</td>
+                                    <td class="ui-extra-column">
+                                        <span class="ui-cnae-codigo">{{ linha.cnae_principal|default:"-" }}</span>
+                                        {% if linha.atividade_principal %}
+                                        <span class="ui-cnae-desc" title="{{ linha.atividade_principal }}">{{ linha.atividade_principal|truncatechars:32 }}</span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if linha.situacao_descricao == 'ATIVA' %}<span class="ui-badge ui-badge--ok">Ativa</span>
                                         {% elif linha.situacao_descricao == 'INAPTA' %}<span class="ui-badge ui-badge--danger">Inapta</span>

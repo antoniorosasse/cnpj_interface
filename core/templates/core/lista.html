@@ -108,6 +108,11 @@
                                inputmode="numeric">
                     </div>
                     <div class="consulta-campo">
+                        <label class="form-label" for="filtro-cnae">CNAE principal</label>
+                        <input type="text" name="cnae" id="filtro-cnae" class="form-control"
+                               placeholder="Ex: 6201 ou desenvolvimento" value="{{ cnae }}">
+                    </div>
+                    <div class="consulta-campo">
                         <label class="form-label" for="filtro-simples">Simples</label>
                         <select name="simples" id="filtro-simples" class="form-select">
                             <option value="">Todos</option>
@@ -134,7 +139,7 @@
             </form>
 
             {# Chips usam {% querystring %} (precisa do request no contexto); sem request eles nao renderizam. #}
-            {% if request %}{% if razao_social or nome_fantasia or cnpj or uf or municipio or situacao or simples or mei %}
+            {% if request %}{% if razao_social or nome_fantasia or cnpj or cnae or uf or municipio or situacao or simples or mei %}
             <div class="consulta-ativos">
                 <span class="consulta-ativos__label"><i class="bi bi-funnel-fill" aria-hidden="true"></i> Filtros ativos</span>
                 <div class="ui-chips">
@@ -199,13 +204,38 @@
                     <div>
                         <h2 class="ui-card__title" id="consulta-resultados-titulo">Resultados da busca</h2>
                         <p class="consulta-resultados__sub">
-                            {% if total_estimado %}Mais de 100.000 empresas encontradas{% else %}{{ total|format_number }} empresas encontradas{% endif %}
+                            {% if total_estimado %}Milhares de empresas encontradas{% else %}{{ total|format_number }} empresas encontradas{% endif %}
                         </p>
                     </div>
-                    <span class="ui-badge ui-badge--neutral">
-                        <i class="bi bi-sort-down" aria-hidden="true"></i>
-                        {% if ordem == 'razao_social' %}Razão social{% else %}CNPJ{% endif %}
-                    </span>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        {% if pesquisa_usada %}
+                        <span class="ui-badge ui-badge--neutral" title="Pesquisas hoje neste navegador">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            {{ pesquisa_usada }}/{{ pesquisa_limite }} hoje
+                        </span>
+                        {% endif %}
+                        <span class="ui-badge ui-badge--neutral">
+                            <i class="bi bi-sort-down" aria-hidden="true"></i>
+                            {% if ordem == 'razao_social' %}Razão social{% else %}CNPJ{% endif %}
+                        </span>
+                        {% if empresas %}
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{% url 'exportacao:exportar_lista' %}?{{ request.GET.urlencode }}&formato=csv"
+                           rel="nofollow" title="Baixar CSV com os filtros atuais">
+                            <i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV{% if exportacao_linhas %} ({{ exportacao_linhas|format_number }}{% if exportacao_amostra %} de amostra{% endif %}){% endif %}
+                        </a>
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{% url 'exportacao:exportar_lista' %}?{{ request.GET.urlencode }}&formato=json"
+                           rel="nofollow" title="Baixar JSON com os filtros atuais">
+                            <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON{% if exportacao_linhas %} ({{ exportacao_linhas|format_number }}{% if exportacao_amostra %} de amostra{% endif %}){% endif %}
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{% url 'exportacao:personalizar' %}?{{ request.GET.urlencode }}"
+                           rel="nofollow" title="Escolher quais campos baixar">
+                            <i class="bi bi-sliders2" aria-hidden="true"></i> Campos
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
 
                 {% if empresas %}
@@ -219,7 +249,7 @@
                                     <th scope="col">Situação</th>
                                     <th scope="col" class="ui-extra-column">Filiais</th>
                                     <th scope="col" class="ui-extra-column">Simples / MEI</th>
-                                    <th scope="col" class="ui-extra-column">Início da atividade</th>
+                                    <th scope="col" class="ui-extra-column">CNAE principal</th>
                                     <th scope="col" class="consulta-col--acoes">Detalhes</th>
                                 </tr>
                             </thead>
@@ -246,7 +276,12 @@
                                         <span class="consulta-regime__linha">Simples: {% if empresa.op_simples == 'S' %}<strong class="ui-ink-soft">Sim</strong>{% else %}Não{% endif %}</span>
                                         <span class="consulta-regime__linha">MEI: {% if empresa.op_mei == 'S' %}<strong class="ui-ink-soft">Sim</strong>{% else %}Não{% endif %}</span>
                                     </td>
-                                    <td class="ui-extra-column ui-tnum">{{ empresa.data_inicio_atividade|date:"d/m/Y"|default:"-" }}</td>
+                                    <td class="ui-extra-column">
+                                        <span class="ui-cnae-codigo">{{ empresa.cnae_principal|default:"-" }}</span>
+                                        {% if empresa.atividade_principal %}
+                                        <span class="ui-cnae-desc" title="{{ empresa.atividade_principal }}">{{ empresa.atividade_principal|truncatechars:38 }}</span>
+                                        {% endif %}
+                                    </td>
                                     <td class="consulta-col--acoes">
                                         <a data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary consulta-detalhe-btn" aria-label="Ver detalhes de {{ empresa.razao_social }}">
                                             <i class="bi bi-chevron-right" aria-hidden="true"></i>

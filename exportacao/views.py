@@ -1,0 +1,659 @@
+"""
+Exportacao de dados da lista em CSV/JSON, com amostra, creditos e registro.
+
+Sem acentos no codigo.
+
+Regras da v1:
+- anonimo baixa uma amostra (EXPORTACAO_AMOSTRA_LINHAS) sem consumir credito;
+- cliente com saldo baixa ate o saldo (ou o teto de linhas) e e' debitado no
+  fim do streaming; CNPJ ja exportado nos ultimos 30 dias nao e' cobrado de novo;
+- o status 'baixada' so e' gravado quando o gerador termina de entregar o
+  arquivo: e' assim que sabemos se o cliente realmente baixou ou nao.
+"""
+
+import csv
+import io
+import json
+import re
+import logging
+from datetime import timedelta
+
+from django.conf import settings
+from django.http import HttpResponse, StreamingHttpResponse
+from django.shortcuts import render
+from django.utils import timezone
+
+from .consulta import iterar_linhas, iterar_proximidade
+from .models import Exportacao
+from .servicos import (SaldoInsuficiente, aplicar_cookie_visitante,
+                       cliente_do_usuario, creditos_necessarios, debitar, estornar,
+                       gravar_linhas, ip_do_request, registrar_pesquisa, visitante_id)
+
+from core.proximidade import RAIO_MAX_KM, RAIO_MIN_KM, RAIO_PADRAO_KM, resolver_origem
+from core.views import SITUACOES, get_postgres_connection
+from psycopg2.extras import RealDictCursor
+
+logger = logging.getLogger(__name__)
+
+ORIGEM = 'lista'
+TTL_EXPORTACAO = timedelta(minutes=30)
+
+PROX_COLUNAS = (
+    ('cnpj_completo', 'CNPJ'),
+    ('razao_social', 'RAZAO_SOCIAL'),
+    ('nm_fantasia', 'NOME_FANTASIA'),
+    ('logradouro', 'LOGRADOURO'),
+    ('numero', 'NUMERO'),
+    ('bairro', 'BAIRRO'),
+    ('uf', 'UF'),
+    ('municipio_nome', 'MUNICIPIO'),
+    ('telefone_1', 'TELEFONE'),
+    ('email', 'EMAIL'),
+    ('cnae_principal', 'CNAE'),
+    ('atividade_principal', 'ATIVIDADE'),
+    ('situacao_descricao', 'SITUACAO'),
+    ('km', 'DISTANCIA_KM'),
+)
+
+COLUNAS = (
+    ('cnpj_completo', 'CNPJ'),
+    ('razao_social', 'RAZAO_SOCIAL'),
+    ('nm_fantasia', 'NOME_FANTASIA'),
+    ('situacao_descricao', 'SITUACAO'),
+    ('data_inicio_atividade', 'INICIO_ATIVIDADE'),
+    ('logradouro', 'LOGRADOURO'),
+    ('numero', 'NUMERO'),
+    ('bairro', 'BAIRRO'),
+    ('cep', 'CEP'),
+    ('uf', 'UF'),
+    ('municipio_nome', 'MUNICIPIO'),
+    ('telefone_1', 'TELEFONE'),
+    ('email', 'EMAIL'),
+    ('cnae_principal', 'CNAE'),
+    ('atividade_principal', 'ATIVIDADE'),
+    ('op_simples', 'SIMPLES'),
+    ('op_mei', 'MEI'),
+)
+
+
+def formatar_cnpj(valor: str) -> str:
+    """XX.XXX.XXX/XXXX-XX — com pontuacao o Excel nao come o zero a esquerda."""
+    digitos = ''.join(c for c in (valor or '') if c.isdigit())
+    if len(digitos) != 14:
+        return valor or ''
+    return f'{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/{digitos[8:12]}-{digitos[12:]}'
+
+
+def formatar_cep(valor: str) -> str:
+    digitos = ''.join(c for c in (valor or '') if c.isdigit())
+    if len(digitos) != 8:
+        return valor or ''
+    return f'{digitos[:5]}-{digitos[5:]}'
+
+
+def _filtros(request):
+    def txt(nome, upper=False):
+        valor = request.GET.get(nome, '').strip()
+        return valor.upper() if upper else valor
+
+    municipio = txt('municipio')
+    municipio_id = txt('municipio_id')
+    return {
+        'razao_social': txt('razao_social', True),
+        'nome_fantasia': txt('nome_fantasia', True),
+        'cnpj': txt('cnpj').replace('.', '').replace('/', '').replace('-', ''),
+        'uf': txt('uf', True),
+        'cnae': txt('cnae'),
+        'situacao': txt('situacao', True),
+        'simples': txt('simples'),
+        'mei': txt('mei'),
+        'municipio_id': (int(municipio_id) if municipio_id.isdigit()
+                         else (int(municipio) if municipio.isdigit() else None)),
+    }
+
+
+def _nome_arquivo(filtros, formato, amostra=False):
+    partes = ['empresas']
+    if filtros.get('uf'):
+        partes.append(filtros['uf'].lower())
+    if filtros.get('municipio_id'):
+        partes.append(f'municipio-{filtros["municipio_id"]}')
+    partes.append(timezone.localdate().isoformat())
+    if amostra:
+        partes.append('amostra')
+    return '-'.join(partes) + '.' + formato
+
+
+REGEX_LIMIT = re.compile(r'\bLIMIT\s+(\d+)\b', re.IGNORECASE)
+
+
+def _aumentar_limit(sql: str, novo: int) -> str:
+    """
+    Eleva o LIMIT do SQL (o gerador costuma criar LIMIT 100 para listagens).
+
+    Mexe so' na ULTIMA ocorrencia, que e' o LIMIT externo da consulta; um
+    LIMIT dentro de subquery fica como esta.
+    """
+    if not novo or novo <= 0:
+        return sql
+    ocorrencias = list(REGEX_LIMIT.finditer(sql))
+    if not ocorrencias:
+        return sql
+    ultima = ocorrencias[-1]
+    atual = int(ultima.group(1))
+    if atual >= novo:
+        return sql
+    return sql[:ultima.start()] + f'LIMIT {novo}' + sql[ultima.end():]
+
+
+def _celula_csv(valor):
+    """Neutraliza formula de planilha (CWE-1236) em dado vindo da base."""
+    if isinstance(valor, str) and valor[:1] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + valor
+    return valor
+
+
+def _valor(linha, chave):
+    valor = linha.get(chave)
+    if valor is None:
+        return ''
+    if isinstance(valor, str):
+        return valor.replace('\r', ' ').replace('\n', ' ').strip()
+    return valor
+
+
+def _linhas_csv(linhas, colunas):
+    total = 0
+    buffer = io.StringIO()
+    buffer.write('\ufeff')  # BOM: Excel pt-BR le acento e separador ;
+    escritor = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    escritor.writerow([rotulo for _, rotulo in colunas])
+    yield buffer.getvalue()
+    buffer.seek(0)
+    buffer.truncate(0)
+
+    for linha in linhas:
+        valores = []
+        for chave, _ in colunas:
+            valor = _valor(linha, chave)
+            if chave == 'cnpj_completo':
+                valor = formatar_cnpj(valor)
+            elif chave == 'cep':
+                valor = formatar_cep(valor)
+            elif chave == 'km' and valor != '':
+                valor = f'{float(valor):.2f}'
+            valores.append(_celula_csv(valor))
+        escritor.writerow(valores)
+        total += 1
+        if total % 500 == 0:
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+    if buffer.tell():
+        yield buffer.getvalue()
+
+
+def _linhas_json(linhas, colunas):
+    primeiro = True
+    yield '['
+    for linha in linhas:
+        registro = {}
+        for chave, _ in colunas:
+            valor = _valor(linha, chave)
+            if chave == 'cnpj_completo':
+                valor = formatar_cnpj(valor)
+            elif chave == 'cep':
+                valor = formatar_cep(valor)
+            elif chave == 'km' and valor != '':
+                valor = round(float(valor), 2)
+            registro[chave] = valor
+        yield ('' if primeiro else ',') + json.dumps(
+            registro, ensure_ascii=False, default=str)
+        primeiro = False
+    yield ']'
+
+
+def _colunas(request, padrao=None):
+    """Campos escolhidos (?campos=cnpj_completo,razao_social); padrao = todos."""
+    padrao = padrao or COLUNAS
+    # Aceita ?campos=a,b (links) e ?campos=a&campos=b (checkbox da tela).
+    pedidos = [p.strip() for p in request.GET.getlist('campos') if p.strip()]
+    if not pedidos:
+        return padrao
+    chaves = []
+    for pedido in pedidos:
+        chaves.extend(parte.strip() for parte in pedido.split(',') if parte.strip())
+    permitidos = dict(padrao)
+    escolhidos = tuple((c, permitidos[c]) for c in dict.fromkeys(chaves) if c in permitidos)
+    return escolhidos or padrao
+
+
+def exportar_lista(request):
+    """
+    GET /exportar/lista/?<filtros>&formato=csv|json
+
+    O arquivo e' montado ANTES de debitar e de enviar: o valor cobrado e' o
+    numero real de linhas, e abortar o download nao sai de graca.
+    """
+    formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
+    filtros = _filtros(request)
+    colunas = _colunas(request)
+    user = getattr(request, 'user', None)
+    cliente = cliente_do_usuario(user)
+    visitante = visitante_id(request)
+    staff = bool(user is not None and user.is_authenticated
+                 and (user.is_staff or user.is_superuser))
+
+    if staff:
+        limite = getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000)
+        amostra = False
+    elif cliente is None:
+        estado = registrar_pesquisa(request)
+        if not estado['permitido']:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'limite',
+                'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
+                             "pesquisas hoje. Crie uma conta gratuita ou compre "
+                             "créditos para continuar."),
+            }, status=429)
+        limite = getattr(settings, 'EXPORTACAO_AMOSTRA_LINHAS', 20)
+        amostra = True
+    else:
+        if cliente.saldo_creditos <= 0:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': 'Sua conta está sem créditos. '
+                            'Compre um pacote para exportar a lista completa.',
+            }, status=402)
+        limite = min(getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000),
+                     cliente.saldo_creditos)
+        amostra = False
+
+    try:
+        linhas = list(iterar_linhas(filtros, limite))
+    except Exception:
+        logger.exception('Falha ao preparar exportacao da lista')
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'erro',
+            'mensagem': 'A consulta demorou demais para preparar o arquivo. '
+                        'Tente um filtro mais específico.',
+        }, status=503)
+
+    cnpjs = [_valor(linha, 'cnpj_completo') for linha in linhas]
+    exportacao = Exportacao.objects.create(
+        cliente=cliente,
+        usuario=user if (user is not None and user.is_authenticated) else None,
+        visitante=visitante, origem=ORIGEM, formato=formato, filtros=filtros,
+        n_linhas=len(linhas), amostra=amostra, ip=ip_do_request(request),
+        expira_em=timezone.now() + TTL_EXPORTACAO,
+    )
+
+    creditos = 0
+    if cliente is not None and not staff:
+        devidos = creditos_necessarios(cliente, cnpjs)
+        try:
+            creditos = debitar(cliente, devidos, f'exportacao:{exportacao.pk}')
+        except SaldoInsuficiente as exc:
+            Exportacao.objects.filter(pk=exportacao.pk).update(status='falhou')
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta exportação custa {exc.necessarios} créditos e sua '
+                             f'conta tem {exc.disponiveis}. Compre mais para baixar.'),
+            }, status=402)
+        gravar_linhas(cliente, cnpjs)
+
+    def gerar():
+        try:
+            if formato == 'json':
+                yield from _linhas_json(linhas, colunas)
+            else:
+                yield from _linhas_csv(linhas, colunas)
+        except Exception:
+            logger.exception('Falha ao enviar exportacao da lista %s', exportacao.pk)
+            if creditos:
+                estornar(cliente, creditos, f'estorno:exportacao:{exportacao.pk}')
+            Exportacao.objects.filter(pk=exportacao.pk).update(
+                status='falhou', creditos=0)
+            raise
+        else:
+            Exportacao.objects.filter(pk=exportacao.pk).update(
+                status='baixada', baixada_em=timezone.now(), creditos=creditos)
+
+    tipo = 'application/json' if formato == 'json' else 'text/csv'
+    resposta = StreamingHttpResponse(gerar(), content_type=f'{tipo}; charset=utf-8')
+    resposta['Content-Disposition'] = (
+        f'attachment; filename="{_nome_arquivo(filtros, formato, amostra)}"'
+    )
+    return aplicar_cookie_visitante(request, resposta)
+
+
+def personalizar(request):
+    """Tela para escolher os campos do arquivo antes de baixar.
+
+    Com ?origem=... ela entra no modo proximidade (raio/matrizes/situacao) e
+    lista os campos proprios daquela busca.
+    """
+    proximidade = bool(request.GET.get('origem', '').strip())
+    padrao = PROX_COLUNAS if proximidade else COLUNAS
+    escolhidos = {c for c, _ in _colunas(request, padrao)} if request.GET.get('campos') else None
+    if proximidade:
+        filtros = {
+            'origem': request.GET.get('origem', '').strip(),
+            'raio': request.GET.get('raio', '').strip(),
+            'matrizes': request.GET.get('matrizes', '').strip(),
+            'situacao': request.GET.get('situacao', '').strip(),
+        }
+        acao = 'exportacao:exportar_proximidade'
+        voltar_nome = 'core:proximidade'
+    else:
+        filtros = _filtros(request)
+        acao = 'exportacao:exportar_lista'
+        voltar_nome = 'core:lista'
+    return render(request, 'exportacao/campos.html', {
+        'colunas': padrao,
+        'escolhidos': escolhidos,
+        'filtros': filtros,
+        'acao': acao,
+        'voltar_nome': voltar_nome,
+        'voltar': ('?' + request.GET.urlencode()) if request.GET else '',
+    })
+
+
+def exportar_proximidade(request):
+    """GET /exportar/proximidade/?origem=...&raio=..&matrizes=1&formato=csv"""
+    formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
+    colunas = _colunas(request, PROX_COLUNAS)
+    origem_txt = request.GET.get('origem', '').strip()
+    try:
+        raio = int(float(request.GET.get('raio', RAIO_PADRAO_KM)))
+    except (TypeError, ValueError):
+        raio = RAIO_PADRAO_KM
+    raio = max(RAIO_MIN_KM, min(RAIO_MAX_KM, raio))
+    situacao = request.GET.get('situacao', '').strip().upper()
+    if situacao not in SITUACOES:
+        situacao = ''
+    somente_matrizes = ('matrizes' in request.GET) if request.GET else True
+
+    user = getattr(request, 'user', None)
+    cliente = cliente_do_usuario(user)
+    visitante = visitante_id(request)
+    staff = bool(user is not None and user.is_authenticated
+                 and (user.is_staff or user.is_superuser))
+
+    if staff:
+        limite = getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000)
+        amostra = False
+    elif cliente is None:
+        estado = registrar_pesquisa(request)
+        if not estado['permitido']:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'limite',
+                'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
+                             "pesquisas hoje. Crie uma conta gratuita ou compre "
+                             "créditos para continuar."),
+            }, status=429)
+        limite = getattr(settings, 'EXPORTACAO_AMOSTRA_LINHAS', 20)
+        amostra = True
+    else:
+        if cliente.saldo_creditos <= 0:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': 'Sua conta está sem créditos. '
+                            'Compre um pacote para exportar a lista completa.',
+            }, status=402)
+        limite = min(getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000),
+                     cliente.saldo_creditos)
+        amostra = False
+
+    if not origem_txt:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'origem',
+            'mensagem': 'Informe a origem (CNPJ, CEP, cidade, endereço ou coordenada) '
+                        'para exportar.',
+        }, status=400)
+
+    conn = get_postgres_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SET statement_timeout = '5s'")
+            origem, erro = resolver_origem(cur, origem_txt)
+    except Exception:
+        logger.exception('Falha ao resolver origem da exportacao: %s', origem_txt)
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'origem',
+            'mensagem': 'Não foi possível localizar a origem agora. Tente de novo.',
+        }, status=503)
+    finally:
+        conn.close()
+    if not origem:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'origem',
+            'mensagem': erro or 'Não foi possível localizar a origem informada.',
+        }, status=400)
+
+    try:
+        linhas = list(iterar_proximidade(
+            origem['latitude'], origem['longitude'], raio, somente_matrizes,
+            SITUACOES[situacao] if situacao else None, limite))
+    except Exception:
+        logger.exception('Falha ao preparar exportacao de proximidade')
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'erro',
+            'mensagem': 'A consulta demorou demais para preparar o arquivo. '
+                        'Reduza o raio ou filtre por situação.',
+        }, status=503)
+
+    cnpjs = [_valor(linha, 'cnpj_completo') for linha in linhas]
+    exportacao = Exportacao.objects.create(
+        cliente=cliente,
+        usuario=user if (user is not None and user.is_authenticated) else None,
+        visitante=visitante, origem='proximidade', formato=formato,
+        filtros={'origem': origem_txt, 'raio': raio, 'matrizes': somente_matrizes,
+                 'situacao': situacao},
+        n_linhas=len(linhas), amostra=amostra, ip=ip_do_request(request),
+        expira_em=timezone.now() + TTL_EXPORTACAO,
+    )
+
+    creditos = 0
+    if cliente is not None and not staff:
+        devidos = creditos_necessarios(cliente, cnpjs)
+        try:
+            creditos = debitar(cliente, devidos, f'exportacao:{exportacao.pk}')
+        except SaldoInsuficiente as exc:
+            Exportacao.objects.filter(pk=exportacao.pk).update(status='falhou')
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta exportação custa {exc.necessarios} créditos e sua '
+                             f'conta tem {exc.disponiveis}. Compre mais para baixar.'),
+            }, status=402)
+        gravar_linhas(cliente, cnpjs)
+
+    def gerar():
+        try:
+            if formato == 'json':
+                yield from _linhas_json(linhas, colunas)
+            else:
+                yield from _linhas_csv(linhas, colunas)
+        except Exception:
+            logger.exception('Falha ao enviar exportacao de proximidade %s', exportacao.pk)
+            if creditos:
+                estornar(cliente, creditos, f'estorno:exportacao:{exportacao.pk}')
+            Exportacao.objects.filter(pk=exportacao.pk).update(status='falhou', creditos=0)
+            raise
+        else:
+            Exportacao.objects.filter(pk=exportacao.pk).update(
+                status='baixada', baixada_em=timezone.now(), creditos=creditos)
+
+    tipo = 'application/json' if formato == 'json' else 'text/csv'
+    resposta = StreamingHttpResponse(gerar(), content_type=f'{tipo}; charset=utf-8')
+    sufixo = '-amostra' if amostra else ''
+    nome = (f'proximidade-{raio}km-{timezone.localdate().isoformat()}'
+            f'{sufixo}.{formato}')
+    resposta['Content-Disposition'] = f'attachment; filename="{nome}"'
+    return aplicar_cookie_visitante(request, resposta)
+
+
+def _ler(msg, nome, default=''):
+    """Le um campo da mensagem no backend Postgres (objeto) ou Mongo (dict)."""
+    if isinstance(msg, dict):
+        return msg.get(nome, default)
+    return getattr(msg, nome, default)
+
+
+def exportar_chat(request):
+    """
+    Baixa a lista da ULTIMA resposta com tabela na conversa aberta.
+
+    O SQL ja' foi gerado e validado quando o chat respondeu; aqui ele e'
+    revalidado (defesa em profundidade) e reexecutado. O navegador nunca envia
+    SQL. Custo: 1 credito por linha (sem dedup, porque a lista e' ad hoc).
+    """
+    from chat import repo
+    from chat.services.sql_executor import executar_sql
+    from chat.services.embedding_service import injetar_vetor, tem_placeholder
+    from chat.services.sql_validator import (SQLValidationError, ValidationResult,
+                                             validar_sql)
+    from chat.views import SESSION_CONVERSA_ID
+
+    formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
+    user = getattr(request, 'user', None)
+    if user is None or not user.is_authenticated:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'login',
+            'mensagem': 'Entre na sua conta para baixar a lista do chat.',
+        }, status=403)
+
+    staff = bool(user is not None and user.is_authenticated
+                 and (user.is_staff or user.is_superuser))
+    cid = request.session.get(SESSION_CONVERSA_ID)
+    conversa = repo.buscar_conversa(cid, user=user) if cid else None
+    if conversa is None:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'conversa',
+            'mensagem': 'Não há uma conversa aberta. Faça uma pergunta no chat primeiro.',
+        }, status=404)
+
+    conversa_id = conversa.pk if not isinstance(conversa, dict) else (
+        conversa.get('pk') or conversa.get('id') or conversa.get('_id'))
+    mensagens = repo.mensagens_da_conversa(conversa_id)
+    alvo = None
+    for msg in reversed(list(mensagens)):
+        if (_ler(msg, 'papel') == 'assistant' and str(_ler(msg, 'sql') or '').strip()):
+            alvo = msg
+            break
+    if alvo is None:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sem_lista',
+            'mensagem': 'A última resposta do chat não tem lista para baixar.',
+        }, status=404)
+
+    sql = str(_ler(alvo, 'sql')).strip()
+    maximo = (getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000) if staff
+              else getattr(settings, 'EXPORTACAO_CHAT_MAX_LINHAS', 5000))
+    try:
+        validation = validar_sql(sql, max_rows=maximo)
+    except SQLValidationError as exc:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sql', 'mensagem': f'A consulta não passou na validação: {exc}',
+        }, status=400)
+
+    # O SQL guardado mantem o placeholder %s do vetor: injeta de novo a partir
+    # da pergunta que gerou a resposta (sem isso o Postgres ve um "%" solto).
+    sql_final = sql
+    if tem_placeholder(sql):
+        pergunta = ''
+        posicao = list(mensagens).index(alvo)
+        for anterior in reversed(list(mensagens)[:posicao]):
+            if _ler(anterior, 'papel') == 'user':
+                pergunta = str(_ler(anterior, 'conteudo') or '').strip()
+                break
+        sql_final, erro_vetor = injetar_vetor(sql, pergunta)
+        if erro_vetor:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sql', 'mensagem': erro_vetor,
+            }, status=400)
+
+    # O gerador costuma criar LIMIT 100 nas listagens; no arquivo vale o teto
+    # do export (a tela continua com o dela).
+    sql_final = _aumentar_limit(sql_final, maximo)
+    if sql_final != validation.sql:
+        validation = ValidationResult(
+            sql=sql_final,
+            original_sql=validation.original_sql,
+            teve_limit=validation.teve_limit,
+            limit_valor=maximo,
+        )
+
+    execucao = executar_sql(validation, max_rows=maximo)
+    if not execucao.get('ok'):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sql',
+            'mensagem': f"Não foi possível executar a consulta: {execucao.get('erro', '')}",
+        }, status=400)
+
+    colunas = execucao.get('colunas') or []
+    linhas = execucao.get('rows') or []
+    if not colunas:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sem_lista', 'mensagem': 'A última resposta não devolveu colunas.',
+        }, status=404)
+
+    cliente = cliente_do_usuario(user)
+    if not staff:
+        if cliente is None:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': 'Sua conta ainda não tem créditos. '
+                            'Compre um pacote para baixar a lista do chat.',
+            }, status=402)
+        if cliente.saldo_creditos < len(linhas):
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta lista tem {len(linhas)} linhas e sua conta tem '
+                             f'{cliente.saldo_creditos} créditos. Compre mais para baixar.'),
+            }, status=402)
+
+    # Serializa ANTES de debitar: se algo falhar, ninguem paga.
+    try:
+        if formato == 'json':
+            conteudo = json.dumps(linhas, ensure_ascii=False, default=str)
+            tipo = 'application/json'
+        else:
+            buffer = io.StringIO()
+            buffer.write('\ufeff')
+            escritor = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+            escritor.writerow(colunas)
+            for linha in linhas:
+                escritor.writerow([_valor(linha, c) for c in colunas])
+            conteudo = buffer.getvalue()
+            tipo = 'text/csv'
+    except Exception:
+        logger.exception('Falha ao serializar exportacao do chat')
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'erro', 'mensagem': 'Não foi possível montar o arquivo agora.',
+        }, status=500)
+
+    exportacao = Exportacao.objects.create(
+        cliente=cliente, usuario=user, visitante='', origem='chat', formato=formato,
+        sql=sql, filtros={}, n_linhas=len(linhas), amostra=False,
+        ip=ip_do_request(request), expira_em=timezone.now() + TTL_EXPORTACAO,
+    )
+    creditos = 0
+    if not staff:
+        try:
+            creditos = debitar(cliente, len(linhas), f'exportacao:{exportacao.pk}')
+        except SaldoInsuficiente as exc:
+            Exportacao.objects.filter(pk=exportacao.pk).update(status='falhou')
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta lista custa {exc.necessarios} créditos e sua conta '
+                             f'tem {exc.disponiveis}. Compre mais para baixar.'),
+            }, status=402)
+
+    Exportacao.objects.filter(pk=exportacao.pk).update(
+        status='baixada', baixada_em=timezone.now(), creditos=creditos)
+
+    resposta = HttpResponse(conteudo, content_type=f'{tipo}; charset=utf-8')
+    resposta['Content-Disposition'] = (
+        f'attachment; filename="chat-{timezone.localdate().isoformat()}.{formato}"')
+    return resposta
