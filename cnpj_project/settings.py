@@ -30,6 +30,21 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 # https://busquecnpj.com.br/.
 SITE_HOME_URL = os.getenv('SITE_HOME_URL', '').strip()
 
+# ==================== CONTATO (formulario da pagina do produto) ====================
+# O lead e' gravado no banco 'django_internal' pelo app 'contato'; o e-mail de
+# aviso so' e' enviado quando as variaveis abaixo existem no .env.
+# Sem CONTATO_EMAIL_DESTINO ou sem EMAIL_HOST, o formulario continua gravando
+# e o aviso fica so' no log (nada se perde).
+CONTATO_EMAIL_DESTINO = os.getenv('CONTATO_EMAIL_DESTINO', '').strip()
+EMAIL_HOST = os.getenv('EMAIL_HOST', '').strip()
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587') or 587)
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+DEFAULT_FROM_EMAIL = os.getenv(
+    'DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@busquecnpj.com.br'
+)
+
 # ==================== CSRF ====================
 # Origens confiaveis para requisicoes POST com CSRF (Django 4+)
 CSRF_TRUSTED_ORIGINS = [
@@ -61,7 +76,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'core',  # App principal
-    'chat',  # Chat IA
+    'chat',
+    'contato',  # Formulario de contato da pagina do produto
 ]
 
 # ==================== CACHE ====================

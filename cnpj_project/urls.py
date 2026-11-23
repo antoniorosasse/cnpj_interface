@@ -34,6 +34,7 @@ urlpatterns = [
     path('inicio/', core_views.inicio_do_produto, name='inicio'),
 
     path('chat/', include('chat.urls')),
+    path('', include('contato.urls')),
     path('', include('core.urls')),
     path('health/', lambda r: HttpResponse('ok'), name='health'),
     path('robots.txt', lambda r: HttpResponse(ROBOTS_TXT, content_type='text/plain'),

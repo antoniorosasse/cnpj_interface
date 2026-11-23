@@ -294,13 +294,22 @@ def ambiente_do_site():
 # VIEW
 # ============================================================
 def landing_comercial(request):
-    """
-    Landing comercial do produto em /site/.
+    """Pagina do produto na raiz do dominio (GET)."""
+    return render_landing(request)
 
-    As quatro solucoes e os tres servicos vem das constantes deste modulo; as
-    URLs absolutas dos apps sao resolvidas pelo ambiente do request (nada de
-    host fixo no template). O health check alimenta o selo do hero.
+
+def render_landing(request, form=None, erro=None, status=200):
     """
+    Renderiza a pagina do produto.
+
+    Usada pelo GET (landing_comercial) e pelo POST do formulario de contato
+    (contato.views.enviar), que precisa devolver os erros e os dados digitados
+    na mesma pagina. As quatro solucoes e os tres servicos vem das constantes
+    deste modulo; as URLs absolutas dos apps sao resolvidas pelo ambiente do
+    request. O health check alimenta o selo do hero.
+    """
+    from contato.forms import ContatoForm
+
     urls = urls_dos_apps(request)
 
     solucoes = []
@@ -325,5 +334,10 @@ def landing_comercial(request):
         'ambiente': ambiente_do_site(),
         'versao_django': django.get_version(),
         'versao': os.getenv('SITE_VERSAO', '').strip(),
+        # Formulario de contato (contato app)
+        'form_contato': form if form is not None else ContatoForm(),
+        'contato_enviado': request.GET.get('enviado') == '1',
+        'contato_erro': erro,
+        'contato_destino': getattr(settings, 'CONTATO_EMAIL_DESTINO', '').strip(),
     }
-    return render(request, 'core/landing.html', contexto)
+    return render(request, 'core/landing.html', contexto, status=status)

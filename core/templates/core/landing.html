@@ -232,6 +232,37 @@
             .lp-hero { padding-top: 2rem; }
             .lp-rodape__grid { grid-template-columns: 1fr; gap: 1.5rem; }
         }
+
+        /* ---------- CONTATO (formulario) ---------- */
+        .lp-contato__grid {
+            display: grid;
+            grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+            gap: 2.5rem;
+            align-items: start;
+        }
+        .lp-contato__texto p { color: var(--p-muted); max-width: 34ch; }
+        .lp-contato__lista { list-style: none; padding: 0; margin: 1.2rem 0 0; display: grid; gap: .6rem; }
+        .lp-contato__lista li { display: flex; gap: .5rem; align-items: flex-start; color: var(--p-ink-soft); font-size: .95rem; }
+        .lp-contato__lista i { color: var(--p-accent); margin-top: .15rem; }
+        .lp-form {
+            background: var(--p-surface);
+            border: 1px solid var(--p-line);
+            border-radius: var(--p-radius-lg, 14px);
+            padding: 1.5rem;
+            box-shadow: var(--p-shadow-sm, 0 1px 2px rgba(15, 27, 38, .06));
+        }
+        .lp-form .form-label { font-weight: 600; font-size: .9rem; }
+        .lp-form .form-control { min-height: 2.75rem; font-size: 16px; }
+        .lp-form .form-control::placeholder { color: #5c7086; opacity: 1; }
+        .lp-form textarea.form-control { min-height: 7rem; }
+        .lp-form__consentimento { display: flex; gap: .5rem; align-items: flex-start; font-size: .85rem; color: var(--p-muted); }
+        .lp-form__consentimento input { margin-top: .2rem; }
+        .lp-form__rodape { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; margin-top: 1rem; }
+        .lp-form__nota { font-size: .82rem; color: var(--p-ink-soft); margin: 0; }
+        .lp-oculto { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+        @media (max-width: 991.98px) {
+            .lp-contato__grid { grid-template-columns: 1fr; gap: 1.5rem; }
+        }
     </style>
 </head>
 <body class="ui-body">
@@ -388,10 +419,97 @@
             </div>
         </section>
 
+        <!-- ===================== CONTATO ===================== -->
+        <section class="lp-secao" id="contato">
+            <div class="container">
+                <div class="lp-contato__grid">
+                    <div class="lp-contato__texto">
+                        <span class="ui-eyebrow">Contato</span>
+                        <h2>Fale sobre o seu projeto</h2>
+                        <p>
+                            Conte o que você precisa consultar ou automatizar. Respondo
+                            com um caminho possível, prazo estimado e o que dá para
+                            fazer com os dados públicos — sem compromisso.
+                        </p>
+                        <ul class="lp-contato__lista">
+                            <li><i class="bi bi-check2-circle" aria-hidden="true"></i> Consulta de CNPJ e enriquecimento de cadastro</li>
+                            <li><i class="bi bi-check2-circle" aria-hidden="true"></i> Busca por proximidade e análise de carteira</li>
+                            <li><i class="bi bi-check2-circle" aria-hidden="true"></i> Chat com IA sobre a base da Receita Federal</li>
+                            <li><i class="bi bi-check2-circle" aria-hidden="true"></i> Integração com sistemas legados (IBM i / DB2)</li>
+                        </ul>
+                    </div>
+
+                    <div class="lp-form">
+                        {% if contato_enviado %}
+                        <div class="alert alert-success" role="status">
+                            <i class="bi bi-check-circle" aria-hidden="true"></i>
+                            Mensagem recebida. Respondo no e-mail que você deixou.
+                        </div>
+                        {% endif %}
+                        {% if contato_erro %}
+                        <div class="alert alert-warning" role="alert">{{ contato_erro }}</div>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'contato:enviar' %}" novalidate>
+                            {% csrf_token %}
+                            <div class="row g-3">
+                                <div class="col-12 col-sm-6">
+                                    <label class="form-label" for="{{ form_contato.nome.id_for_label }}">Nome</label>
+                                    {{ form_contato.nome }}
+                                    {% for erro in form_contato.nome.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <label class="form-label" for="{{ form_contato.email.id_for_label }}">E-mail</label>
+                                    {{ form_contato.email }}
+                                    {% for erro in form_contato.email.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <label class="form-label" for="{{ form_contato.empresa.id_for_label }}">Empresa <span class="ui-muted">(opcional)</span></label>
+                                    {{ form_contato.empresa }}
+                                    {% for erro in form_contato.empresa.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <label class="form-label" for="{{ form_contato.telefone.id_for_label }}">Telefone <span class="ui-muted">(opcional)</span></label>
+                                    {{ form_contato.telefone }}
+                                    {% for erro in form_contato.telefone.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="{{ form_contato.mensagem.id_for_label }}">O que você precisa?</label>
+                                    {{ form_contato.mensagem }}
+                                    {% for erro in form_contato.mensagem.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                                <div class="col-12">
+                                    <label class="lp-form__consentimento" for="{{ form_contato.consentimento.id_for_label }}">
+                                        {{ form_contato.consentimento }}
+                                        <span>Autorizo o uso destes dados para responder ao meu contato.</span>
+                                    </label>
+                                    {% for erro in form_contato.consentimento.errors %}<div class="ui-erro-campo">{{ erro }}</div>{% endfor %}
+                                </div>
+                            </div>
+
+                            <div class="lp-oculto" aria-hidden="true">
+                                <label for="website-contato">Nao preencha</label>
+                                <input type="text" id="website-contato" name="website" tabindex="-1" autocomplete="off">
+                            </div>
+
+                            <div class="lp-form__rodape">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    Enviar mensagem <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                                </button>
+                                <p class="lp-form__nota">
+                                    Seus dados são usados apenas para responder a este contato.
+                                </p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+
     </main>
 
     <!-- ===================== FOOTER / CONTATO ===================== -->
-    <footer class="ui-footer lp-rodape" id="contato">
+    <footer class="ui-footer lp-rodape">
         <div class="container">
             <div class="lp-rodape__grid">
                 <div>
