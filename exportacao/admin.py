@@ -31,6 +31,9 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
         ('Limites por dia — conta', {
             'fields': ('lista_dia_conta', 'chat_dia_conta', 'exportacao_dia_conta'),
         }),
+        ('Teto por IP (todas as identidades do mesmo IP, por dia)', {
+            'fields': ('ip_dia_lista', 'ip_dia_chat', 'ip_dia_exportacao'),
+        }),
     )
 
     def has_add_permission(self, request):
@@ -115,8 +118,14 @@ class ExportacaoAdmin(admin.ModelAdmin):
 
 @admin.register(PesquisaAnonima)
 class PesquisaAnonimaAdmin(admin.ModelAdmin):
-    list_display = ('dia', 'tipo', 'visitante', 'ip', 'total')
+    list_display = ('atualizado_em', 'dia', 'tipo', 'visitante', 'ip', 'total',
+                    'user_agent_curto')
     list_filter = ('dia', 'tipo')
+    search_fields = ('visitante', 'ip', 'user_agent')
+
+    @admin.display(description='user agent')
+    def user_agent_curto(self, obj):
+        return (obj.user_agent or '')[:60]
 
 
 @admin.register(LinhaExportada)

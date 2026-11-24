@@ -20,7 +20,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.signing import BadSignature, dumps, loads
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from .models import Cliente, LinhaExportada, MovimentoCredito, PesquisaAnonima
@@ -165,6 +165,20 @@ def registrar_uso(request, tipo='lista') -> dict:
     identidade = f'user:{user.pk}' if autenticado else visitante_id(request)
     ip = ip_do_request(request)
     dia = timezone.localdate()
+    agente = (request.META.get('HTTP_USER_AGENT') or '')[:200]
+
+    # Teto por IP (somando todas as identidades daquele IP no dia). E' o que
+    # segura bot que descarta cookie e troca de identidade.
+    cfg = configuracao()
+    teto_ip = getattr(cfg, f'ip_dia_{tipo}', 0)
+    total_ip = 0
+    if ip and teto_ip:
+        total_ip = (PesquisaAnonima.objects.filter(dia=dia, ip=ip, tipo=tipo)
+                    .aggregate(total=Sum('total'))['total'] or 0)
+        if total_ip >= teto_ip:
+            return {'permitido': False, 'usados': total_ip, 'limite': teto_ip,
+                    'contando': True, 'tipo': tipo, 'ilimitado': False,
+                    'motivo': 'ip'}
 
     registro = None
     for _tentativa in range(2):
@@ -172,9 +186,9 @@ def registrar_uso(request, tipo='lista') -> dict:
             with transaction.atomic():
                 registro, _criado = PesquisaAnonima.objects.get_or_create(
                     visitante=identidade, tipo=tipo, dia=dia,
-                    defaults={'ip': ip, 'total': 0})
+                    defaults={'ip': ip, 'total': 0, 'user_agent': agente})
                 PesquisaAnonima.objects.filter(pk=registro.pk).update(
-                    total=F('total') + 1, ip=ip)
+                    total=F('total') + 1, ip=ip, user_agent=agente)
             break
         except Exception:  # IntegrityError na primeira request simultanea
             if _tentativa == 1:

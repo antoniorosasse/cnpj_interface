@@ -122,6 +122,10 @@ class ConfiguracaoUso(models.Model):
     exportacao_dia_anonimo = models.PositiveIntegerField('exportacao/dia (anonimo)', default=5)
     exportacao_dia_conta = models.PositiveIntegerField('exportacao/dia (conta)', default=50)
 
+    ip_dia_lista = models.PositiveIntegerField('lista/dia por IP', default=300)
+    ip_dia_chat = models.PositiveIntegerField('chat/dia por IP', default=60)
+    ip_dia_exportacao = models.PositiveIntegerField('arquivos/dia por IP', default=30)
+
     atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
 
     class Meta:
@@ -171,7 +175,9 @@ class PesquisaAnonima(models.Model):
     tipo = models.CharField('tipo', max_length=12, choices=TIPOS, default='lista')
     dia = models.DateField('dia', db_index=True)
     ip = models.GenericIPAddressField('IP', null=True, blank=True)
+    user_agent = models.CharField('user agent', max_length=200, blank=True)
     total = models.IntegerField('total', default=0)
+    atualizado_em = models.DateTimeField('ultimo uso', auto_now=True, db_index=True)
 
     class Meta:
         verbose_name = 'pesquisa anonima'

@@ -303,6 +303,14 @@ def exportar_lista(request):
     staff = bool(user is not None and user.is_authenticated
                  and (user.is_staff or user.is_superuser))
 
+    # Bot que descarta cookie gera uma identidade nova a cada request e fura o
+    # limite diario. Navegador normal sempre devolve o cookie depois da 1a visita.
+    if cliente is None and not staff and not request.COOKIES.get('visitante_id'):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'cookies',
+            'mensagem': 'Ative os cookies e recarregue a página para gerar o arquivo.',
+        }, status=403)
+
     estado_uso = registrar_uso(request, 'exportacao')
     if not estado_uso['permitido']:
         return render(request, 'exportacao/bloqueado.html', {
@@ -439,6 +447,14 @@ def exportar_proximidade(request):
     visitante = visitante_id(request)
     staff = bool(user is not None and user.is_authenticated
                  and (user.is_staff or user.is_superuser))
+
+    # Bot que descarta cookie gera uma identidade nova a cada request e fura o
+    # limite diario. Navegador normal sempre devolve o cookie depois da 1a visita.
+    if cliente is None and not staff and not request.COOKIES.get('visitante_id'):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'cookies',
+            'mensagem': 'Ative os cookies e recarregue a página para gerar o arquivo.',
+        }, status=403)
 
     estado_uso = registrar_uso(request, 'exportacao')
     if not estado_uso['permitido']:

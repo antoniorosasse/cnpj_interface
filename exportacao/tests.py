@@ -41,9 +41,17 @@ def corpo(response):
     return b''.join(response.streaming_content).decode('utf-8')
 
 
+def _cookie_visitante(client, valor='abc123'):
+    from django.core.signing import dumps
+    from exportacao.servicos import SAL
+    client.cookies['visitante_id'] = dumps(valor, salt=SAL)
+
+
 @override_settings(EXPORTACAO_AMOSTRA_LINHAS=20, EXPORTACAO_MAX_LINHAS=50000)
 class ExportacaoAnonimaTests(TestCase):
+
     def setUp(self):
+        _cookie_visitante(self.client)
         def fake_iterar(filtros, limite, lote=1000):
             return iter([linha(i) for i in range(min(30, limite))])
 
@@ -76,10 +84,23 @@ class ExportacaoAnonimaTests(TestCase):
         self.assertIsNotNone(exp.baixada_em)
         self.assertEqual(exp.creditos, 0)
 
-    def test_define_cookie_do_visitante(self):
+    def test_sem_cookie_bloqueia_export(self):
+        """Bot que descarta cookie nao exporta (senao cada request e' nova identidade)."""
+        self.client.cookies.pop('visitante_id', None)
         resp = self.client.get('/exportar/lista/')
-        corpo(resp)
-        self.assertIn('visitante_id', resp.cookies)
+        self.assertEqual(resp.status_code, 403)
+        self.assertContains(resp, 'Ative os cookies', status_code=403)
+
+    def test_cookie_e_gravado_na_navegacao(self):
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+        from exportacao.servicos import aplicar_cookie_visitante, visitante_id
+        req = RequestFactory().get('/')
+        req.COOKIES = {}
+        req.META = {'REMOTE_ADDR': '10.2.2.2'}
+        visitante_id(req)
+        resposta = aplicar_cookie_visitante(req, HttpResponse('ok'))
+        self.assertIn('visitante_id', resposta.cookies)
 
 
 class ExportacaoClienteTests(TestCase):
@@ -138,7 +159,9 @@ class LimiteDiarioTests(TestCase):
 
 
 class CamposTests(TestCase):
+
     def setUp(self):
+        _cookie_visitante(self.client)
         patcher = patch('exportacao.views.iterar_linhas',
                         side_effect=lambda filtros, limite, lote=1000: iter([linha(1)]))
         patcher.start()
@@ -172,7 +195,9 @@ class CnaeFiltroTests(TestCase):
 
 
 class ProximidadeExportTests(TestCase):
+
     def setUp(self):
+        _cookie_visitante(self.client)
         patcher = patch('exportacao.views.resolver_origem',
                         return_value=({'latitude': -26.3, 'longitude': -48.8,
                                        'rotulo': 'Joinville'}, None))
@@ -244,7 +269,9 @@ class StaffExportTests(TestCase):
 
 
 class CamposProximidadeTests(TestCase):
+
     def setUp(self):
+        _cookie_visitante(self.client)
         patcher = patch('exportacao.views.resolver_origem',
                         return_value=({'latitude': -26.7, 'longitude': -48.6}, None))
         patcher.start(); self.addCleanup(patcher.stop)
@@ -403,6 +430,7 @@ class ProtecoesTests(TestCase):
 
 class CamposMultiplosTests(TestCase):
     def setUp(self):
+        _cookie_visitante(self.client)
         patcher = patch('exportacao.views.iterar_linhas',
                         side_effect=lambda f, l, lote=1000: iter([linha(1)]))
         patcher.start(); self.addCleanup(patcher.stop)
@@ -622,3 +650,19 @@ class ChatQuotaTests(TestCase):
                                     content_type='application/json')
         self.assertEqual(resp.status_code, 429)
         self.assertIn('consultas de chat hoje', resp.json()['erro'])
+
+
+class TetoPorIpTests(TestCase):
+    def test_teto_por_ip_bloqueia_mesmo_com_identidades_diferentes(self):
+        from django.test import RequestFactory
+        from exportacao.servicos import registrar_uso
+        cfg = ConfiguracaoUso(id=1)
+        cfg.ip_dia_exportacao = 2
+        cfg.save()
+        req = RequestFactory().get('/')
+        req.user = type('U', (), {'is_authenticated': False})()
+        req.COOKIES = {}
+        req.META = {'REMOTE_ADDR': '57.141.18.9', 'HTTP_USER_AGENT': 'bot/1.0'}
+        with patch('exportacao.servicos.visitante_id', side_effect=['a1', 'a2', 'a3']):
+            estados = [registrar_uso(req, 'exportacao')['permitido'] for _ in range(3)]
+        self.assertEqual(estados, [True, True, False])
