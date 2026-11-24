@@ -680,6 +680,18 @@ def proximidade(request):
     o cursor da ultima linha e o retorno usa a pilha de cursores em `hist`,
     entao nao existe OFFSET.
     """
+    from exportacao.servicos import aplicar_cookie_visitante, registrar_uso
+    estado = registrar_uso(request, 'lista')
+    if not estado['permitido']:
+        resposta = render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'limite',
+            'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
+                         "consultas hoje. Crie uma conta gratuita ou compre "
+                         "créditos para não ter limite."),
+        }, status=429)
+        return aplicar_cookie_visitante(request, resposta)
+    pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']
+
     origem_txt = request.GET.get('origem', '').strip()
     try:
         raio = int(float(request.GET.get('raio', RAIO_PADRAO_KM)))
@@ -848,6 +860,8 @@ def proximidade(request):
         'total_paginas': total_paginas,
         'exportacao_linhas': _linhas_exportacao(request, total)[0],
         'exportacao_amostra': _linhas_exportacao(request, total)[1],
+        'pesquisa_usada': pesquisa_usada,
+        'pesquisa_limite': pesquisa_limite,
         'link_primeira': link_primeira,
         'link_anterior': link_anterior,
         'link_proxima': link_proxima,

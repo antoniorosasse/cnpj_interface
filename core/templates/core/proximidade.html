@@ -15,6 +15,12 @@
                 Informe um ponto de partida (CNPJ, CEP, cidade ou coordenada) e veja as
                 empresas num raio de até {{ raio_opcoes|last }} km, da mais perto para a mais longe.
             </p>
+            {% if pesquisa_usada is not None %}
+            <p class="ui-muted mb-0" style="font-size:.85rem">
+                <i class="bi bi-gauge" aria-hidden="true"></i>
+                Consultas hoje: <strong>{{ pesquisa_usada }}</strong>/{{ pesquisa_limite }}
+            </p>
+            {% endif %}
         </div>
     </div>
 
