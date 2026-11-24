@@ -95,7 +95,7 @@ def aplicar_cookie_visitante(request, response):
 # CONTADORES (lista, chat, exportacao)
 # ============================================================
 
-TIPOS = ('lista', 'chat', 'exportacao')
+TIPOS = ('lista', 'proximidade', 'chat', 'exportacao')
 _ALIAS = {'pesquisa': 'lista', 'pagina': 'lista'}
 
 
@@ -130,9 +130,12 @@ def regras_para(user):
 
     regras = {}
     for tipo in TIPOS:
-        ativa = getattr(cfg, f'{tipo}_ativa', True) and cfg.ativo_geral
+        # 'ativa' = contar. 'limitar' = bloquear (independe: desligar o
+        # ativo_geral para de bloquear, mas a contagem continua).
+        ativa = getattr(cfg, f'{tipo}_ativa', True)
         if lim is not None and lim.ativo is not None:
             ativa = ativa and lim.ativo
+        limitar = ativa and cfg.ativo_geral
         sufixo = 'conta' if autenticado else 'anonimo'
         limite = getattr(cfg, f'{tipo}_dia_{sufixo}', 5)
         if lim is not None:
@@ -141,6 +144,7 @@ def regras_para(user):
                 limite = override
         regras[tipo] = {
             'ativa': ativa,
+            'limitar': limitar,
             'limite': limite,
             'ilimitado': staff or bool(lim is not None and lim.ignorar_limites),
         }
@@ -199,7 +203,8 @@ def registrar_uso(request, tipo='lista') -> dict:
     registro.refresh_from_db()
     usados = registro.total
     limite = regra['limite']
-    permitido = regra['ilimitado'] or usados <= limite
+    permitido = (regra['ilimitado'] or not regra.get('limitar', True)
+                 or usados <= limite)
     return {'permitido': permitido, 'usados': usados, 'limite': limite,
             'contando': True, 'tipo': tipo, 'ilimitado': regra['ilimitado']}
 

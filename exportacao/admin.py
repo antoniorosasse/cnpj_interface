@@ -24,12 +24,16 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
                   '<a class="button" href="contadores/">Abrir o painel de contagem</a> '
                   '&nbsp; <a class="button" href="/admin/exportacao/limiteusuario/">'
                   'Limites por usuário</a>')}),
-        ('Quais contar', {'fields': ('lista_ativa', 'chat_ativa', 'exportacao_ativa')}),
+        ('Quais contar (continuam contando mesmo com os limites desligados)', {
+            'fields': ('lista_ativa', 'proximidade_ativa', 'chat_ativa', 'exportacao_ativa'),
+        }),
         ('Limites por dia — visitante anonimo', {
-            'fields': ('lista_dia_anonimo', 'chat_dia_anonimo', 'exportacao_dia_anonimo'),
+            'fields': ('lista_dia_anonimo', 'proximidade_dia_anonimo',
+                       'chat_dia_anonimo', 'exportacao_dia_anonimo'),
         }),
         ('Limites por dia — conta', {
-            'fields': ('lista_dia_conta', 'chat_dia_conta', 'exportacao_dia_conta'),
+            'fields': ('lista_dia_conta', 'proximidade_dia_conta',
+                       'chat_dia_conta', 'exportacao_dia_conta'),
         }),
         ('Desafio antiabuso (Cloudflare Turnstile)', {
             'fields': ('desafio_ativo', 'desafio_validade_min', 'desafio_tickets_ip_hora'),
@@ -37,7 +41,8 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
                             'no .env. Contas logadas nunca passam pelo desafio.'),
         }),
         ('Teto por IP (todas as identidades do mesmo IP, por dia)', {
-            'fields': ('ip_dia_lista', 'ip_dia_chat', 'ip_dia_exportacao'),
+            'fields': ('ip_dia_lista', 'ip_dia_proximidade', 'ip_dia_chat',
+                       'ip_dia_exportacao'),
         }),
     )
 
@@ -59,11 +64,13 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
 
     def painel_contadores(self, request):
         hoje = timezone.localdate()
-        por_tipo = (PesquisaAnonima.objects
-                    .filter(dia=hoje)
-                    .values('tipo')
-                    .annotate(total=Sum('total'))
-                    .order_by('-total'))
+        contagens = {linha['tipo']: linha['total']
+                     for linha in PesquisaAnonima.objects.filter(dia=hoje)
+                     .values('tipo').annotate(total=Sum('total'))}
+        rotulos = dict(PesquisaAnonima.TIPOS)
+        por_tipo = [{'tipo': rotulos.get(tipo, tipo), 'total': contagens.get(tipo, 0)}
+                    for tipo in rotulos]
+        por_tipo.sort(key=lambda linha: linha['total'], reverse=True)
         usuarios = list(PesquisaAnonima.objects
                         .filter(dia=hoje, visitante__startswith='user:')
                         .values('visitante', 'tipo')

@@ -11,7 +11,7 @@
     <thead><tr><th>Tipo</th><th>Total de consultas</th></tr></thead>
     <tbody>
       {% for linha in por_tipo %}
-      <tr><td>{{ linha.tipo|capfirst }}</td><td>{{ linha.total|default:0 }}</td></tr>
+      <tr><td>{{ linha.tipo }}</td><td>{{ linha.total|default:0 }}</td></tr>
       {% empty %}
       <tr><td colspan="2">Nenhum uso registrado hoje.</td></tr>
       {% endfor %}

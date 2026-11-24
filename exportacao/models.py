@@ -109,14 +109,19 @@ class ConfiguracaoUso(models.Model):
     """Parametros globais dos contadores (linha unica, pk=1)."""
 
     id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
-    ativo_geral = models.BooleanField('contadores ativos', default=True)
+    ativo_geral = models.BooleanField(
+        'aplicar limites (bloquear)', default=True,
+        help_text='Desligado: continua contando, mas ninguem e bloqueado.')
 
-    lista_ativa = models.BooleanField('contar consultas da lista', default=True)
+    lista_ativa = models.BooleanField('contar consultas de empresas', default=True)
+    proximidade_ativa = models.BooleanField('contar consultas de proximidade', default=True)
     chat_ativa = models.BooleanField('contar consultas do chat', default=True)
     exportacao_ativa = models.BooleanField('contar geracao de arquivos', default=True)
 
-    lista_dia_anonimo = models.PositiveIntegerField('lista/dia (anonimo)', default=5)
-    lista_dia_conta = models.PositiveIntegerField('lista/dia (conta)', default=10)
+    lista_dia_anonimo = models.PositiveIntegerField('empresas/dia (anonimo)', default=5)
+    lista_dia_conta = models.PositiveIntegerField('empresas/dia (conta)', default=10)
+    proximidade_dia_anonimo = models.PositiveIntegerField('proximidade/dia (anonimo)', default=5)
+    proximidade_dia_conta = models.PositiveIntegerField('proximidade/dia (conta)', default=10)
     chat_dia_anonimo = models.PositiveIntegerField('chat/dia (anonimo)', default=3)
     chat_dia_conta = models.PositiveIntegerField('chat/dia (conta)', default=20)
     exportacao_dia_anonimo = models.PositiveIntegerField('exportacao/dia (anonimo)', default=5)
@@ -128,7 +133,8 @@ class ConfiguracaoUso(models.Model):
     desafio_validade_min = models.PositiveIntegerField('validade do ticket (min)', default=15)
     desafio_tickets_ip_hora = models.PositiveIntegerField('tickets por IP por hora', default=20)
 
-    ip_dia_lista = models.PositiveIntegerField('lista/dia por IP', default=300)
+    ip_dia_lista = models.PositiveIntegerField('empresas/dia por IP', default=300)
+    ip_dia_proximidade = models.PositiveIntegerField('proximidade/dia por IP', default=300)
     ip_dia_chat = models.PositiveIntegerField('chat/dia por IP', default=60)
     ip_dia_exportacao = models.PositiveIntegerField('arquivos/dia por IP', default=30)
 
@@ -175,7 +181,8 @@ class LimiteUsuario(models.Model):
 class PesquisaAnonima(models.Model):
     """Contador diario por identidade (cookie, usuario) e tipo de uso."""
 
-    TIPOS = (('lista', 'Lista'), ('chat', 'Chat'), ('exportacao', 'Exportacao'))
+    TIPOS = (('lista', 'Empresas'), ('proximidade', 'Proximidade'),
+             ('chat', 'Chat'), ('exportacao', 'Arquivos'))
 
     visitante = models.CharField('visitante', max_length=64, db_index=True)
     tipo = models.CharField('tipo', max_length=12, choices=TIPOS, default='lista')

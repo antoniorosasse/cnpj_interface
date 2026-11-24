@@ -681,13 +681,13 @@ def proximidade(request):
     entao nao existe OFFSET.
     """
     from exportacao.servicos import aplicar_cookie_visitante, registrar_uso
-    estado = registrar_uso(request, 'lista')
+    estado = registrar_uso(request, 'proximidade')
     if not estado['permitido']:
         resposta = render(request, 'exportacao/bloqueado.html', {
             'motivo': 'limite',
             'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
-                         "consultas hoje. Crie uma conta gratuita ou compre "
-                         "créditos para não ter limite."),
+                         "consultas de proximidade hoje. Crie uma conta gratuita "
+                         "ou compre créditos para não ter limite."),
         }, status=429)
         return aplicar_cookie_visitante(request, resposta)
     pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']

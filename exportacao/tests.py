@@ -570,16 +570,29 @@ class ConfiguracaoContadoresTests(TestCase):
         req.META = {'REMOTE_ADDR': ip}
         return req
 
-    def test_contador_desligado_nao_conta_nem_bloqueia(self):
+    def test_desligar_limites_continua_contando(self):
         from exportacao.servicos import registrar_uso
         cfg = ConfiguracaoUso(id=1)
         cfg.ativo_geral = False
+        cfg.lista_dia_anonimo = 1
         cfg.save()
         req = self._request()
         with patch('exportacao.servicos.visitante_id', return_value='v1'):
-            r = registrar_uso(req, 'lista')
-        self.assertTrue(r['permitido'])
+            estados = [registrar_uso(req, 'lista') for _ in range(3)]
+        self.assertTrue(all(e['permitido'] for e in estados))
+        self.assertTrue(all(e['contando'] for e in estados))
+        self.assertEqual(estados[-1]['usados'], 3)
+
+    def test_tipo_desligado_nao_conta(self):
+        from exportacao.servicos import registrar_uso
+        cfg = ConfiguracaoUso(id=1)
+        cfg.chat_ativa = False
+        cfg.save()
+        req = self._request()
+        with patch('exportacao.servicos.visitante_id', return_value='v9'):
+            r = registrar_uso(req, 'chat')
         self.assertFalse(r['contando'])
+        self.assertTrue(r['permitido'])
 
     def test_tipos_sao_independentes(self):
         from exportacao.servicos import registrar_uso
@@ -732,3 +745,26 @@ class DesafioTurnstileTests(TestCase):
         self.client.force_login(user)
         resp = self.client.get('/exportar/lista/', {'formato': 'csv'})
         self.assertEqual(resp.status_code, 200)
+
+
+class ProximidadeContadorTests(TestCase):
+    def test_proximidade_conta_separado_da_lista(self):
+        from django.test import RequestFactory
+        from exportacao.servicos import registrar_uso
+        req = RequestFactory().get('/')
+        req.user = type('U', (), {'is_authenticated': False})()
+        req.COOKIES = {}
+        req.META = {'REMOTE_ADDR': '10.9.9.9'}
+        with patch('exportacao.servicos.visitante_id', return_value='vprox'):
+            lista = registrar_uso(req, 'lista')
+            prox = registrar_uso(req, 'proximidade')
+        self.assertEqual(lista['tipo'], 'lista')
+        self.assertEqual(prox['tipo'], 'proximidade')
+        self.assertEqual(prox['usados'], 1)
+
+    def test_painel_mostra_empresas_e_proximidade_zeradas(self):
+        admin = User.objects.create_superuser('adm-painel', 'a@b.com', 'x')
+        self.client.force_login(admin)
+        resp = self.client.get('/admin/exportacao/configuracaouso/contadores/')
+        self.assertContains(resp, 'Empresas')
+        self.assertContains(resp, 'Proximidade')
