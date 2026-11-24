@@ -27,7 +27,7 @@ from .consulta import iterar_linhas, iterar_proximidade
 from .models import Exportacao
 from .servicos import (SaldoInsuficiente, aplicar_cookie_visitante,
                        cliente_do_usuario, creditos_necessarios, debitar, estornar,
-                       gravar_linhas, ip_do_request, registrar_pesquisa, visitante_id)
+                       gravar_linhas, ip_do_request, registrar_uso, visitante_id)
 
 from core.proximidade import RAIO_MAX_KM, RAIO_MIN_KM, RAIO_PADRAO_KM, resolver_origem
 from core.views import SITUACOES, get_postgres_connection
@@ -303,18 +303,19 @@ def exportar_lista(request):
     staff = bool(user is not None and user.is_authenticated
                  and (user.is_staff or user.is_superuser))
 
+    estado_uso = registrar_uso(request, 'exportacao')
+    if not estado_uso['permitido']:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'limite',
+            'mensagem': (f"Você gerou {estado_uso['usados']} de "
+                         f"{estado_uso['limite']} arquivos hoje. Crie uma conta "
+                         "gratuita ou compre créditos para continuar."),
+        }, status=429)
+
     if staff:
         limite = getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000)
         amostra = False
     elif cliente is None:
-        estado = registrar_pesquisa(request)
-        if not estado['permitido']:
-            return render(request, 'exportacao/bloqueado.html', {
-                'motivo': 'limite',
-                'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
-                             "pesquisas hoje. Crie uma conta gratuita ou compre "
-                             "créditos para continuar."),
-            }, status=429)
         limite = getattr(settings, 'EXPORTACAO_AMOSTRA_LINHAS', 20)
         amostra = True
     else:
@@ -439,18 +440,19 @@ def exportar_proximidade(request):
     staff = bool(user is not None and user.is_authenticated
                  and (user.is_staff or user.is_superuser))
 
+    estado_uso = registrar_uso(request, 'exportacao')
+    if not estado_uso['permitido']:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'limite',
+            'mensagem': (f"Você gerou {estado_uso['usados']} de "
+                         f"{estado_uso['limite']} arquivos hoje. Crie uma conta "
+                         "gratuita ou compre créditos para continuar."),
+        }, status=429)
+
     if staff:
         limite = getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000)
         amostra = False
     elif cliente is None:
-        estado = registrar_pesquisa(request)
-        if not estado['permitido']:
-            return render(request, 'exportacao/bloqueado.html', {
-                'motivo': 'limite',
-                'mensagem': (f"Você usou {estado['usados']} de {estado['limite']} "
-                             "pesquisas hoje. Crie uma conta gratuita ou compre "
-                             "créditos para continuar."),
-            }, status=429)
         limite = getattr(settings, 'EXPORTACAO_AMOSTRA_LINHAS', 20)
         amostra = True
     else:

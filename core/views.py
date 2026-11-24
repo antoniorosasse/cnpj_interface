@@ -236,18 +236,16 @@ def lista_empresas(request):
     # Conta so' pesquisa nova (pagina 1 sem ponteiro): paginar nunca consome.
     # Conta gratuita (logada) tem limite maior; quem tem credito nao tem limite.
     pesquisa_usada = pesquisa_limite = None
-    from exportacao.servicos import aplicar_cookie_visitante, registrar_navegacao
-    nova_pesquisa = page <= 1 and not last_cnpj
-    estado = registrar_navegacao(request, nova_pesquisa)
-    if nova_pesquisa:
+    from exportacao.servicos import aplicar_cookie_visitante, registrar_uso
+    estado = registrar_uso(request, 'lista')
+    if estado['contando']:
         pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']
     if not estado['permitido']:
         resposta = render(request, 'exportacao/bloqueado.html', {
             'motivo': 'limite',
             'mensagem': (f"Voce usou {estado['usados']} de {estado['limite']} "
-                         + ("pesquisas" if nova_pesquisa else "paginas")
-                         + " hoje. Crie uma conta gratuita ou compre creditos "
-                           "para nao ter limite."),
+                         "consultas hoje. Crie uma conta gratuita ou compre "
+                         "creditos para nao ter limite."),
         }, status=429)
         return aplicar_cookie_visitante(request, resposta)
 

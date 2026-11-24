@@ -8,7 +8,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from exportacao.models import Cliente, Exportacao, LinhaExportada, MovimentoCredito
+from exportacao.models import (Cliente, ConfiguracaoUso, Exportacao, LimiteUsuario,
+                                LinhaExportada, MovimentoCredito)
 from exportacao.servicos import registrar_pesquisa
 
 User = get_user_model()
@@ -120,8 +121,11 @@ class ExportacaoClienteTests(TestCase):
 
 
 class LimiteDiarioTests(TestCase):
-    @override_settings(PESQUISAS_DIA_ANONIMO=2, PESQUISAS_DIA_IP=100)
+    @override_settings(PESQUISAS_DIA_IP=100)
     def test_anonimo_estoura_no_terceiro(self):
+        configuracao = ConfiguracaoUso(id=1)
+        configuracao.lista_dia_anonimo = 2
+        configuracao.save()
         class R:
             user = type('U', (), {'is_authenticated': False})()
             COOKIES = {}
@@ -367,7 +371,10 @@ class ProtecoesTests(TestCase):
         req.user = user
         req.COOKIES = {}
         req.META = {'REMOTE_ADDR': '10.1.1.1'}
-        with override_settings(PESQUISAS_DIA_CONTA=2, PESQUISAS_DIA_IP=100):
+        cfg = ConfiguracaoUso(id=1)
+        cfg.lista_dia_conta = 2
+        cfg.save()
+        with override_settings(PESQUISAS_DIA_IP=100):
             estados = [registrar_uso(req, 'pesquisa')['permitido'] for _ in range(3)]
         self.assertEqual(estados, [True, True, False])
 
@@ -378,7 +385,10 @@ class ProtecoesTests(TestCase):
         req.user = type('U', (), {'is_authenticated': False})()
         req.COOKIES = {}
         req.META = {'REMOTE_ADDR': '10.1.1.2'}
-        with override_settings(PAGINAS_DIA_ANONIMO=2, PAGINAS_DIA_IP=100):
+        cfg = ConfiguracaoUso(id=1)
+        cfg.lista_dia_anonimo = 2
+        cfg.save()
+        with override_settings(PAGINAS_DIA_IP=100):
             with patch('exportacao.servicos.visitante_id', return_value='pag1'):
                 estados = [registrar_uso(req, 'pagina')['permitido'] for _ in range(3)]
         self.assertEqual(estados, [True, True, False])
@@ -521,3 +531,94 @@ class CnaeEnriquecimentoTests(TestCase):
         novas, novas_linhas = _enriquecer_cnae(colunas, linhas)
         self.assertEqual(novas, colunas)
         self.assertEqual(novas_linhas, linhas)
+
+
+class ConfiguracaoContadoresTests(TestCase):
+    def _request(self, user=None, ip='10.5.0.1'):
+        from django.test import RequestFactory
+        req = RequestFactory().get('/')
+        req.user = user or type('U', (), {'is_authenticated': False})()
+        req.COOKIES = {}
+        req.META = {'REMOTE_ADDR': ip}
+        return req
+
+    def test_contador_desligado_nao_conta_nem_bloqueia(self):
+        from exportacao.servicos import registrar_uso
+        cfg = ConfiguracaoUso(id=1)
+        cfg.ativo_geral = False
+        cfg.save()
+        req = self._request()
+        with patch('exportacao.servicos.visitante_id', return_value='v1'):
+            r = registrar_uso(req, 'lista')
+        self.assertTrue(r['permitido'])
+        self.assertFalse(r['contando'])
+
+    def test_tipos_sao_independentes(self):
+        from exportacao.servicos import registrar_uso
+        cfg = ConfiguracaoUso(id=1)
+        cfg.chat_ativa = False
+        cfg.save()
+        req = self._request()
+        with patch('exportacao.servicos.visitante_id', return_value='v2'):
+            chat = registrar_uso(req, 'chat')
+            lista = registrar_uso(req, 'lista')
+        self.assertFalse(chat['contando'])
+        self.assertTrue(lista['contando'])
+
+    def test_override_por_usuario(self):
+        from exportacao.servicos import registrar_uso
+        user = User.objects.create_user('lim1', password='x')
+        LimiteUsuario.objects.create(user=user, chat_dia=2)
+        req = self._request(user)
+        with patch('exportacao.servicos.visitante_id', return_value='x'):
+            estados = [registrar_uso(req, 'chat')['permitido'] for _ in range(3)]
+        self.assertEqual(estados, [True, True, False])
+
+    def test_staff_conta_mas_nunca_bloqueia(self):
+        from exportacao.servicos import registrar_uso
+        admin = User.objects.create_superuser('adm-lim', 'a@b.com', 'x')
+        cfg = ConfiguracaoUso(id=1)
+        cfg.lista_dia_conta = 1
+        cfg.save()
+        req = self._request(admin)
+        with patch('exportacao.servicos.visitante_id', return_value='y'):
+            primeiro = registrar_uso(req, 'lista')
+            segundo = registrar_uso(req, 'lista')
+        self.assertTrue(primeiro['permitido'] and segundo['permitido'])
+        self.assertTrue(segundo['ilimitado'])
+        self.assertEqual(segundo['usados'], 2)
+
+
+class AdminContadoresTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser('adm-cont', 'a@b.com', 'x')
+        self.client.force_login(self.admin)
+
+    def test_changelist_redireciona_para_edicao(self):
+        resp = self.client.get('/admin/exportacao/configuracaouso/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/admin/exportacao/configuracaouso/1/', resp['Location'])
+
+    def test_painel_de_contadores_responde(self):
+        resp = self.client.get('/admin/exportacao/configuracaouso/contadores/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Contadores de uso')
+
+    def test_limite_por_usuario_no_admin(self):
+        resp = self.client.get('/admin/exportacao/limiteusuario/add/')
+        self.assertEqual(resp.status_code, 200)
+
+
+class ChatQuotaTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('chatq', password='x')
+        self.client.force_login(self.user)
+
+    def test_chat_bloqueado_devolve_429(self):
+        with patch('exportacao.servicos.registrar_uso',
+                   return_value={'permitido': False, 'usados': 5, 'limite': 5,
+                                 'contando': True, 'tipo': 'chat'}):
+            resp = self.client.post('/chat/api/', data='{"pergunta": "teste"}',
+                                    content_type='application/json')
+        self.assertEqual(resp.status_code, 429)
+        self.assertIn('consultas de chat hoje', resp.json()['erro'])

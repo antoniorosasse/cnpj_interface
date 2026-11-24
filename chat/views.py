@@ -199,6 +199,8 @@ def chat_view(request):
                 d['tempo_ms'] = m.tempo_ms
             return d
 
+    from exportacao.servicos import uso_atual
+
     mensagens_json = [_serializar_msg(m) for m in mensagens]
 
     return render(request, 'chat/chat.html', {
@@ -207,6 +209,7 @@ def chat_view(request):
         'conversas': conversas,
         'mensagens_json': json.dumps(mensagens_json, default=str),
         'ultima_lista_linhas': ultima_lista_linhas,
+        'chat_uso': uso_atual(request, 'chat'),
         # Layout amplo e' fixo desde 23/11; ?layout=padrao e' backup manual.
         'layout_padrao': layout_padrao,
         # Quantas linhas do resultado o resposta_natural manda pro prompt.
@@ -233,6 +236,16 @@ def chat_api_view(request):
             {'ok': False, 'erro': 'JSON invalido no corpo da requisicao.'},
             status=400,
         )
+
+    from exportacao.servicos import registrar_uso
+    estado_uso = registrar_uso(request, 'chat')
+    if not estado_uso['permitido']:
+        return JsonResponse({
+            'ok': False,
+            'erro': (f'Você usou {estado_uso["usados"]} de {estado_uso["limite"]} '
+                     'consultas de chat hoje. Crie uma conta gratuita ou compre '
+                     'créditos para continuar.'),
+        }, status=429)
 
     pergunta = (body.get('pergunta') or '').strip()
     if not pergunta:

@@ -26,6 +26,14 @@
         </div>
     </div>
 
+    {% if chat_uso.contando %}
+    <p class="ui-muted mb-2" style="font-size:.85rem">
+        <i class="bi bi-gauge" aria-hidden="true"></i>
+        Consultas de chat hoje: <strong>{{ chat_uso.usados }}</strong>{% if not chat_uso.ilimitado %} de {{ chat_uso.limite }}{% endif %}
+        {% if chat_uso.ilimitado %}<span class="ui-badge ui-badge--info">sem limite</span>{% endif %}
+    </p>
+    {% endif %}
+
     <div class="alert alert-info" role="note">
         <i class="bi bi-info-circle" aria-hidden="true"></i>
         <strong>Dica:</strong> seja específico sobre "matriz" (só a sede) ou "estabelecimentos"

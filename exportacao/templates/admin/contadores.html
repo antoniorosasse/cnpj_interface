@@ -1,0 +1,59 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div id="content-main">
+  <p><a href="{% url 'admin:exportacao_configuracaouso_changelist' %}">← Editar parâmetros</a></p>
+  <h2>Hoje ({{ hoje }})</h2>
+  <table class="adminlist" style="width:auto">
+    <thead><tr><th>Tipo</th><th>Total de consultas</th></tr></thead>
+    <tbody>
+      {% for linha in por_tipo %}
+      <tr><td>{{ linha.tipo|capfirst }}</td><td>{{ linha.total|default:0 }}</td></tr>
+      {% empty %}
+      <tr><td colspan="2">Nenhum uso registrado hoje.</td></tr>
+      {% endfor %}
+      <tr><td><strong>Visitantes anônimos (soma)</strong></td><td><strong>{{ anexos }}</strong></td></tr>
+    </tbody>
+  </table>
+
+  {% if config %}
+  <h2>Parâmetros globais</h2>
+  <table class="adminlist" style="width:auto">
+    <tr><th>Contadores ativos</th><td>{{ config.ativo_geral|yesno:"sim,não" }}</td></tr>
+    <tr><th>Lista</th><td>{{ config.lista_ativa|yesno:"sim,não" }} · anônimo {{ config.lista_dia_anonimo }}/dia · conta {{ config.lista_dia_conta }}/dia</td></tr>
+    <tr><th>Chat</th><td>{{ config.chat_ativa|yesno:"sim,não" }} · anônimo {{ config.chat_dia_anonimo }}/dia · conta {{ config.chat_dia_conta }}/dia</td></tr>
+    <tr><th>Arquivos</th><td>{{ config.exportacao_ativa|yesno:"sim,não" }} · anônimo {{ config.exportacao_dia_anonimo }}/dia · conta {{ config.exportacao_dia_conta }}/dia</td></tr>
+  </table>
+  {% endif %}
+
+  <h2>Usuários hoje</h2>
+  <table class="adminlist">
+    <thead><tr><th>Usuário</th><th>Tipo</th><th>Total</th></tr></thead>
+    <tbody>
+      {% for linha in usuarios %}
+      <tr><td>{{ linha.visitante|cut:'user:' }}</td><td>{{ linha.tipo }}</td><td>{{ linha.total }}</td></tr>
+      {% empty %}
+      <tr><td colspan="3">Nenhuma consulta de usuário hoje.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Overrides por usuário</h2>
+  <table class="adminlist">
+    <thead><tr><th>Usuário</th><th>Ativo</th><th>Lista</th><th>Chat</th><th>Arquivo</th><th>Ignora</th></tr></thead>
+    <tbody>
+      {% for lim in limites %}
+      <tr>
+        <td>{{ lim.user }}</td>
+        <td>{{ lim.ativo|default_if_none:'herda' }}</td>
+        <td>{{ lim.lista_dia|default_if_none:'herda' }}</td>
+        <td>{{ lim.chat_dia|default_if_none:'herda' }}</td>
+        <td>{{ lim.exportacao_dia|default_if_none:'herda' }}</td>
+        <td>{{ lim.ignorar_limites|yesno:"sim,não" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">Nenhum override.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -92,76 +92,112 @@ def aplicar_cookie_visitante(request, response):
 
 
 # ============================================================
-# LIMITE DIARIO
+# CONTADORES (lista, chat, exportacao)
 # ============================================================
 
-def _limite(user, tipo):
-    if tipo == 'pagina':
-        return (getattr(settings, 'PAGINAS_DIA_CONTA', 3000)
-                if user is not None and user.is_authenticated
-                else getattr(settings, 'PAGINAS_DIA_ANONIMO', 300))
-    return (getattr(settings, 'PESQUISAS_DIA_CONTA', 10)
-            if user is not None and user.is_authenticated
-            else getattr(settings, 'PESQUISAS_DIA_ANONIMO', 5))
+TIPOS = ('lista', 'chat', 'exportacao')
+_ALIAS = {'pesquisa': 'lista', 'pagina': 'lista'}
 
 
-def _chave(user, request, tipo):
-    if user is not None and user.is_authenticated:
-        return f'{tipo}:user:{user.pk}'
-    return f'{tipo}:{visitante_id(request)}'
+def _normalizar_tipo(tipo: str) -> str:
+    return _ALIAS.get(tipo, tipo if tipo in TIPOS else 'lista')
 
 
-def registrar_uso(request, tipo='pesquisa') -> dict:
+def configuracao():
+    """Linha unica de parametros (cria com os defaults se nao existir)."""
+    from .models import ConfiguracaoUso
+    cfg = ConfiguracaoUso.objects.filter(pk=1).first()
+    if cfg is None:
+        cfg = ConfiguracaoUso(id=1)
+        cfg.save()
+    return cfg
+
+
+def regras_para(user):
     """
-    Conta um uso do dia (tipo 'pesquisa' ou 'pagina').
+    Regras efetivas por tipo, juntando global + override do usuario.
 
-    Devolve {'permitido': bool, 'usados': int, 'limite': int}. Cliente com
-    cadastro (mesmo sem saldo) nao passa por aqui: o limite dele e' o credito.
+    {'lista': {'ativa': bool, 'limite': int, 'ilimitado': bool}, ...}
+    Staff e usuario com ignorar_limites continuam sendo CONTADOS, mas nunca
+    bloqueiam.
     """
+    from .models import LimiteUsuario
+
+    cfg = configuracao()
+    autenticado = bool(user is not None and user.is_authenticated)
+    lim = LimiteUsuario.objects.filter(user=user).first() if autenticado else None
+    staff = bool(autenticado and (user.is_staff or user.is_superuser))
+
+    regras = {}
+    for tipo in TIPOS:
+        ativa = getattr(cfg, f'{tipo}_ativa', True) and cfg.ativo_geral
+        if lim is not None and lim.ativo is not None:
+            ativa = ativa and lim.ativo
+        sufixo = 'conta' if autenticado else 'anonimo'
+        limite = getattr(cfg, f'{tipo}_dia_{sufixo}', 5)
+        if lim is not None:
+            override = getattr(lim, f'{tipo}_dia', None)
+            if override is not None:
+                limite = override
+        regras[tipo] = {
+            'ativa': ativa,
+            'limite': limite,
+            'ilimitado': staff or bool(lim is not None and lim.ignorar_limites),
+        }
+    return regras
+
+
+def registrar_uso(request, tipo='lista') -> dict:
+    """
+    Conta um uso do dia e diz se pode continuar.
+
+    Devolve {'permitido', 'usados', 'limite', 'contando', 'tipo'}.
+    Contador desligado (global ou por usuario) = nao conta e nao bloqueia.
+    """
+    tipo = _normalizar_tipo(tipo)
     user = getattr(request, 'user', None)
-    if cliente_do_usuario(user) is not None:
-        return {'permitido': True, 'usados': 0, 'limite': 0}
+    regra = regras_para(user)[tipo]
+    if not regra['ativa']:
+        return {'permitido': True, 'usados': 0, 'limite': 0,
+                'contando': False, 'tipo': tipo}
 
-    chave = _chave(user, request, tipo)
-    dia = timezone.localdate()
+    autenticado = bool(user is not None and user.is_authenticated)
+    identidade = f'user:{user.pk}' if autenticado else visitante_id(request)
     ip = ip_do_request(request)
+    dia = timezone.localdate()
 
+    registro = None
     for _tentativa in range(2):
         try:
             with transaction.atomic():
                 registro, _criado = PesquisaAnonima.objects.get_or_create(
-                    visitante=chave, dia=dia, defaults={'ip': ip, 'total': 0})
+                    visitante=identidade, tipo=tipo, dia=dia,
+                    defaults={'ip': ip, 'total': 0})
                 PesquisaAnonima.objects.filter(pk=registro.pk).update(
                     total=F('total') + 1, ip=ip)
             break
-        except Exception:  # IntegrityError na primeira request simultanea do dia
+        except Exception:  # IntegrityError na primeira request simultanea
             if _tentativa == 1:
-                logger.exception('Falha ao registrar uso (%s)', chave)
-                return {'permitido': False, 'usados': 0, 'limite': _limite(user, tipo)}
+                logger.exception('Falha ao registrar uso (%s/%s)', tipo, identidade)
+                return {'permitido': False, 'usados': 0, 'limite': regra['limite'],
+                        'contando': True, 'tipo': tipo}
 
     registro.refresh_from_db()
-    limite = _limite(user, tipo)
-
-    total_ip = 0
-    if ip:
-        from django.db.models import Sum
-        total_ip = (PesquisaAnonima.objects.filter(dia=dia, ip=ip)
-                    .aggregate(total=Sum('total'))['total'] or 0)
-    teto_ip = (getattr(settings, 'PAGINAS_DIA_IP', 3000) if tipo == 'pagina'
-               else getattr(settings, 'PESQUISAS_DIA_IP', 20))
-
-    permitido = registro.total <= limite and total_ip <= teto_ip
-    return {'permitido': permitido, 'usados': registro.total, 'limite': limite}
+    usados = registro.total
+    limite = regra['limite']
+    permitido = regra['ilimitado'] or usados <= limite
+    return {'permitido': permitido, 'usados': usados, 'limite': limite,
+            'contando': True, 'tipo': tipo, 'ilimitado': regra['ilimitado']}
 
 
 def registrar_pesquisa(request) -> dict:
-    """Compatibilidade: conta pesquisa nova."""
-    return registrar_uso(request, 'pesquisa')
+    """Compatibilidade: consulta da lista."""
+    return registrar_uso(request, 'lista')
 
 
-def registrar_navegacao(request, nova_pesquisa: bool) -> dict:
-    """Conta navegacao da lista: pesquisa nova ou apenas uma pagina."""
-    return registrar_uso(request, 'pesquisa' if nova_pesquisa else 'pagina')
+def registrar_navegacao(request, nova_pesquisa: bool = True) -> dict:
+    """Lista conta qualquer navegacao como consulta (paginacao inclusive)."""
+    return registrar_uso(request, 'lista')
 
 
 # ============================================================
@@ -274,3 +310,19 @@ def registrar_consumo_linhas(cliente, exportacao, quantidade: int) -> int:
     if cliente is None or quantidade <= 0:
         return 0
     return debitar(cliente, quantidade, referencia=f'exportacao:{exportacao.pk}')
+
+
+def uso_atual(request, tipo='lista') -> dict:
+    """Le o contador do dia sem incrementar (para exibir na tela)."""
+    tipo = _normalizar_tipo(tipo)
+    user = getattr(request, 'user', None)
+    regra = regras_para(user)[tipo]
+    if not regra['ativa']:
+        return {'usados': 0, 'limite': 0, 'contando': False, 'ilimitado': True}
+    autenticado = bool(user is not None and user.is_authenticated)
+    identidade = f'user:{user.pk}' if autenticado else visitante_id(request)
+    registro = PesquisaAnonima.objects.filter(
+        visitante=identidade, tipo=tipo, dia=timezone.localdate()).first()
+    return {'usados': registro.total if registro else 0,
+            'limite': regra['limite'], 'contando': True,
+            'ilimitado': regra['ilimitado']}

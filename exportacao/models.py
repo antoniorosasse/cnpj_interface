@@ -105,10 +105,70 @@ class LinhaExportada(models.Model):
         ]
 
 
+class ConfiguracaoUso(models.Model):
+    """Parametros globais dos contadores (linha unica, pk=1)."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    ativo_geral = models.BooleanField('contadores ativos', default=True)
+
+    lista_ativa = models.BooleanField('contar consultas da lista', default=True)
+    chat_ativa = models.BooleanField('contar consultas do chat', default=True)
+    exportacao_ativa = models.BooleanField('contar geracao de arquivos', default=True)
+
+    lista_dia_anonimo = models.PositiveIntegerField('lista/dia (anonimo)', default=5)
+    lista_dia_conta = models.PositiveIntegerField('lista/dia (conta)', default=10)
+    chat_dia_anonimo = models.PositiveIntegerField('chat/dia (anonimo)', default=3)
+    chat_dia_conta = models.PositiveIntegerField('chat/dia (conta)', default=20)
+    exportacao_dia_anonimo = models.PositiveIntegerField('exportacao/dia (anonimo)', default=5)
+    exportacao_dia_conta = models.PositiveIntegerField('exportacao/dia (conta)', default=50)
+
+    atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
+
+    class Meta:
+        verbose_name = 'parametros dos contadores'
+        verbose_name_plural = 'parametros dos contadores'
+
+    def save(self, *args, **kwargs):
+        self.id = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return 'Parametros dos contadores'
+
+
+class LimiteUsuario(models.Model):
+    """Sobrescreve os parametros globais para um usuario (tudo opcional)."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name='limite_uso')
+    ativo = models.BooleanField('contadores para este usuario', null=True, blank=True,
+                                help_text='Em branco = herda o global.')
+    lista_dia = models.PositiveIntegerField('lista/dia', null=True, blank=True)
+    chat_dia = models.PositiveIntegerField('chat/dia', null=True, blank=True)
+    exportacao_dia = models.PositiveIntegerField('exportacao/dia', null=True, blank=True)
+    ignorar_limites = models.BooleanField('sempre ignora os limites', default=False,
+                                          help_text='Continua contando, mas nunca bloqueia.')
+    atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
+
+    class Meta:
+        verbose_name = 'limite por usuario'
+        verbose_name_plural = 'limites por usuario'
+        ordering = ('user__username',)
+
+    def __str__(self):
+        return f'Limites de {self.user}'
+
+    def salvar_contagem(self):
+        return self.lista_dia, self.chat_dia, self.exportacao_dia
+
+
 class PesquisaAnonima(models.Model):
-    """Contador diario do visitante anonimo (cookie) e do IP."""
+    """Contador diario por identidade (cookie, usuario) e tipo de uso."""
+
+    TIPOS = (('lista', 'Lista'), ('chat', 'Chat'), ('exportacao', 'Exportacao'))
 
     visitante = models.CharField('visitante', max_length=64, db_index=True)
+    tipo = models.CharField('tipo', max_length=12, choices=TIPOS, default='lista')
     dia = models.DateField('dia', db_index=True)
     ip = models.GenericIPAddressField('IP', null=True, blank=True)
     total = models.IntegerField('total', default=0)
@@ -116,5 +176,8 @@ class PesquisaAnonima(models.Model):
     class Meta:
         verbose_name = 'pesquisa anonima'
         verbose_name_plural = 'pesquisas anonimas'
-        unique_together = (('visitante', 'dia'),)
-        indexes = [models.Index(fields=['dia', 'ip'], name='pesquisa_dia_ip_idx')]
+        unique_together = (('visitante', 'dia', 'tipo'),)
+        indexes = [
+            models.Index(fields=['dia', 'ip'], name='pesquisa_dia_ip_idx'),
+            models.Index(fields=['dia', 'tipo'], name='pesquisa_dia_tipo_idx'),
+        ]
