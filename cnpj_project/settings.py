@@ -224,6 +224,16 @@ TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
 
+# Datas compactas (d/m/Y) em todo o sistema, inclusive no admin: economiza
+# espaco em tabelas e listas. Antes o admin mostrava "24 de Novembro de 2026".
+FORMAT_MODULE_PATH = ['formats']
+DATE_FORMAT = 'd/m/Y'
+SHORT_FORMAT_MODULE_PATH = ['formats']
+DATE_FORMAT = 'd/m/Y'
+DATETIME_FORMAT = 'd/m/Y H:i'
+SHORT_DATETIME_FORMAT = 'd/m/Y H:i'
+TIME_FORMAT = 'H:i'
+
 # ==================== SUBPATH (produção vs local) ====================
 # Em produção, o app roda em https://cnpj.busquecnpj.com.br/
 # Em desenvolvimento, roda em http://localhost:8002/
