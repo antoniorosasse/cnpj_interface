@@ -108,23 +108,26 @@
         </div>
     </div>
 
-    {% if 'chat.busquecnpj.com.br' not in request.get_host %}
-        <div class="mt-4">
-            <a href="{% url 'core:lista' %}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar para Empresas
-            </a>
-            <a href="{% url 'exportacao:exportar_chat' %}?formato=csv"
-               class="btn btn-outline-primary" rel="nofollow"
-               title="Baixar a última lista desta conversa em CSV">
-                <i class="bi bi-filetype-csv" aria-hidden="true"></i> Baixar última lista (CSV)<span id="export-chat-count">{% if ultima_lista_linhas %} ({{ ultima_lista_linhas }} linhas){% endif %}</span>
-            </a>
-            <a href="{% url 'exportacao:exportar_chat' %}?formato=json"
-               class="btn btn-outline-primary" rel="nofollow"
-               title="Baixar a última lista desta conversa em JSON">
-                <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
-            </a>
-        </div>
-    {% endif %}
+    <div class="mt-4">
+        {% if 'chat.busquecnpj.com.br' not in request.get_host %}
+        <a href="{% url 'core:lista' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar para Empresas
+        </a>
+        {% endif %}
+        {# Export vale em qualquer host: o chat em producao roda em
+           chat.busquecnpj.com.br, onde "Voltar para Empresas" nao faz sentido,
+           mas baixar a lista sim. #}
+        <a href="{% url 'exportacao:exportar_chat' %}?formato=csv"
+           class="btn btn-outline-primary" rel="nofollow"
+           title="Baixar a última lista desta conversa em CSV">
+            <i class="bi bi-filetype-csv" aria-hidden="true"></i> Baixar última lista (CSV)<span id="export-chat-count">{% if ultima_lista_linhas %} ({{ ultima_lista_linhas }} linhas){% endif %}</span>
+        </a>
+        <a href="{% url 'exportacao:exportar_chat' %}?formato=json"
+           class="btn btn-outline-primary" rel="nofollow"
+           title="Baixar a última lista desta conversa em JSON">
+            <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
+        </a>
+    </div>
 
 </div>
 {% endblock %}
