@@ -24,12 +24,6 @@
                 recuperou, nunca da memória do modelo.
             </p>
         </div>
-        <a class="btn btn-sm btn-outline-secondary align-self-start"
-           href="{% if layout_padrao %}{% url 'chat:chat' %}{% else %}?layout=padrao{% endif %}"
-           rel="nofollow" title="Alternar entre o layout amplo e o layout antigo com a coluna de conversas">
-            {% if layout_padrao %}<i class="bi bi-arrows-angle-expand" aria-hidden="true"></i> Layout amplo
-            {% else %}<i class="bi bi-layout-sidebar" aria-hidden="true"></i> Layout com coluna{% endif %}
-        </a>
     </div>
 
     <div class="alert alert-info" role="note">

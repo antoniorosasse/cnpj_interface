@@ -156,12 +156,9 @@ def chat_view(request):
 
     # Mensagens da conversa atual, serializadas pro JS
     cid = _conversa_id(conversa)
-    pedido_layout = request.GET.get('layout')
-    if pedido_layout in ('padrao', 'wide'):
-        request.session['chat_layout'] = pedido_layout
-    layout_atual = (request.GET.get('layout')
-                    or request.session.get('chat_layout') or 'wide')
-    layout_padrao = layout_atual == 'padrao'
+    # Layout amplo e' FIXO. ?layout=padrao existe apenas como backup manual
+    # (sem link na tela): serve se a gaveta der problema em algum navegador.
+    layout_padrao = request.GET.get('layout') == 'padrao'
 
     mensagens = repo.mensagens_da_conversa(cid) if cid else []
 
@@ -210,8 +207,7 @@ def chat_view(request):
         'conversas': conversas,
         'mensagens_json': json.dumps(mensagens_json, default=str),
         'ultima_lista_linhas': ultima_lista_linhas,
-        # Layout amplo e' o padrao desde 23/11; ?layout=padrao volta ao antigo
-        # e a escolha fica gravada na sessao.
+        # Layout amplo e' fixo desde 23/11; ?layout=padrao e' backup manual.
         'layout_padrao': layout_padrao,
         # Quantas linhas do resultado o resposta_natural manda pro prompt.
         # Vai pro template pra nota de RAG mostrar numeros reais, sem
