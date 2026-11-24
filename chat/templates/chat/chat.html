@@ -669,6 +669,17 @@
         });
         fundo.addEventListener('click', fechar);
         document.addEventListener('keydown', function (evento) {
+            var alvo = evento.target;
+            var digitando = alvo && (/^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName) || alvo.isContentEditable);
+            if (digitando || evento.ctrlKey || evento.metaKey || evento.altKey) { return; }
+            if (evento.key === 'c' || evento.key === 'C') {
+                evento.preventDefault();
+                sidebar.classList.add('aberta');
+                fundo.hidden = false;
+                botao.setAttribute('aria-expanded', 'true');
+            }
+        });
+        document.addEventListener('keydown', function (evento) {
             if (evento.key === 'Escape') { fechar(); }
         });
     })();

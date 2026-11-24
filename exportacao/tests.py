@@ -497,3 +497,27 @@ class AumentarLimitTests(TestCase):
         sql = 'SELECT * FROM (SELECT 1 LIMIT 5) t LIMIT 100'
         self.assertEqual(_aumentar_limit(sql, 5000),
                          'SELECT * FROM (SELECT 1 LIMIT 5) t LIMIT 5000')
+
+
+class CnaeEnriquecimentoTests(TestCase):
+    def test_acrescenta_codigo_quando_so_tem_nome(self):
+        from unittest.mock import MagicMock
+        from exportacao.views import _enriquecer_cnae
+        cur = MagicMock()
+        cur.fetchall.return_value = [(4721102, 'Padaria e confeitaria')]
+        conn = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        colunas = ['cnae_nome', 'total']
+        linhas = [{'cnae_nome': 'Padaria e confeitaria', 'total': 183}]
+        with patch('exportacao.views.get_postgres_connection', return_value=conn):
+            novas, novas_linhas = _enriquecer_cnae(colunas, linhas)
+        self.assertEqual(novas, ['cnae_nome', 'cnae_codigo', 'total'])
+        self.assertEqual(novas_linhas[0]['cnae_codigo'], 4721102)
+
+    def test_nao_duplica_quando_codigo_ja_existe(self):
+        from exportacao.views import _enriquecer_cnae
+        colunas = ['cnae_codigo', 'cnae_nome']
+        linhas = [{'cnae_codigo': 1, 'cnae_nome': 'x'}]
+        novas, novas_linhas = _enriquecer_cnae(colunas, linhas)
+        self.assertEqual(novas, colunas)
+        self.assertEqual(novas_linhas, linhas)

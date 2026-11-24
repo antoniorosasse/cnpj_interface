@@ -169,6 +169,11 @@ REGRAS DE OURO:
      ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas
      e' arbitrario e a empresa procurada pode nao aparecer.
 
+9.1 SEMPRE QUE A SAIDA MOSTRAR CNAE, traga CODIGO e DESCRICAO juntos:
+   selecione e.cnae_principal AS cnae_codigo e c.nm_cnae AS cnae_nome
+   (JOIN em c_cnaes) e, quando agrupar por CNAE, agrupe pelos dois.
+   NUNCA devolva so' a descricao: o cliente usa o codigo na planilha.
+
 10. BUSCA DE CNAE (TEXTUAL + VETOR COMO FALLBACK) - CRITICO:
    - Quando a pergunta for sobre uma ATIVIDADE (ex: "confeitaria",
      "padarias de lages", "empresas de carpintaria", "energia solar"),

@@ -146,6 +146,65 @@ def _aumentar_limit(sql: str, novo: int) -> str:
     return sql[:ultima.start()] + f'LIMIT {novo}' + sql[ultima.end():]
 
 
+COLUNAS_NOME_CNAE = ('nm_cnae', 'cnae_nome', 'cnae_descricao', 'descricao_cnae',
+                     'atividade', 'atividade_principal', 'cnae')
+COLUNAS_COD_CNAE = ('cnae_codigo', 'cnae_cod', 'cnae_principal', 'cd_cnae')
+
+
+def _enriquecer_cnae(colunas, linhas):
+    """
+    Acrescenta o CODIGO do CNAE quando a consulta trouxe so' a descricao.
+
+    Vale para respostas antigas do chat (o SQL ja' gravado nao muda). Consulta
+    c_cnaes pelo nome, em uma unica query, com timeout curto.
+    """
+    if not linhas or not colunas:
+        return colunas, linhas
+    por_nome = {c.lower(): c for c in colunas}
+    if any(chave in por_nome for chave in COLUNAS_COD_CNAE):
+        return colunas, linhas
+    # Coluna chamada 'cnae' com valores numericos ja' e' o codigo.
+    for chave in ('cnae',):
+        coluna = por_nome.get(chave)
+        if coluna and linhas:
+            valores = [str(l.get(coluna)).strip() for l in linhas if l.get(coluna) is not None]
+            if valores and all(v.isdigit() for v in valores):
+                return colunas, linhas
+    alvo = next((por_nome[k] for k in COLUNAS_NOME_CNAE if k in por_nome), None)
+    if alvo is None:
+        return colunas, linhas
+    nomes = {str(linha.get(alvo)).strip() for linha in linhas
+             if linha.get(alvo) and not str(linha.get(alvo)).strip().isdigit()}
+    if not nomes:
+        return colunas, linhas
+
+    mapa = {}
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = '3s'")
+            cur.execute("SELECT cnae, nm_cnae FROM c_cnaes WHERE nm_cnae = ANY(%s)",
+                        (list(nomes),))
+            mapa = {nome: codigo for codigo, nome in cur.fetchall()}
+    except Exception:
+        logger.exception('Falha ao buscar codigo do CNAE para o export')
+        return colunas, linhas
+    finally:
+        if conn:
+            conn.close()
+    if not mapa:
+        return colunas, linhas
+
+    posicao = list(colunas).index(alvo)
+    novas = list(colunas)
+    if 'cnae_codigo' not in por_nome:
+        novas.insert(posicao + 1, 'cnae_codigo')
+    for linha in linhas:
+        linha['cnae_codigo'] = mapa.get(str(linha.get(alvo)).strip(), '')
+    return novas, linhas
+
+
 def _celula_csv(valor):
     """Neutraliza formula de planilha (CWE-1236) em dado vindo da base."""
     if isinstance(valor, str) and valor[:1] in ('=', '+', '-', '@', '\t', '\r'):
@@ -593,6 +652,7 @@ def exportar_chat(request):
 
     colunas = execucao.get('colunas') or []
     linhas = execucao.get('rows') or []
+    colunas, linhas = _enriquecer_cnae(colunas, linhas)
     if not colunas:
         return render(request, 'exportacao/bloqueado.html', {
             'motivo': 'sem_lista', 'mensagem': 'A última resposta não devolveu colunas.',
