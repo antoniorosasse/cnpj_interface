@@ -32,6 +32,13 @@
             </form>
             {% endif %}
 
+            <p class="mt-3 mb-0">
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'core:lista' %}"
+                   onclick="if (history.length > 1) { history.back(); return false; }">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar
+                </a>
+            </p>
+
             <p class="ui-muted mt-4 mb-0" style="font-size:.85rem">
                 Com uma conta gratuita você não passa por esta etapa — e ainda tem
                 limite diário maior. <a href="{% url 'login' %}">Entrar</a>
