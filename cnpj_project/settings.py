@@ -61,6 +61,12 @@ PAGINAS_DIA_IP = int(os.getenv('PAGINAS_DIA_IP', '3000') or 3000)
 # Teto de linhas no export do chat (o executor do chat corta em CHAT_SQL_MAX_ROWS).
 EXPORTACAO_CHAT_MAX_LINHAS = int(os.getenv('EXPORTACAO_CHAT_MAX_LINHAS', '5000') or 5000)
 
+# ==================== DESAFIO (Cloudflare Turnstile) ====================
+# Chaves gratuitas em https://dash.cloudflare.com -> Turnstile.
+# Sem as chaves, o desafio fica desativado (o export segue com cookie + cotas).
+TURNSTILE_SITE_KEY = os.getenv('TURNSTILE_SITE_KEY', '').strip()
+TURNSTILE_SECRET_KEY = os.getenv('TURNSTILE_SECRET_KEY', '').strip()
+
 # ==================== CSRF ====================
 # Origens confiaveis para requisicoes POST com CSRF (Django 4+)
 CSRF_TRUSTED_ORIGINS = [

@@ -1,0 +1,42 @@
+{% extends 'core/base.html' %}
+{% block title %}Confirmação rápida — busca CNPJ{% endblock %}
+{% block content %}
+<main class="ui-main container py-5" id="conteudo">
+    <div class="ui-card mx-auto" style="max-width: 560px;">
+        <div class="ui-card__body">
+            <h1 class="h4 mb-2">Só uma confirmação rápida</h1>
+            <p class="ui-muted">
+                O download de arquivos é liberado para pessoas. Isso leva alguns
+                segundos e vale por {{ validade }} minutos.
+            </p>
+
+            {% if erro %}<div class="alert alert-warning" role="alert">{{ erro }}</div>{% endif %}
+
+            {% if ativo %}
+            <form method="post" action="{% url 'exportacao:desafio' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ proximo }}">
+                <div class="cf-turnstile" data-sitekey="{{ site_key }}"
+                     data-language="pt-br" data-theme="auto"></div>
+                <button type="submit" class="btn btn-primary mt-3">
+                    <i class="bi bi-shield-check" aria-hidden="true"></i> Confirmar e baixar
+                </button>
+            </form>
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+            {% else %}
+            <p class="mb-3">O desafio ainda não está configurado neste ambiente.</p>
+            <form method="post" action="{% url 'exportacao:desafio' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ proximo }}">
+                <button type="submit" class="btn btn-primary">Continuar</button>
+            </form>
+            {% endif %}
+
+            <p class="ui-muted mt-4 mb-0" style="font-size:.85rem">
+                Com uma conta gratuita você não passa por esta etapa — e ainda tem
+                limite diário maior. <a href="{% url 'login' %}">Entrar</a>
+            </p>
+        </div>
+    </div>
+</main>
+{% endblock %}

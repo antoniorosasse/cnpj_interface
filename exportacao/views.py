@@ -20,14 +20,16 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.http import HttpResponse, StreamingHttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from .consulta import iterar_linhas, iterar_proximidade
 from .models import Exportacao
+from . import desafio
 from .servicos import (SaldoInsuficiente, aplicar_cookie_visitante,
                        cliente_do_usuario, creditos_necessarios, debitar, estornar,
-                       gravar_linhas, ip_do_request, registrar_uso, visitante_id)
+                       configuracao, gravar_linhas, ip_do_request,
+                       registrar_uso, visitante_id)
 
 from core.proximidade import RAIO_MAX_KM, RAIO_MIN_KM, RAIO_PADRAO_KM, resolver_origem
 from core.views import SITUACOES, get_postgres_connection
@@ -311,6 +313,10 @@ def exportar_lista(request):
             'mensagem': 'Ative os cookies e recarregue a página para gerar o arquivo.',
         }, status=403)
 
+    if desafio.precisa_desafio(configuracao(), cliente, staff) and not desafio.ticket_valido(request):
+        from urllib.parse import quote
+        return redirect('/exportar/desafio/?next=' + quote(request.get_full_path()))
+
     estado_uso = registrar_uso(request, 'exportacao')
     if not estado_uso['permitido']:
         return render(request, 'exportacao/bloqueado.html', {
@@ -455,6 +461,10 @@ def exportar_proximidade(request):
             'motivo': 'cookies',
             'mensagem': 'Ative os cookies e recarregue a página para gerar o arquivo.',
         }, status=403)
+
+    if desafio.precisa_desafio(configuracao(), cliente, staff) and not desafio.ticket_valido(request):
+        from urllib.parse import quote
+        return redirect('/exportar/desafio/?next=' + quote(request.get_full_path()))
 
     estado_uso = registrar_uso(request, 'exportacao')
     if not estado_uso['permitido']:
@@ -735,3 +745,40 @@ def exportar_chat(request):
     resposta['Content-Disposition'] = (
         f'attachment; filename="chat-{timezone.localdate().isoformat()}.{formato}"')
     return resposta
+
+
+def desafio_export(request):
+    """Pagina do desafio (Turnstile) que emite o ticket do export anonimo."""
+    from .servicos import configuracao as cfg_uso
+    cfg = cfg_uso()
+    proximo = request.POST.get('next') or request.GET.get('next') or '/exportar/lista/'
+    if not proximo.startswith('/exportar/'):
+        proximo = '/exportar/lista/'
+    ativo = bool(cfg.desafio_ativo and desafio.configurado())
+
+    erro = None
+    if request.method == 'POST':
+        if not ativo:
+            resposta = redirect(proximo)
+            desafio.emitir_ticket(resposta, visitante_id(request), cfg.desafio_validade_min)
+            return resposta
+        if not desafio.pode_emitir_ticket(request, cfg.desafio_tickets_ip_hora):
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'limite',
+                'mensagem': 'Muitas solicitações de acesso deste endereço. '
+                            'Tente de novo em uma hora.',
+            }, status=429)
+        token = request.POST.get('cf-turnstile-response', '')
+        if desafio.verificar_turnstile(token, ip_do_request(request)):
+            resposta = redirect(proximo)
+            desafio.emitir_ticket(resposta, visitante_id(request), cfg.desafio_validade_min)
+            return resposta
+        erro = 'Não foi possível confirmar que a sua sessão é humana. Tente novamente.'
+
+    return render(request, 'exportacao/desafio.html', {
+        'site_key': getattr(settings, 'TURNSTILE_SITE_KEY', ''),
+        'ativo': ativo,
+        'proximo': proximo,
+        'erro': erro,
+        'validade': cfg.desafio_validade_min,
+    })

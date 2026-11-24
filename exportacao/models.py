@@ -122,6 +122,12 @@ class ConfiguracaoUso(models.Model):
     exportacao_dia_anonimo = models.PositiveIntegerField('exportacao/dia (anonimo)', default=5)
     exportacao_dia_conta = models.PositiveIntegerField('exportacao/dia (conta)', default=50)
 
+    desafio_ativo = models.BooleanField(
+        'exigir desafio (Turnstile) no export anonimo', default=False,
+        help_text='So tem efeito com TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY no .env.')
+    desafio_validade_min = models.PositiveIntegerField('validade do ticket (min)', default=15)
+    desafio_tickets_ip_hora = models.PositiveIntegerField('tickets por IP por hora', default=20)
+
     ip_dia_lista = models.PositiveIntegerField('lista/dia por IP', default=300)
     ip_dia_chat = models.PositiveIntegerField('chat/dia por IP', default=60)
     ip_dia_exportacao = models.PositiveIntegerField('arquivos/dia por IP', default=30)

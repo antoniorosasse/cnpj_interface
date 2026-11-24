@@ -31,6 +31,11 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
         ('Limites por dia — conta', {
             'fields': ('lista_dia_conta', 'chat_dia_conta', 'exportacao_dia_conta'),
         }),
+        ('Desafio antiabuso (Cloudflare Turnstile)', {
+            'fields': ('desafio_ativo', 'desafio_validade_min', 'desafio_tickets_ip_hora'),
+            'description': ('Só funciona com TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY '
+                            'no .env. Contas logadas nunca passam pelo desafio.'),
+        }),
         ('Teto por IP (todas as identidades do mesmo IP, por dia)', {
             'fields': ('ip_dia_lista', 'ip_dia_chat', 'ip_dia_exportacao'),
         }),

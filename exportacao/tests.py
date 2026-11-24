@@ -666,3 +666,69 @@ class TetoPorIpTests(TestCase):
         with patch('exportacao.servicos.visitante_id', side_effect=['a1', 'a2', 'a3']):
             estados = [registrar_uso(req, 'exportacao')['permitido'] for _ in range(3)]
         self.assertEqual(estados, [True, True, False])
+
+
+@override_settings(TURNSTILE_SITE_KEY='site-teste', TURNSTILE_SECRET_KEY='secret-teste')
+class DesafioTurnstileTests(TestCase):
+    def setUp(self):
+        _cookie_visitante(self.client)
+        cfg = ConfiguracaoUso(id=1)
+        cfg.desafio_ativo = True
+        cfg.save()
+        patcher = patch('exportacao.views.iterar_linhas',
+                        side_effect=lambda f, l, lote=1000: iter([linha(1)]))
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def test_export_sem_ticket_redireciona_para_desafio(self):
+        resp = self.client.get('/exportar/lista/', {'uf': 'SC', 'formato': 'csv'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/exportar/desafio/?next=', resp['Location'])
+
+    def test_pagina_de_desafio_mostra_widget(self):
+        resp = self.client.get('/exportar/desafio/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'cf-turnstile')
+        self.assertContains(resp, 'site-teste')
+
+    def test_token_valido_emite_ticket_e_libera_export(self):
+        with patch('exportacao.desafio.verificar_turnstile', return_value=True):
+            resp = self.client.post('/exportar/desafio/', {'next': '/exportar/lista/'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('export_ticket', resp.cookies)
+        self.client.cookies['export_ticket'] = resp.cookies['export_ticket'].value
+        export = self.client.get('/exportar/lista/', {'uf': 'SC', 'formato': 'csv'})
+        self.assertEqual(export.status_code, 200)
+
+    def test_token_invalido_nao_emite_ticket(self):
+        with patch('exportacao.desafio.verificar_turnstile', return_value=False):
+            resp = self.client.post('/exportar/desafio/', {'next': '/exportar/lista/'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Não foi possível confirmar')
+        self.assertNotIn('export_ticket', resp.cookies)
+
+    def test_ticket_expirado_nao_vale(self):
+        from django.core.signing import dumps
+        from exportacao.desafio import SAL_TICKET
+        from exportacao.servicos import visitante_id
+        from django.test import RequestFactory
+        req = RequestFactory().get('/', COOKIES={'visitante_id': self.client.cookies['visitante_id'].value})
+        self.client.cookies['export_ticket'] = dumps(
+            {'v': 'abc123', 'exp': 1}, salt=SAL_TICKET)
+        resp = self.client.get('/exportar/lista/', {'formato': 'csv'})
+        self.assertEqual(resp.status_code, 302)
+
+    def test_limite_de_tickets_por_ip(self):
+        cfg = ConfiguracaoUso.objects.get(pk=1)
+        cfg.desafio_tickets_ip_hora = 1
+        cfg.save()
+        with patch('exportacao.desafio.verificar_turnstile', return_value=True):
+            self.client.post('/exportar/desafio/', {'next': '/exportar/lista/'})
+            segunda = self.client.post('/exportar/desafio/', {'next': '/exportar/lista/'})
+        self.assertEqual(segunda.status_code, 429)
+
+    def test_conta_logada_nao_passa_pelo_desafio(self):
+        user = User.objects.create_user('desafio-cli', password='x')
+        Cliente.objects.create(user=user, nome='Cli', saldo_creditos=5)
+        self.client.force_login(user)
+        resp = self.client.get('/exportar/lista/', {'formato': 'csv'})
+        self.assertEqual(resp.status_code, 200)
