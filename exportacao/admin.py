@@ -1,6 +1,9 @@
 """Admin dos contadores: parametros globais, override por usuario e painel."""
 
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.models import User
+from django.utils.safestring import mark_safe
 from django.db.models import Sum
 from django.shortcuts import redirect, render
 from django.urls import path
@@ -16,8 +19,11 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('', {'fields': ('ativo_geral',),
-              'description': ('Contadores de uso do sistema. '
-                              '<a href="contadores/">Abrir o painel de contagem</a>')}),
+              'description': mark_safe(
+                  'Contadores de uso do sistema. '
+                  '<a class="button" href="contadores/">Abrir o painel de contagem</a> '
+                  '&nbsp; <a class="button" href="/admin/exportacao/limiteusuario/">'
+                  'Limites por usuário</a>')}),
         ('Quais contar', {'fields': ('lista_ativa', 'chat_ativa', 'exportacao_ativa')}),
         ('Limites por dia — visitante anonimo', {
             'fields': ('lista_dia_anonimo', 'chat_dia_anonimo', 'exportacao_dia_anonimo'),
@@ -117,3 +123,30 @@ class PesquisaAnonimaAdmin(admin.ModelAdmin):
 class LinhaExportadaAdmin(admin.ModelAdmin):
     list_display = ('criado_em', 'cliente', 'cnpj')
     search_fields = ('cnpj', 'cliente__nome')
+
+
+# ============================================================
+# Limites dentro da pagina do proprio usuario
+# ============================================================
+class LimiteUsuarioInline(admin.StackedInline):
+    model = LimiteUsuario
+    fk_name = 'user'
+    extra = 0
+    max_num = 1
+    can_delete = True
+    verbose_name = 'limites de uso (contadores)'
+    verbose_name_plural = 'limites de uso (contadores)'
+    fields = ('ativo', 'lista_dia', 'chat_dia', 'exportacao_dia',
+              'ignorar_limites', 'atualizado_em')
+    readonly_fields = ('atualizado_em',)
+
+
+if admin.site.is_registered(User):
+    admin.site.unregister(User)
+
+
+@admin.register(User)
+class UserComLimitesAdmin(UserAdmin):
+    """User padrao + bloco de limites na mesma tela."""
+
+    inlines = (LimiteUsuarioInline,)

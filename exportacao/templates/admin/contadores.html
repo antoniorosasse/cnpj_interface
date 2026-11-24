@@ -1,7 +1,11 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
 <div id="content-main">
-  <p><a href="{% url 'admin:exportacao_configuracaouso_changelist' %}">← Editar parâmetros</a></p>
+  <p>
+    <a class="button" href="{% url 'admin:exportacao_configuracaouso_changelist' %}">Editar parâmetros</a>
+    <a class="button" href="{% url 'admin:exportacao_limiteusuario_changelist' %}">Limites por usuário</a>
+    <a class="button" href="{% url 'admin:index' %}">Voltar ao admin</a>
+  </p>
   <h2>Hoje ({{ hoje }})</h2>
   <table class="adminlist" style="width:auto">
     <thead><tr><th>Tipo</th><th>Total de consultas</th></tr></thead>

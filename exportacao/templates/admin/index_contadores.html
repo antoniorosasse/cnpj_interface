@@ -1,0 +1,21 @@
+{% extends "admin/index.html" %}
+{% block content %}
+<div class="module" style="margin-bottom:18px">
+  <h2>Contadores e limites</h2>
+  <table style="width:auto">
+    <tr>
+      <td><a class="button" href="{% url 'admin:exportacao_configuracaouso_changelist' %}">Parâmetros globais</a></td>
+      <td>Ligar/desligar contadores e definir limites por tipo.</td>
+    </tr>
+    <tr>
+      <td><a class="button" href="{% url 'admin:exportacao_contadores' %}">Painel do dia</a></td>
+      <td>Quanto cada tipo foi usado hoje, por usuário e por visitante anônimo.</td>
+    </tr>
+    <tr>
+      <td><a class="button" href="{% url 'admin:exportacao_limiteusuario_changelist' %}">Limites por usuário</a></td>
+      <td>Override individual (ou use a aba dentro do usuário).</td>
+    </tr>
+  </table>
+</div>
+{{ block.super }}
+{% endblock %}

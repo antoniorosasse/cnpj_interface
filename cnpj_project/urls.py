@@ -1,5 +1,7 @@
 # cnpj_project/urls.py
 from django.contrib import admin
+
+admin.site.index_template = 'admin/index_contadores.html'
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.http import HttpResponse
