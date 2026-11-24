@@ -313,9 +313,47 @@
                         {% endfor %}
                     </ul>
 
+                    {% if user.is_authenticated %}
+                    <div class="ui-user dropdown">
+                        <a class="dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="ui-avatar" aria-hidden="true">{{ user.username|slice:":2"|upper }}</span>
+                            <span class="ui-user-name">{{ user.username }}</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'chat:chat' %}">
+                                    <i class="bi bi-chat-dots" aria-hidden="true"></i> Chat IA
+                                </a>
+                            </li>
+                            {% if user.is_staff %}
+                            <li>
+                                <a class="dropdown-item" href="/admin/" target="_blank" rel="noopener">
+                                    <i class="bi bi-gear" aria-hidden="true"></i> Administração
+                                </a>
+                            </li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="/admin/password_change/">
+                                    <i class="bi bi-key" aria-hidden="true"></i> Trocar senha
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form method="post" action="{% url 'logout' %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="dropdown-item">
+                                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Sair
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                    {% else %}
                     <a class="ui-login-link" href="{% url 'login' %}">
                         <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i> Entrar
                     </a>
+                    {% endif %}
                 </div>
 
             </div>
