@@ -5,6 +5,7 @@ from psycopg2.extras import RealDictCursor
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
+from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -28,18 +29,21 @@ from core.log_acesso import (
 from core.maps import montar_maps_nome_url, montar_maps_url
 from core.proximidade import (
     LIMITE_PAGINA,
+    caixa_geografica,
     PAGINA_ALEM_DO_FIM,
     PAGINA_SEM_TABELA,
     RAIO_MAX_KM,
     RAIO_MIN_KM,
     RAIO_PADRAO_KM,
     buscar_proximos,
+    buscar_proximos_endereco,
     cursor_do_token,
     cursor_para_pagina,
     hist_de_texto,
     hist_para_texto,
     km_para_texto,
     resolver_origem,
+    tem_tabela_total,
     token_cursor,
 )
 from core.telefone import montar_whatsapp
@@ -670,6 +674,124 @@ def lista_empresas(request):
     return aplicar_cookie_visitante(request, resposta)
 
 
+def _params_proximidade(request):
+    """
+    Le origem, raio, matrizes e situacao da querystring.
+
+    Usado pela tela (/proximidade/) e pelo mapa (/proximidade/mapa/), para os
+    dois responderem exatamente a mesma busca. Situacao desconhecida e
+    ignorada (mesma nomenclatura da lista de empresas, SITUACOES).
+
+    Devolve (origem_txt, raio, somente_matrizes, situacao).
+    """
+    origem_txt = request.GET.get('origem', '').strip()
+    try:
+        raio = int(float(request.GET.get('raio', RAIO_PADRAO_KM)))
+    except (TypeError, ValueError):
+        raio = RAIO_PADRAO_KM
+    raio = max(RAIO_MIN_KM, min(RAIO_MAX_KM, raio))
+
+    situacao = request.GET.get('situacao', '').strip().upper()
+    if situacao not in SITUACOES:
+        situacao = ''
+
+    # Primeira visita (sem querystring) ja vem com "somente matrizes" marcado.
+    somente_matrizes = ('matrizes' in request.GET) if request.GET else True
+    return origem_txt, raio, somente_matrizes, situacao
+
+
+def _endereco_curto(linha):
+    """Endereco de uma linha da proximidade, curto, para o balao do mapa."""
+    endereco = (linha.get('logradouro') or '').strip()
+    numero = (linha.get('numero') or '').strip()
+    bairro = (linha.get('bairro') or '').strip()
+    if endereco and numero:
+        endereco = f'{endereco}, {numero}'
+    elif numero:
+        endereco = numero
+    if bairro:
+        endereco = f'{endereco} - {bairro}' if endereco else bairro
+    if not endereco:
+        municipio = (linha.get('municipio_nome') or '').strip()
+        uf = (linha.get('uf') or '').strip()
+        endereco = f'{municipio}/{uf}' if municipio and uf else municipio
+    return endereco[:80]
+
+
+def _resolver_ordem(cur, pedida):
+    """
+    Ordem efetiva da lista: 'endereco' (padrao) ou 'cep'.
+
+    `ordem=endereco` e o padrao quando `c_estab_geo` E `c_ceps_folga` existem
+    (sem a folga a janela da ordem por endereco nao garante o corte). `ordem=cep`
+    forca a ordem por CEP, que e mais barata e mantem o campo "Ir para".
+    """
+    if pedida == 'cep':
+        return 'cep'
+    if (tem_tabela_total(cur, 'c_estab_geo')
+            and tem_tabela_total(cur, 'c_ceps_folga')):
+        return 'endereco'
+    return 'cep'
+
+
+def _ufs_do_mapa(cur, latitude, longitude, raio_km):
+    """
+    UFs cujo retangulo encosta na caixa do raio (para carregar o BC250).
+
+    O fundo do mapa e servido por UF (static/mapa/*.geojson); perto de divisa o
+    raio pega mais de uma, entao o retorno e uma lista. Sem a tabela de
+    municipios, devolve vazio (o mapa fica so com pontos e raio).
+    """
+    caixa = caixa_geografica(latitude, longitude, raio_km)
+    try:
+        cur.execute('SELECT uf, min(latitude) lat_min, max(latitude) lat_max, '
+                    '       min(longitude) lon_min, max(longitude) lon_max '
+                    '  FROM c_municipios_geo GROUP BY uf')
+        linhas = cur.fetchall()
+    except Exception:
+        return []
+    ufs = []
+    for linha in linhas:
+        # municipio sem UF ou sem coordenada (existe 1 grupo NULL) nao entra
+        if (not linha['uf'] or linha['lat_max'] is None or linha['lon_max'] is None
+                or linha['lat_min'] is None or linha['lon_min'] is None):
+            continue
+        if (float(linha['lat_max']) >= caixa['lat_min']
+                and float(linha['lat_min']) <= caixa['lat_max']
+                and float(linha['lon_max']) >= caixa['lon_min']
+                and float(linha['lon_min']) <= caixa['lon_max']):
+            ufs.append(linha['uf'])
+    return sorted(ufs)
+
+
+def _aplicar_endereco_geo(cur, linhas):
+    """
+    Troca, nas linhas da pagina, a coordenada do CEP pela do endereco.
+
+    A coordenada do endereco vem do CNEFE 2022 (ProjetoCargaDados:
+    `carregar_enderecos_cnefe`) e fica em `c_estab_geo`. Sem a tabela nada
+    muda: a tela continua usando o centroide do CEP, como sempre. O `km` da
+    linha NAO muda - ele e do CEP, e a ordenacao/keyset dependem disso; quem
+    ganha precisao e o ponto do mapa.
+    """
+    for linha in linhas:
+        linha['geo_precisao'] = None
+    if not linhas or not tem_tabela_total(cur, 'c_estab_geo'):
+        return
+
+    cnpjs = [linha['cnpj_completo'] for linha in linhas]
+    cur.execute('SELECT cnpj_completo, latitude, longitude, precisao '
+                '  FROM c_estab_geo WHERE cnpj_completo = ANY(%s)', [cnpjs])
+    achados = {r['cnpj_completo']: r for r in cur.fetchall()}
+    for linha in linhas:
+        achado = achados.get(linha['cnpj_completo'])
+        if not achado:
+            continue
+        linha['latitude'] = achado['latitude']
+        linha['longitude'] = achado['longitude']
+        linha['geo_precisao'] = achado['precisao']
+
+
 def proximidade(request):
     """
     Estabelecimentos num raio de X km de um ponto.
@@ -692,21 +814,12 @@ def proximidade(request):
         return aplicar_cookie_visitante(request, resposta)
     pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']
 
-    origem_txt = request.GET.get('origem', '').strip()
-    try:
-        raio = int(float(request.GET.get('raio', RAIO_PADRAO_KM)))
-    except (TypeError, ValueError):
-        raio = RAIO_PADRAO_KM
-    raio = max(RAIO_MIN_KM, min(RAIO_MAX_KM, raio))
-
-    # Situacao cadastral: mesma nomenclatura e mesmos codigos da lista de
-    # empresas (SITUACOES). Valor desconhecido e ignorado.
-    situacao = request.GET.get('situacao', '').strip().upper()
-    if situacao not in SITUACOES:
-        situacao = ''
-
-    # Primeira visita (sem querystring) ja vem com "somente matrizes" marcado
-    somente_matrizes = ('matrizes' in request.GET) if request.GET else True
+    origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    ordem_pedida = request.GET.get('ordem', '').strip().lower()
+    # Padrao = endereco; so decidimos de verdade dentro da conexao, quando da
+    # para checar se c_estab_geo/c_ceps_folga existem (sem elas, cep).
+    ordem = 'cep'
+    tem_endereco = False
 
     depois_km = request.GET.get('depois_km', '').strip()
     depois_cnpj = request.GET.get('depois_cnpj', '').strip()
@@ -740,6 +853,7 @@ def proximidade(request):
     resultados: list[Any] = []
     tem_mais = False
     total = None
+    ufs_mapa: list[str] = []
 
     if origem_txt:
         conn = None
@@ -748,6 +862,12 @@ def proximidade(request):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 origem, erro = resolver_origem(cur, origem_txt)
                 if origem:
+                    ordem = _resolver_ordem(cur, ordem_pedida)
+                    tem_endereco = ordem == 'endereco'
+                    if ordem == 'endereco' and pagina_pedida > 1:
+                        aviso = ('O salto direto de página existe só na ordem por CEP; '
+                                 'use as setas para avançar na ordem por endereço.')
+                        pagina_pedida = 0
                     if pagina_pedida > 1:
                         salto = cursor_para_pagina(
                             cur, origem['latitude'], origem['longitude'],
@@ -769,11 +889,17 @@ def proximidade(request):
                             elif salto == PAGINA_SEM_TABELA:
                                 aviso = ('Sem a tabela de contagem por CEP não '
                                          'dá para ir direto a uma página.')
-                    resultados, tem_mais, total = buscar_proximos(
+                    busca = (buscar_proximos_endereco if ordem == 'endereco'
+                             else buscar_proximos)
+                    resultados, tem_mais, total = busca(
                         cur, origem['latitude'], origem['longitude'],
                         raio, somente_matrizes, depois,
                         situacao=SITUACOES[situacao] if situacao else None,
                     )
+                    if ordem != 'endereco':
+                        _aplicar_endereco_geo(cur, resultados)
+                    ufs_mapa = _ufs_do_mapa(cur, origem['latitude'],
+                                             origem['longitude'], raio)
         except Exception as e:
             logger.exception("Erro na busca por proximidade: %s", e)
             erro = 'Não foi possível consultar a base agora. Tente novamente.'
@@ -798,6 +924,8 @@ def proximidade(request):
             params['matrizes'] = '1'
         if situacao:
             params['situacao'] = situacao
+        if ordem == 'endereco':
+            params['ordem'] = 'endereco'
         if novo_hist:
             params['hist'] = hist_para_texto(novo_hist)
         if cursor:
@@ -815,9 +943,22 @@ def proximidade(request):
             params['matrizes'] = '1'
         if situacao:
             params['situacao'] = situacao
+        if ordem == 'endereco':
+            params['ordem'] = 'endereco'
         if numero > 1:
             params['page'] = numero
         return '?' + urlencode(params)
+
+    # Alternar a ordenacao volta para a primeira pagina (os cursores das duas
+    # ordens nao sao intercambiaveis).
+    params_ordem = {'origem': origem_txt, 'raio': raio}
+    if somente_matrizes:
+        params_ordem['matrizes'] = '1'
+    if situacao:
+        params_ordem['situacao'] = situacao
+    params_ordem['ordem'] = 'cep' if ordem == 'endereco' else 'endereco'
+    link_ordem = '?' + urlencode(params_ordem)
+    rotulo_ordem = ('distância do CEP' if ordem == 'endereco' else 'distância real')
 
     pagina = pbase + len(hist) + 1
     link_primeira = montar_link_pagina(1)
@@ -843,12 +984,50 @@ def proximidade(request):
     if total is not None:
         total_paginas = max(1, math.ceil(int(total) / LIMITE_PAGINA))
 
+    # Mapa (Leaflet + tiles do OSM): os pontos saem das linhas que a busca ja
+    # devolveu (latitude/longitude e km vem do CEP), entao nao ha query nova.
+    # A camada de densidade do raio e carregada depois, sob demanda, por
+    # proximidade_mapa().
+    mapa_dados = None
+    if (origem and origem.get('latitude') is not None
+            and origem.get('longitude') is not None):
+        pontos = []
+        for linha in resultados:
+            latitude = linha.get('latitude')
+            longitude = linha.get('longitude')
+            if latitude is None or longitude is None:
+                continue
+            pontos.append({
+                'lat': round(float(latitude), 5),
+                'lon': round(float(longitude), 5),
+                'km': round(float(linha['km']), 2),
+                'cnpj': linha['cnpj_completo'],
+                'nome': (linha.get('nm_fantasia') or linha.get('razao_social')
+                         or linha['cnpj_completo'])[:60],
+                'razao': (linha.get('razao_social') or '')[:60],
+                'endereco': _endereco_curto(linha),
+                'precisao': linha.get('geo_precisao'),
+                'url': reverse('core:detalhe', args=[linha['cnpj_completo']]),
+            })
+        mapa_dados = {
+            'origem': {
+                'lat': float(origem['latitude']),
+                'lon': float(origem['longitude']),
+                'rotulo': origem['rotulo'],
+            },
+            'raio': raio,
+            'pontos': pontos,
+            'ufs': ufs_mapa,
+        }
+
     context = {
         'origem_txt': origem_txt,
         'origem': origem,
         'erro': erro,
         'aviso': aviso,
         'raio': raio,
+        'raio_min': RAIO_MIN_KM,
+        'raio_max': RAIO_MAX_KM,
         'raio_opcoes': [1, 2, 5, 10, 20, 50, 100],
         'somente_matrizes': somente_matrizes,
         'situacao': situacao,
@@ -856,6 +1035,12 @@ def proximidade(request):
         'resultados': resultados,
         'tem_mais': tem_mais,
         'total': total,
+        'mapa_dados': mapa_dados,
+        'ordem': ordem,
+        'ordem_endereco': ordem == 'endereco',
+        'link_ordem': link_ordem,
+        'rotulo_ordem': rotulo_ordem,
+        'tem_endereco': tem_endereco,
         'pagina': pagina,
         'total_paginas': total_paginas,
         'exportacao_linhas': _linhas_exportacao(request, total)[0],
@@ -867,6 +1052,106 @@ def proximidade(request):
         'link_proxima': link_proxima,
     }
     return render(request, 'core/proximidade.html', context)
+
+
+def proximidade_mapa(request):
+    """
+    Densidade do raio em JSON: a camada de areas do mapa da /proximidade/.
+
+    A tela manda o ponto ja resolvido ("-26.30,-48.84"), entao nao ha nova
+    resolucao de texto - resolver_origem aceita coordenada. Nao conta consulta
+    nova: e o mesmo raio que a tela ja abriu e registrou.
+
+    Sem a tabela agregada (c_ceps_estab/_sit) devolve {'erro': 'sem-tabela'} e o
+    mapa continua com os pontos da pagina, que vem do contexto.
+    """
+    from core.proximidade import buscar_densidade
+
+    origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    if not origem_txt:
+        return JsonResponse({'erro': 'origem'}, status=400)
+
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            origem, erro = resolver_origem(cur, origem_txt)
+            if not origem:
+                return JsonResponse({'erro': erro}, status=400)
+            dados = buscar_densidade(
+                cur, origem['latitude'], origem['longitude'], raio,
+                somente_matrizes,
+                SITUACOES[situacao] if situacao else None,
+            )
+    except Exception as e:
+        logger.exception("Erro na densidade do mapa: %s", e)
+        return JsonResponse(
+            {'erro': 'Não foi possível montar o mapa agora.'}, status=503)
+    finally:
+        if conn:
+            conn.close()
+
+    if dados is None:
+        return JsonResponse({'erro': 'sem-tabela'})
+    return JsonResponse({**dados, 'raio': raio,
+                         'somente_matrizes': somente_matrizes})
+
+
+def proximidade_mapa_pontos(request):
+    """
+    Pontos individuais para o zoom de quadra (mapa da /proximidade/).
+
+    A camada de densidade agrega as empresas na grade (uma area com 65). A
+    partir do zoom 15 o mapa troca a area pelos pontos de cada empresa, com a
+    coordenada do endereco (c_estab_geo). Mesmo raio e filtros da tela; devolve
+    no maximo 400 linhas, ordenadas do mais perto. Nao conta consulta nova.
+    """
+    from core.proximidade import buscar_proximos_endereco
+
+    origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    if not origem_txt:
+        return JsonResponse({'erro': 'origem'}, status=400)
+    try:
+        limite = int(request.GET.get('limite', 300))
+    except (TypeError, ValueError):
+        limite = 300
+    limite = max(20, min(limite, 400))
+
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            origem, erro = resolver_origem(cur, origem_txt)
+            if not origem:
+                return JsonResponse({'erro': erro}, status=400)
+            linhas, _tem_mais, _total = buscar_proximos_endereco(
+                cur, origem['latitude'], origem['longitude'], raio,
+                somente_matrizes, None, limite=limite,
+                situacao=SITUACOES[situacao] if situacao else None,
+            )
+    except Exception as e:
+        logger.exception("Erro nos pontos do mapa: %s", e)
+        return JsonResponse({'erro': 'Não foi possível carregar os pontos agora.'},
+                            status=503)
+    finally:
+        if conn:
+            conn.close()
+
+    pontos = []
+    for linha in linhas:
+        if linha.get('latitude') is None or linha.get('longitude') is None:
+            continue
+        pontos.append({
+            'lat': round(float(linha['latitude']), 5),
+            'lon': round(float(linha['longitude']), 5),
+            'km': round(float(linha['km']), 2),
+            'nome': (linha.get('nm_fantasia') or linha.get('razao_social')
+                     or linha['cnpj_completo'])[:60],
+            'cnpj': linha['cnpj_completo'],
+            'url': reverse('core:detalhe', args=[linha['cnpj_completo']]),
+            'precisao': linha.get('geo_precisao') or 'cep',
+        })
+    return JsonResponse({'pontos': pontos, 'raio': raio, 'limite': limite})
 
 
 def buscar_empresas_rapido(request):

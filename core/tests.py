@@ -53,7 +53,13 @@ from core.proximidade import (
 )
 from core.telefone import montar_whatsapp, montar_whatsapp_url
 from core.estatisticas import iniciar_recalculo_background, status_recalculo
-from core.views import consultar_com_salto, recalcular_totais
+from core.views import (
+    _aplicar_endereco_geo,
+    _resolver_ordem,
+    _ufs_do_mapa,
+    consultar_com_salto,
+    recalcular_totais,
+)
 from chat.models import LogAcesso
 
 
@@ -720,12 +726,12 @@ class MarcaENavegacaoTests(SimpleTestCase):
         return render_to_string('core/base.html', {}, request=request)
 
     def test_titulo_padrao_e_busquecnpj(self):
-        self.assertIn('<title>busquecnpj</title>', self._render())
+        self.assertIn('<title>BusqueCNPJ</title>', self._render())
 
     def test_marca_no_topo_e_no_rodape(self):
         html = self._render()
-        self.assertIn('busca CNPJ', html)                           # navbar (marca corporativa)
-        self.assertIn('busquecnpj — Consulta de empresas', html)    # rodape
+        self.assertIn('BusqueCNPJ', html)                           # navbar (marca corporativa)
+        self.assertIn('BusqueCNPJ — Consulta de empresas', html)    # rodape
         self.assertNotIn('Sistema CNPJ', html)
 
     def test_logo_aponta_para_a_pagina_inicial_do_produto(self):
@@ -1194,6 +1200,7 @@ class ProximidadeTemplateTests(SimpleTestCase):
             'origem_txt': 'Joinville/SC',
             'origem': {'rotulo': 'Joinville/SC (centro do município)'},
             'erro': None, 'raio': 5, 'raio_opcoes': [1, 5, 10],
+            'raio_min': 1, 'raio_max': 100,
             'somente_matrizes': True, 'resultados': [], 'tem_mais': False,
             'situacao': '',
             'situacoes': [('ATIVA', 'Ativa'), ('INAPTA', 'Inapta')],
@@ -1308,6 +1315,91 @@ class ProximidadeTemplateTests(SimpleTestCase):
         self.assertIn('title="Ver detalhes (nova aba)"', html)
         self.assertIn('target="_blank" rel="noopener"', html)
         self.assertIn('/empresa/02831172000190/', html)
+
+    # --------------------------------------------------------- ordem da lista
+    def test_botao_de_ordem_oferece_a_distancia_real(self):
+        html = self._render(tem_endereco=True, rotulo_ordem='distância real',
+                            link_ordem='?origem=Joinville/SC&raio=5&ordem=endereco')
+        self.assertIn('distância real', html)
+        self.assertIn('ordem=endereco', html)
+
+    def test_sem_tabela_de_endereco_o_botao_nao_aparece(self):
+        html = self._render(link_ordem='?origem=Joinville/SC&raio=5&ordem=endereco')
+        self.assertNotIn('bi-signpost-split', html)
+
+    def test_ordem_por_endereco_esconde_o_ir_para(self):
+        html = self._render(ordem_endereco=True, tem_endereco=True,
+                            rotulo_ordem='distância do CEP',
+                            link_ordem='?origem=Joinville/SC&raio=5&ordem=cep',
+                            total=240, total_paginas=12)
+        self.assertIn('distância do CEP', html)
+        self.assertNotIn('consulta-ir-para', html)
+
+    def test_ordem_por_cep_mostra_o_ir_para(self):
+        html = self._render(total=240, total_paginas=12)
+        self.assertIn('consulta-ir-para', html)
+
+    # ----------------------------------------------------------------- raio
+    def test_raio_e_um_slider_continuo_de_1_a_100(self):
+        html = self._render()
+        self.assertIn('type="range"', html)
+        self.assertIn('name="raio"', html)
+        self.assertIn('min="1"', html)
+        self.assertIn('max="100"', html)
+        self.assertIn('id="prox-raio-valor"', html)
+        self.assertNotIn('<select name="raio"', html)
+
+    def test_slider_carrega_o_script_proprio(self):
+        html = self._render()
+        self.assertIn('js/prox-raio.js', html)
+
+    # ------------------------------------------------------------------ mapa
+    @staticmethod
+    def _mapa_dados():
+        return {
+            'origem': {'lat': -26.3045, 'lon': -48.8487, 'rotulo': 'Joinville/SC'},
+            'raio': 5,
+            'pontos': [{
+                'lat': -26.305, 'lon': -48.85, 'km': 0.12,
+                'cnpj': '02831172000190', 'nome': 'KOCH',
+                'razao': 'KOCH HIPERMERCADO S/A',
+                'endereco': 'Rua Blumenau, 100 - Centro',
+                'url': '/empresa/02831172000190/',
+            }],
+        }
+
+    def test_sem_mapa_dados_a_pagina_nao_carrega_leaflet(self):
+        html = self._render()
+        self.assertNotIn('id="prox-mapa"', html)
+        self.assertNotIn('leaflet', html)
+        self.assertNotIn('prox-mapa-dados', html)
+
+    def test_mapa_aparece_com_o_ponto_de_partida(self):
+        html = self._render(mapa_dados=self._mapa_dados())
+        self.assertIn('id="prox-mapa"', html)
+        self.assertIn('Mapa do raio', html)
+        self.assertIn('Densidade do raio', html)
+        self.assertIn('Joinville/SC', html)
+
+    def test_mapa_carrega_leaflet_e_o_script_proprio(self):
+        html = self._render(mapa_dados=self._mapa_dados())
+        self.assertIn('vendor/leaflet/leaflet.css', html)
+        self.assertIn('vendor/leaflet/leaflet.js', html)
+        self.assertIn('js/prox-mapa.js', html)
+
+    def test_json_do_mapa_leva_origem_pontos_e_endpoint_da_densidade(self):
+        html = self._render(mapa_dados=self._mapa_dados())
+        self.assertIn('application/json', html)
+        self.assertIn('prox-mapa-dados', html)
+        self.assertIn('-26.3045', html)
+        self.assertIn('02831172000190', html)
+        self.assertIn('/proximidade/mapa/', html)
+
+    def test_mapa_preserva_o_filtro_de_situacao_e_matrizes(self):
+        html = self._render(mapa_dados=self._mapa_dados(), somente_matrizes=False,
+                            situacao='INAPTA')
+        self.assertIn('data-situacao="INAPTA"', html)
+        self.assertIn('data-matrizes="0"', html)
 
 
 class ProximidadeBuscaTests(SimpleTestCase):
@@ -1599,6 +1691,376 @@ class ProximidadeBuscaTests(SimpleTestCase):
 
 
 
+
+
+class ProximidadeDensidadeTests(SimpleTestCase):
+    """buscar_densidade: grade do mapa, tabela agregada e degradacao."""
+
+    def setUp(self):
+        proximidade._tabela_total_cache = None
+
+    @staticmethod
+    def _celula(lat, lon, n):
+        return {'lat': Decimal(str(lat)), 'lon': Decimal(str(lon)), 'n': n}
+
+    @staticmethod
+    def _sql_densidade(cur):
+        for sql, _params in cur.executados:
+            if 'c_ceps_estab' in sql:
+                return sql
+        raise AssertionError('SQL da densidade nao executado')
+
+    def test_agrega_por_grade_e_arredonda_as_coordenadas(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._celula(-26.305012, -48.850011, 27),
+             self._celula(-26.275001, -48.840004, 3)],
+        ])
+        dados = proximidade.buscar_densidade(cur, -26.3, -48.8, 10, True)
+        self.assertEqual(dados['grao'], proximidade.GRADES_DENSIDADE[0])
+        self.assertFalse(dados['truncado'])
+        self.assertEqual(dados['celulas'],
+                         [[-26.30501, -48.85001, 27], [-26.275, -48.84, 3]])
+
+    def test_somente_matrizes_soma_n_matrizes(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._celula(-26.3, -48.8, 1)],
+        ])
+        proximidade.buscar_densidade(cur, -26.3, -48.8, 10, True)
+        sql = self._sql_densidade(cur)
+        self.assertIn('sum(ce.n_matrizes)', sql)
+        self.assertIn('c_ceps_estab ce', sql)
+
+    def test_sem_somente_matrizes_soma_o_total(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._celula(-26.3, -48.8, 1)],
+        ])
+        proximidade.buscar_densidade(cur, -26.3, -48.8, 10, False)
+        sql = self._sql_densidade(cur)
+        self.assertIn('sum(ce.n_total)', sql)
+        self.assertNotIn('n_matrizes', sql)
+
+    def test_filtro_de_situacao_usa_a_tabela_por_situacao(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [self._celula(-26.3, -48.8, 5)],
+        ])
+        proximidade.buscar_densidade(cur, -26.3, -48.8, 5, True, situacao=2)
+        sql = self._sql_densidade(cur)
+        self.assertIn('c_ceps_estab_sit', sql)
+        self.assertIn('ce.cd_sit_cadastro = %(situacao)s', sql)
+        params = [p for s, p in cur.executados if 'c_ceps_estab' in s][0]
+        self.assertEqual(params['situacao'], 2)
+
+    def test_sem_tabela_agregada_devolve_none(self):
+        cur = CursorFakeSequencia([{'existe': False}])
+        self.assertIsNone(
+            proximidade.buscar_densidade(cur, -26.3, -48.8, 5, True))
+
+    def test_a_grade_engrossa_quando_passa_do_teto(self):
+        muitas = [self._celula(-26.3, -48.8, 1)] * (
+            proximidade.MAX_CELULAS_DENSIDADE + 1)
+        cur = CursorFakeSequencia([
+            {'existe': True}, muitas, [self._celula(-26.3, -48.8, 2)],
+        ])
+        dados = proximidade.buscar_densidade(cur, -26.3, -48.8, 100, True)
+        self.assertEqual(dados['grao'], proximidade.GRADES_DENSIDADE[1])
+        self.assertEqual(len(dados['celulas']), 1)
+
+    def test_trunca_quando_nem_o_grao_maior_cabe(self):
+        muitas = [self._celula(-26.3, -48.8, 1)] * (
+            proximidade.MAX_CELULAS_DENSIDADE + 1)
+        cur = CursorFakeSequencia([
+            {'existe': True}, muitas, muitas, muitas,
+        ])
+        dados = proximidade.buscar_densidade(cur, -26.3, -48.8, 100, True)
+        self.assertTrue(dados['truncado'])
+        self.assertEqual(len(dados['celulas']),
+                         proximidade.MAX_CELULAS_DENSIDADE)
+
+
+class ProximidadeMapaViewTests(SimpleTestCase):
+    """GET /proximidade/mapa/: JSON da densidade, sem contar consulta."""
+
+    def setUp(self):
+        proximidade._tabela_total_cache = None
+
+    @patch('core.views.registrar_acesso')
+    @patch('core.views.get_postgres_connection')
+    def test_origem_em_coordenada_devolve_as_celulas(self, conexao, acesso):
+        cursor = CursorFakeSequencia([
+            {'existe': True},
+            [{'lat': Decimal('-26.3'), 'lon': Decimal('-48.8'), 'n': 7}],
+        ])
+        conexao.return_value.cursor.return_value.__enter__.return_value = cursor
+        resposta = self.client.get('/proximidade/mapa/',
+                                   {'origem': '-26.3,-48.8', 'raio': '5',
+                                    'matrizes': '1'})
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.json()
+        self.assertEqual(dados['raio'], 5)
+        self.assertEqual(dados['celulas'], [[-26.3, -48.8, 7]])
+        self.assertFalse(dados['truncado'])
+        acesso.assert_not_called()
+
+    def test_sem_origem_responde_400(self):
+        resposta = self.client.get('/proximidade/mapa/', {'raio': '5'})
+        self.assertEqual(resposta.status_code, 400)
+        self.assertEqual(resposta.json()['erro'], 'origem')
+
+    @patch('core.proximidade.buscar_densidade', return_value=None)
+    @patch('core.views.get_postgres_connection')
+    def test_sem_tabela_agregada_avisa_a_tela(self, conexao, densidade):
+        conexao.return_value.cursor.return_value.__enter__.return_value = (
+            CursorFakeSequencia([]))
+        resposta = self.client.get('/proximidade/mapa/',
+                                   {'origem': '-26.3,-48.8', 'raio': '5'})
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json()['erro'], 'sem-tabela')
+
+    @patch('core.views.get_postgres_connection', side_effect=OSError('sem banco'))
+    def test_erro_de_conexao_responde_503(self, _conexao):
+        resposta = self.client.get('/proximidade/mapa/',
+                                   {'origem': 'Joinville/SC', 'raio': '5'})
+        self.assertEqual(resposta.status_code, 503)
+        self.assertIn('erro', resposta.json())
+
+
+class ParamsProximidadeTests(SimpleTestCase):
+    """Leitura da querystring compartilhada pela tela e pelo mapa."""
+
+    @staticmethod
+    def _params(**querystring):
+        from core.views import _params_proximidade
+        return _params_proximidade(RequestFactory().get('/proximidade/', querystring))
+
+    def test_primeira_visita_marca_somente_matrizes(self):
+        _origem, _raio, matrizes, situacao = self._params()
+        self.assertTrue(matrizes)
+        self.assertEqual(situacao, '')
+
+    def test_raio_e_limitado_entre_o_minimo_e_o_maximo(self):
+        _origem, raio, _matrizes, _situacao = self._params(raio='999')
+        self.assertEqual(raio, proximidade.RAIO_MAX_KM)
+        _origem, raio, _matrizes, _situacao = self._params(raio='0')
+        self.assertEqual(raio, proximidade.RAIO_MIN_KM)
+
+    def test_situacao_desconhecida_e_ignorada(self):
+        _origem, _raio, _matrizes, situacao = self._params(situacao='xyz')
+        self.assertEqual(situacao, '')
+        _origem, _raio, _matrizes, situacao = self._params(situacao='inapta')
+        self.assertEqual(situacao, 'INAPTA')
+
+
+class PontosDoMapaViewTests(SimpleTestCase):
+    """GET /proximidade/mapa/pontos/: pontos individuais do zoom de quadra."""
+
+    def test_sem_origem_responde_400(self):
+        resposta = self.client.get('/proximidade/mapa/pontos/', {'raio': '5'})
+        self.assertEqual(resposta.status_code, 400)
+
+    @patch('core.proximidade.buscar_proximos_endereco')
+    @patch('core.views.resolver_origem')
+    @patch('core.views.get_postgres_connection')
+    def test_devolve_pontos_com_coordenada(self, conexao, resolver, busca):
+        conexao.return_value.cursor.return_value.__enter__.return_value = object()
+        resolver.return_value = ({'latitude': -26.3, 'longitude': -48.8,
+                                  'rotulo': 'Joinville/SC'}, None)
+        busca.return_value = ([{
+            'cnpj_completo': '02831172000190', 'nm_fantasia': 'KOCH',
+            'razao_social': 'KOCH HIPERMERCADO S/A', 'km': Decimal('0.12'),
+            'latitude': Decimal('-26.305'), 'longitude': Decimal('-48.85'),
+        }, {
+            'cnpj_completo': '99999999000199', 'nm_fantasia': None,
+            'razao_social': None, 'km': Decimal('0.20'),
+            'latitude': None, 'longitude': None,
+        }], False, 42)
+        resposta = self.client.get('/proximidade/mapa/pontos/',
+                                   {'origem': 'Joinville/SC', 'raio': '5'})
+        self.assertEqual(resposta.status_code, 200)
+        dados = resposta.json()
+        self.assertEqual(len(dados['pontos']), 1)   # linha sem coordenada sai
+        self.assertEqual(dados['pontos'][0]['lat'], -26.305)
+        self.assertEqual(dados['pontos'][0]['cnpj'], '02831172000190')
+        self.assertEqual(dados['pontos'][0]['km'], 0.12)
+
+    @patch('core.views.get_postgres_connection', side_effect=OSError('sem banco'))
+    def test_erro_de_conexao_responde_503(self, _conexao):
+        resposta = self.client.get('/proximidade/mapa/pontos/',
+                                   {'origem': 'Joinville/SC', 'raio': '5'})
+        self.assertEqual(resposta.status_code, 503)
+
+
+class UfsDoMapaTests(SimpleTestCase):
+    """_ufs_do_mapa: só as UFs cujo retângulo encosta na caixa do raio."""
+
+    def _cursor(self, linhas):
+        return CursorFakeSequencia([linhas])
+
+    def test_pega_as_ufs_que_encostam_na_caixa(self):
+        cur = self._cursor([
+            {'uf': 'SC', 'lat_min': Decimal('-30'), 'lat_max': Decimal('-25'),
+             'lon_min': Decimal('-54'), 'lon_max': Decimal('-48')},
+            {'uf': 'PR', 'lat_min': Decimal('-27'), 'lat_max': Decimal('-22'),
+             'lon_min': Decimal('-55'), 'lon_max': Decimal('-48')},
+            {'uf': 'AM', 'lat_min': Decimal('-10'), 'lat_max': Decimal('2'),
+             'lon_min': Decimal('-73'), 'lon_max': Decimal('-60')},
+        ])
+        self.assertEqual(_ufs_do_mapa(cur, -26.3, -48.8, 5), ['PR', 'SC'])
+
+    def test_ignora_grupo_sem_uf_ou_sem_coordenada(self):
+        cur = self._cursor([
+            {'uf': None, 'lat_min': None, 'lat_max': None,
+             'lon_min': None, 'lon_max': None},
+            {'uf': 'SC', 'lat_min': Decimal('-30'), 'lat_max': Decimal('-25'),
+             'lon_min': Decimal('-54'), 'lon_max': Decimal('-48')},
+        ])
+        self.assertEqual(_ufs_do_mapa(cur, -26.3, -48.8, 5), ['SC'])
+
+    def test_erro_no_banco_devolve_lista_vazia(self):
+        class Ruim:
+            def execute(self, *a, **k):
+                raise RuntimeError('sem tabela')
+        self.assertEqual(_ufs_do_mapa(Ruim(), -26.3, -48.8, 5), [])
+
+
+class ResolverOrdemTests(SimpleTestCase):
+    """Padrao = endereco quando as duas tabelas existem; senao cep."""
+
+    def setUp(self):
+        proximidade._tabela_total_cache = None
+
+    def test_sem_pedido_usa_endereco_quando_as_tabelas_existem(self):
+        cur = CursorFakeSequencia([{'existe': True}, {'existe': True}])
+        self.assertEqual(_resolver_ordem(cur, ''), 'endereco')
+
+    def test_sem_c_estab_geo_cai_no_cep(self):
+        cur = CursorFakeSequencia([{'existe': False}])
+        self.assertEqual(_resolver_ordem(cur, ''), 'cep')
+
+    def test_sem_folga_cai_no_cep(self):
+        cur = CursorFakeSequencia([{'existe': True}, {'existe': False}])
+        self.assertEqual(_resolver_ordem(cur, ''), 'cep')
+
+    def test_ordem_cep_explicita_nao_consulta_o_banco(self):
+        cur = CursorFakeSequencia([])
+        self.assertEqual(_resolver_ordem(cur, 'cep'), 'cep')
+        self.assertEqual(cur.executados, [])
+
+
+class ProximidadeOrdemEnderecoTests(SimpleTestCase):
+    """buscar_proximos_endereco: janela por folga, keyset e total."""
+
+    def setUp(self):
+        proximidade._tabela_total_cache = None
+
+    @staticmethod
+    def _linha(km, cnpj):
+        return {
+            'km': Decimal(str(km)), 'km_cep': Decimal(str(km)),
+            'cnpj_completo': cnpj, 'cnpj_basico': cnpj[:8],
+            'cnpj_ordem': cnpj[8:12], 'cnpj_dv': cnpj[12:14],
+            'cd_matriz_filial': 1, 'nm_fantasia': 'X', 'logradouro': 'Rua A',
+            'numero': '10', 'bairro': 'Centro', 'uf': 'SC',
+            'municipio_nome': 'Joinville', 'telefone_1': '4733334444',
+            'cd_sit_cadastro': '2', 'latitude': Decimal('-26.3'),
+            'longitude': Decimal('-48.8'), 'precisao': 'exato',
+            'total_raio': 42,
+        }
+
+    @staticmethod
+    def _sql(cur):
+        for sql, _params in cur.executados:
+            if 'c_estab_geo' in sql:
+                return sql
+        raise AssertionError('SQL da ordem por endereco nao executado')
+
+    def _cursor(self, linhas):
+        # buscar_proximos_endereco nao consulta to_regclass: a 1a query e a busca.
+        return CursorFakeSequencia([
+            linhas,
+            [{'cnpj_basico': '11111111', 'razao_social': 'A'}],
+        ])
+
+    def test_usa_a_coordenada_do_endereco_e_a_folga_do_cep(self):
+        cur = self._cursor([self._linha(0.1, '11111111000111')])
+        linhas, tem_mais, total = proximidade.buscar_proximos_endereco(
+            cur, -26.3, -48.8, 5, True, limite=1)
+        sql = self._sql(cur)
+        self.assertIn('c_estab_geo', sql)
+        self.assertIn('c_ceps_folga', sql)
+        self.assertIn('max(least(folga', sql)      # extensao da janela pela folga
+        self.assertIn('janela AS MATERIALIZED', sql)
+        self.assertEqual(total, 42)
+        self.assertEqual(linhas[0]['razao_social'], 'A')
+
+    def test_keyset_usa_o_km_do_endereco(self):
+        cur = self._cursor([self._linha(0.5, '99999999000199')])
+        proximidade.buscar_proximos_endereco(
+            cur, -26.3, -48.8, 5, True, depois=(0.4, '12345678000190'), limite=1)
+        sql = self._sql(cur)
+        params = [p for s, p in cur.executados if 'c_estab_geo' in s][0]
+        self.assertIn('depois_km', params)
+        self.assertEqual(params['depois_km'], 0.4)
+        self.assertEqual(params['depois_basico'], '12345678')
+        # poda da janela: km_min recua a folga maxima
+        self.assertAlmostEqual(params['km_min'], 0.4 - proximidade.FOLGA_MAX_ORDEM_ENDERECO)
+
+    def test_filtro_de_situacao_usa_a_tabela_por_situacao(self):
+        cur = self._cursor([self._linha(0.1, '11111111000111')])
+        proximidade.buscar_proximos_endereco(cur, -26.3, -48.8, 5, True,
+                                             limite=1, situacao=2)
+        sql = self._sql(cur)
+        self.assertIn('c_ceps_estab_sit', sql)
+        self.assertIn('cd_sit_cadastro = %(situacao)s', sql)
+
+    def test_sem_linhas_nao_inventa_total(self):
+        cur = CursorFakeSequencia([[], []])
+        linhas, tem_mais, total = proximidade.buscar_proximos_endereco(
+            cur, -26.3, -48.8, 5, True, limite=1)
+        self.assertEqual(linhas, [])
+        self.assertFalse(tem_mais)
+        self.assertEqual(total, 0)
+
+
+class EnderecoGeoNaPaginaTests(SimpleTestCase):
+    """_aplicar_endereco_geo: coordenada do CNEFE sobre a do CEP, com degradacao."""
+
+    def setUp(self):
+        proximidade._tabela_total_cache = None
+
+    @staticmethod
+    def _linha(cnpj):
+        return {'cnpj_completo': cnpj, 'latitude': Decimal('-26.30'),
+                'longitude': Decimal('-48.84'), 'km': Decimal('0.5')}
+
+    def test_troca_a_coordenada_pela_do_endereco(self):
+        cur = CursorFakeSequencia([
+            {'existe': True},
+            [{'cnpj_completo': '02831172000190', 'latitude': Decimal('-26.310'),
+              'longitude': Decimal('-48.850'), 'precisao': 'exato'}],
+        ])
+        linhas = [self._linha('02831172000190'), self._linha('99999999000199')]
+        _aplicar_endereco_geo(cur, linhas)
+        self.assertEqual(linhas[0]['latitude'], Decimal('-26.310'))
+        self.assertEqual(linhas[0]['longitude'], Decimal('-48.850'))
+        self.assertEqual(linhas[0]['geo_precisao'], 'exato')
+        self.assertIsNone(linhas[1]['geo_precisao'])
+        self.assertEqual(linhas[1]['latitude'], Decimal('-26.30'))
+
+    def test_sem_a_tabela_nao_muda_nada(self):
+        cur = CursorFakeSequencia([{'existe': False}])
+        linhas = [self._linha('02831172000190')]
+        _aplicar_endereco_geo(cur, linhas)
+        self.assertEqual(linhas[0]['latitude'], Decimal('-26.30'))
+        self.assertIsNone(linhas[0]['geo_precisao'])
+
+    def test_pagina_vazia_nao_consulta_o_banco(self):
+        cur = CursorFakeSequencia([])
+        _aplicar_endereco_geo(cur, [])
+        self.assertEqual(cur.executados, [])
 
 
 class ProximidadeSaltoTests(SimpleTestCase):

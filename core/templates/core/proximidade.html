@@ -1,8 +1,12 @@
 <!-- /home/neto/cnpj_interface/core/templates/core/proximidade.html -->
 {% extends 'core/base.html' %}
 {% load static num_filters %}
-{% block title %}Proximidade - busca CNPJ{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261121">{% endblock %}
+{% block title %}Proximidade - BusqueCNPJ{% endblock %}
+{% block extra_css %}
+{% if mapa_dados %}<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">{% endif %}
+{% if mapa_dados %}<link rel="stylesheet" href="{% static 'vendor/maplibre/maplibre-gl.css' %}">{% endif %}
+<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261125o">
+{% endblock %}
 
 {% block content %}
 <div class="proximidade-page">
@@ -61,13 +65,18 @@
                         Ex.: Rua do Príncipe, 500, Joinville/SC · 89.201-000 · Joinville/SC · -26.30,-48.84
                     </div>
                 </div>
-                <div class="prox-form__campo">
-                    <label class="form-label" for="prox-raio">Raio (km)</label>
-                    <select name="raio" id="prox-raio" class="form-select">
-                        {% for opcao in raio_opcoes %}
-                        <option value="{{ opcao }}" {% if raio == opcao %}selected{% endif %}>{{ opcao }} km</option>
-                        {% endfor %}
-                    </select>
+                <div class="prox-form__campo prox-form__campo--raio">
+                    <label class="form-label" for="prox-raio">
+                        Raio <span class="prox-raio__valor" id="prox-raio-valor">{{ raio }} km</span>
+                    </label>
+                    <input type="range" name="raio" id="prox-raio" class="prox-raio"
+                           min="{{ raio_min }}" max="{{ raio_max }}" step="1"
+                           value="{{ raio }}" aria-describedby="prox-raio-ajuda">
+                    <div class="form-text prox-raio__escala" id="prox-raio-ajuda">
+                        <span>{{ raio_min }} km</span>
+                        <span class="prox-raio__dica">arraste para ajustar</span>
+                        <span>{{ raio_max }} km</span>
+                    </div>
                 </div>
                 <div class="prox-form__campo">
                     <label class="form-label" for="prox-situacao">Situação</label>
@@ -123,6 +132,72 @@
         </p>
     </div>
 
+    {% if mapa_dados %}
+    <aside class="prox-painel" id="prox-painel" hidden aria-labelledby="prox-painel-titulo">
+        <header class="prox-painel__topo">
+            <h2 class="prox-painel__titulo" id="prox-painel-titulo">
+                Empresas neste ponto
+                <span class="prox-painel__contagem" id="prox-painel-contagem"></span>
+            </h2>
+            <button type="button" class="prox-painel__fechar" id="prox-painel-fechar"
+                    aria-label="Fechar">×</button>
+        </header>
+        <input type="search" class="prox-painel__filtro" id="prox-painel-filtro"
+               placeholder="Filtrar por nome ou CNPJ" aria-label="Filtrar empresas"
+               autocomplete="off" hidden>
+        <ul class="prox-painel__lista" id="prox-painel-lista"></ul>
+        <footer class="prox-painel__rodape">
+            <a class="btn btn-sm btn-primary prox-mapa__popup-link" id="prox-painel-link"
+               target="_blank" rel="noopener">
+                Abrir na página de proximidade
+                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+            </a>
+            <span class="prox-painel__aviso">esta abre uma consulta nova</span>
+        </footer>
+    </aside>
+    <section class="ui-card prox-mapa-card" aria-labelledby="prox-mapa-titulo">
+        <div class="ui-card__head prox-mapa__head">
+            <div>
+                <h2 class="ui-card__title" id="prox-mapa-titulo">
+                    <i class="bi bi-map" aria-hidden="true"></i> Mapa do raio
+                </h2>
+                <p class="prox-mapa__sub">
+                    Ponto de partida em <strong>{{ origem.rotulo }}</strong>. Cada bolha agrupa
+                    empresas que caem no mesmo ponto: o endereço, quando o CNEFE tem a
+                    coordenada, ou o centro do CEP quando não tem.
+                </p>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="form-check form-check-inline prox-mapa__toggle">
+                    <input class="form-check-input" type="checkbox" id="prox-mapa-densidade" checked>
+                    <label class="form-check-label" for="prox-mapa-densidade">Densidade do raio</label>
+                </div>
+                <span class="prox-mapa__modo" id="prox-mapa-modo"></span>
+                <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> {{ raio }} km</span>
+            </div>
+        </div>
+        <div class="ui-card__body">
+            <div id="prox-mapa" class="prox-mapa" role="img"
+                 aria-label="Mapa com o ponto de partida e as empresas próximas agrupadas por CEP"
+                 data-densidade-url="{% url 'core:proximidade_mapa' %}"
+                 data-matrizes="{% if somente_matrizes %}1{% else %}0{% endif %}"
+                 data-situacao="{{ situacao }}"></div>
+            <p class="prox-mapa__status" id="prox-mapa-status" role="status" aria-live="polite"></p>
+            <p class="prox-mapa__nota">
+                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                Bolha cheia = endereço (CNEFE); bolha tracejada = centro do CEP; área
+                laranja = densidade do raio (clique para abrir a consulta naquele ponto,
+                em nova aba). Use o alvo da tabela para centralizar uma empresa no mapa.
+                O raio desenhado é o da <strong>última busca</strong>: mudar a régua só
+                vale depois de clicar em Buscar. <strong>Ctrl+roda</strong> dá zoom (a roda
+                sozinha rola a página) e, a partir do <strong>zoom 14</strong>, as áreas
+                laranjas se abrem nos endereços das empresas.
+            </p>
+        </div>
+    </section>
+    {{ mapa_dados|json_script:"prox-mapa-dados" }}
+    {% endif %}
+
     <div id="ui-results-layout" class="ui-results-layout prox-resultados">
         <div class="ui-results-list">
             <section class="ui-card prox-resultados__card" aria-labelledby="prox-resultados-titulo">
@@ -133,6 +208,14 @@
                     </div>
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> até {{ raio }} km</span>
+                        {% if tem_endereco %}
+                        <a class="btn btn-sm {% if ordem_endereco %}btn-outline-secondary{% else %}btn-primary{% endif %}"
+                           href="{{ link_ordem }}"
+                           title="{% if ordem_endereco %}Voltar a ordenar pela distância do CEP (mais rápido, com Ir para){% else %}Ordenar pela distância real do endereço (CNEFE){% endif %}">
+                            <i class="bi bi-signpost-split" aria-hidden="true"></i>
+                            {{ rotulo_ordem }}
+                        </a>
+                        {% endif %}
                         {% if resultados %}
                         <a class="btn btn-sm btn-outline-primary"
                            href="{% url 'exportacao:exportar_proximidade' %}?{{ request.GET.urlencode }}&formato=csv"
@@ -209,6 +292,14 @@
                                            class="btn btn-sm btn-outline-primary" title="Ver detalhes (nova aba)" data-company-detail>
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </a>
+                                        {% if linha.latitude and linha.longitude %}
+                                        <button type="button" class="btn btn-sm btn-outline-secondary prox-centrar"
+                                                data-lat="{{ linha.latitude }}" data-lon="{{ linha.longitude }}"
+                                                title="Centralizar esta empresa no mapa"
+                                                aria-label="Centralizar {{ linha.razao_social }} no mapa">
+                                            <i class="bi bi-crosshair" aria-hidden="true"></i>
+                                        </button>
+                                        {% endif %}
                                         {% if linha.maps_url %}
                                         <a href="{{ linha.maps_url }}" target="_blank" rel="noopener"
                                            class="btn btn-sm btn-outline-secondary" title="Abrir no Google Maps">
@@ -253,7 +344,7 @@
                             <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right" aria-hidden="true"></i></span></li>
                             {% endif %}
 
-                            {% if total_paginas and total_paginas > 1 %}
+                            {% if total_paginas and total_paginas > 1 and not ordem_endereco %}
                             <li class="page-item consulta-ir-para">
                                 <form method="get" class="d-flex align-items-center gap-1">
                                     <input type="hidden" name="origem" value="{{ origem_txt }}">
@@ -305,4 +396,14 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/prox-raio.js' %}?v=20261124" defer></script>
+{% if mapa_dados %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
+<script src="{% static 'vendor/maplibre/maplibre-gl.js' %}" defer></script>
+<script src="{% static 'vendor/maplibre/leaflet-maplibre-gl.js' %}" defer></script>
+<script src="{% static 'js/prox-mapa.js' %}?v=20261125p" defer></script>
+{% endif %}
 {% endblock %}

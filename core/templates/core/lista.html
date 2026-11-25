@@ -1,6 +1,6 @@
 {% extends 'core/base.html' %}
 {% load static num_filters %}
-{% block title %}Consultar empresas - busca CNPJ{% endblock %}
+{% block title %}Consultar empresas - BusqueCNPJ{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261121">{% endblock %}
 {% block content %}
 <div class="consulta-lista">
@@ -285,6 +285,13 @@
                                     <td class="consulta-col--acoes">
                                         <a data-company-detail href="{% url 'core:detalhe' empresa.cnpj_completo %}?next={{ request.get_full_path|urlencode }}" class="btn btn-sm btn-outline-primary consulta-detalhe-btn" aria-label="Ver detalhes de {{ empresa.razao_social }}">
                                             <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                        </a>
+                                        <a href="{% url 'core:proximidade' %}?origem={{ empresa.cnpj_completo }}&raio=5"
+                                           target="_blank" rel="noopener"
+                                           class="btn btn-sm btn-outline-secondary"
+                                           title="Ver no mapa: proximidade com esta empresa como ponto central"
+                                           aria-label="Ver {{ empresa.razao_social }} no mapa">
+                                            <i class="bi bi-geo-alt" aria-hidden="true"></i>
                                         </a>
                                     </td>
                                 </tr>

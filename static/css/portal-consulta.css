@@ -439,6 +439,37 @@
 }
 .prox-form__origem .form-text { margin-top: .35rem; }
 
+/* Raio: slider continuo (1..100 km) no lugar do select de opcoes fixas.
+   Ocupa 3 colunas e a coluna do checkbox passa a 1 para caber na mesma linha. */
+.prox-form__campo--raio { grid-column: span 3; }
+.prox-form__matrizes { grid-column: span 1; }
+.prox-raio {
+    width: 100%;
+    height: 1.5rem;
+    margin: .1rem 0 0;
+    accent-color: var(--p-accent);
+    cursor: pointer;
+}
+.prox-raio--alterado { accent-color: var(--p-accent); }
+.prox-raio__valor {
+    margin-left: .35rem;
+    padding: .05rem .45rem;
+    border-radius: var(--p-r-pill);
+    background: var(--p-accent-soft);
+    color: var(--p-accent);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.prox-raio__escala {
+    display: flex;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-top: .15rem;
+    color: var(--p-muted);
+    font-size: .7rem;
+}
+.prox-raio__dica { text-align: center; }
+
 .prox-resumo {
     display: flex;
     flex-wrap: wrap;
@@ -472,6 +503,228 @@
 .prox-resumo__total > .bi { margin-right: .25rem; color: var(--p-accent); }
 
 .prox-resultados .consulta-rodape { align-items: flex-start; }
+
+/* Mapa do raio (Leaflet + tiles do OSM). A altura e fixa porque o Leaflet
+   precisa de um container com dimensao definida para calcular o enquadramento;
+   no celular fica mais baixo para nao empurrar a lista. */
+.prox-mapa-card { margin-bottom: 1rem; }
+.prox-mapa__head { align-items: flex-start; }
+.prox-mapa__sub {
+    max-width: 62ch;
+    margin: .3rem 0 0;
+    color: var(--p-muted);
+    font-size: .85rem;
+}
+.prox-mapa__toggle { margin: 0; font-size: .85rem; }
+.prox-mapa__toggle .form-check-label { color: var(--p-ink-soft); }
+.prox-mapa {
+    height: 480px;
+    border: 1px solid var(--p-line);
+    border-radius: 12px;
+    background: var(--p-surface);
+    /* z-index baixo: o mapa nao pode cobrar a frente de dropdown/modal. */
+    z-index: 0;
+}
+.prox-mapa .leaflet-container { font-family: inherit; border-radius: 12px; }
+.prox-mapa__status {
+    margin: .5rem 0 0;
+    min-height: 1.1rem;
+    color: var(--p-muted);
+    font-size: .78rem;
+}
+.prox-mapa__nota {
+    margin: .15rem 0 0;
+    color: var(--p-muted);
+    font-size: .78rem;
+}
+.prox-mapa__nota > .bi { margin-right: .2rem; }
+
+/* Sem base de tiles (bloqueio/queda do provedor): fundo neutro quadriculado,
+   os circulos do raio e as bolhas ficam legiveis. */
+.prox-mapa--sem-base {
+    background:
+        repeating-linear-gradient(45deg, rgba(0, 0, 0, .035) 0 8px, transparent 8px 16px),
+        var(--p-surface);
+}
+
+/* Link do popup de densidade: o CSS do site pinta <a> de azul e o texto do
+   botao ficava quase da cor do fundo. Forca o branco e tira o sublinhado. */
+.prox-mapa__popup .prox-mapa__popup-link,
+.prox-mapa__popup .prox-mapa__popup-link:visited,
+.prox-mapa__popup .prox-mapa__popup-link:hover,
+.prox-mapa__popup .prox-mapa__popup-link:focus {
+    color: #ffffff;
+    text-decoration: none;
+}
+.prox-mapa__popup .prox-mapa__popup-link i { font-size: .75rem; }
+
+/* Painel flutuante com todas as empresas de um ponto do mapa. Fixo na tela,
+   sem menu e sem depender do JS do Bootstrap (o CSS/JS dele vem de CDN). */
+.prox-painel {
+    position: fixed;
+    top: 5.5rem;
+    right: 1.25rem;
+    z-index: 1080;
+    display: flex;
+    flex-direction: column;
+    width: 430px;
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100vh - 8rem);
+    background: var(--p-surface);
+    border: 1px solid var(--p-line);
+    border-radius: 12px;
+    color: var(--p-ink);
+    box-shadow: var(--p-shadow-3);
+    overflow: hidden;
+}
+.prox-painel[hidden] { display: none; }
+.prox-painel__topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .7rem 1rem;
+    border-bottom: 1px solid var(--p-line);
+}
+.prox-painel__titulo { margin: 0; font-size: .95rem; font-weight: 700; color: var(--p-ink); }
+.prox-painel__fechar {
+    border: 0;
+    background: transparent;
+    color: var(--p-muted);
+    font-size: 1.35rem;
+    line-height: 1;
+    padding: 0 .2rem;
+    cursor: pointer;
+}
+.prox-painel__fechar:hover { color: var(--p-ink); }
+.prox-painel__contagem {
+    margin-left: .35rem;
+    color: var(--p-muted);
+    font-size: .92rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.prox-painel__filtro {
+    margin: .6rem 1rem 0;
+    padding: .35rem .6rem;
+    border: 1px solid var(--p-line);
+    border-radius: 8px;
+    background: var(--p-surface-2);
+    color: var(--p-ink);
+    font-size: .82rem;
+}
+.prox-painel__filtro:focus {
+    outline: 2px solid var(--p-accent-line);
+    outline-offset: 0;
+    border-color: var(--p-accent);
+}
+.prox-painel__lista {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    list-style: none;
+    margin: .5rem 0 0;
+    padding: 0 1rem;
+}
+.prox-painel__lista li { padding: .4rem 0; border-bottom: 1px solid var(--p-line); }
+.prox-painel__lista li:last-child { border-bottom: 0; }
+.prox-painel__lista a {
+    color: var(--p-accent);
+    font-size: .85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.prox-painel__lista a:hover { text-decoration: underline; color: var(--p-accent-strong); }
+.prox-painel__lista .prox-mapa__popup-meta {
+    display: block;
+    margin-top: .1rem;
+    color: var(--p-muted);
+    font-size: .72rem;
+    font-weight: 400;
+}
+.prox-painel__rodape {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    padding: .6rem 1rem;
+    border-top: 1px solid var(--p-line);
+}
+.prox-painel__aviso { color: var(--p-muted); font-size: .72rem; }
+
+/* Aviso do modo do mapa: areas de densidade x pontos de endereco. */
+.prox-mapa__modo {
+    display: inline-flex;
+    align-items: center;
+    padding: .15rem .5rem;
+    border-radius: 999px;
+    border: 1px solid var(--p-line);
+    background: var(--p-surface-2);
+    color: var(--p-muted);
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.prox-mapa__modo--ativo {
+    border-color: var(--p-accent-line);
+    background: var(--p-accent-soft);
+    color: var(--p-accent);
+}
+
+/* Rotulo de cidade sobre a base do BC250 (aparece a partir do zoom 10). */
+.prox-mapa__cidade {
+    color: var(--p-ink-soft);
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .01em;
+    text-shadow:
+        0 0 3px var(--p-surface), 0 0 3px var(--p-surface),
+        0 0 2px var(--p-surface);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* Pino do ponto de partida (divIcon do Leaflet com Bootstrap Icons). */
+.prox-mapa__pin {
+    color: var(--p-accent);
+    font-size: 1.7rem;
+    line-height: 1;
+    text-align: center;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35));
+}
+
+/* Balao do marcador: nome do CEP/logradouro e as empresas daquela bolha. */
+.prox-mapa__popup { max-width: 19rem; font-size: .82rem; }
+.prox-mapa__popup > strong { color: var(--p-ink); }
+.prox-mapa__popup p { margin: .2rem 0 .4rem; color: var(--p-muted); font-size: .78rem; }
+.prox-mapa__popup ul { margin: 0; padding-left: 1rem; }
+.prox-mapa__popup li { margin-bottom: .3rem; line-height: 1.3; }
+.prox-mapa__popup .prox-mapa__popup-link { margin: .2rem 0 .35rem; }
+/* O balao do Leaflet nasce branco; acompanha o tema. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: var(--p-surface);
+    color: var(--p-ink);
+    box-shadow: var(--p-shadow-2);
+}
+.leaflet-container a.leaflet-popup-close-button { color: var(--p-muted); }
+.leaflet-container a.leaflet-popup-close-button:hover { color: var(--p-ink); }
+.prox-mapa__popup .prox-mapa__popup-meta { color: var(--p-muted); }
+
+/* Balao de grupo: o botao e o cabecalho, centralizado; a lista fica a esquerda. */
+.prox-mapa__popup--grupo { text-align: center; }
+.prox-mapa__popup--grupo .prox-mapa__popup-link { margin: .1rem auto .45rem; display: inline-flex; }
+.prox-mapa__popup--grupo .prox-mapa__popup-lista { text-align: left; margin-top: .1rem; }
+.prox-mapa__popup-meta {
+    display: block;
+    color: var(--p-muted);
+    font-size: .72rem;
+    font-variant-numeric: tabular-nums;
+}
+.prox-mapa__popup-mais { color: var(--p-muted); font-style: italic; }
+
+@media (max-width: 767.98px) {
+    .prox-mapa { height: 340px; }
+}
 
 /* ==========================================================================
    6. RESPONSIVO

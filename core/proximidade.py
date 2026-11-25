@@ -52,6 +52,26 @@ RAIO_MIN_KM = 1
 RAIO_MAX_KM = 100
 LIMITE_PAGINA = 20
 
+# Ordenacao pelo km do ENDERECO (ordem=endereco na tela). A janela de CEPs
+# continua sendo o que segura o custo: ela cresce por km_cep menos a folga do
+# CEP (c_ceps_folga), de modo que um CEP fora da janela nao pode ter endereco
+# mais perto que o corte. Folga acima de FOLGA_MAX_ORDEM_ENDERECO (1 km) nao
+# usa a coordenada do endereco: cai no km do CEP (CEP generico/rural, onde o
+# endereco nao ajuda). ALVO_JANELA: quantas linhas a janela precisa cobrir
+# antes de cortar (margem para o keyset). Medido em Joinville/5 km: 0,50 s
+# com a janela materializada, contra 1,0 s sem materializar.
+FOLGA_MAX_ORDEM_ENDERECO = 1.0
+ALVO_JANELA_ENDERECO = 60
+
+# Mapa da /proximidade/ (densidade do raio): a coordenada da empresa e a do
+# CEP, e um CEP concentra centenas/milhares de empresas no mesmo ponto. Um
+# marcador por empresa empilharia tudo em uma bolinha (medido: as 20 linhas da
+# pagina 1 caem em 1-2 coordenadas). Entao o mapa agrega em grade: cada celula
+# tem a soma das empresas. Graus testados em (0.005 = ~550 m, 0.01 = ~1,1 km,
+# 0.02 = ~2,2 km); o primeiro que couber em MAX_CELULAS_DENSIDADE vence.
+GRADES_DENSIDADE = (0.005, 0.01, 0.02)
+MAX_CELULAS_DENSIDADE = 3000
+
 # Caixa usada para achar o logradouro a partir do centro do municipio: os CEPs
 # nao tem indice geografico, entao primeiro recortamos a caixa (varredura de
 # c_ceps, ~250 ms) e so depois aplicamos translate() nas linhas que sobraram.
@@ -582,6 +602,209 @@ SQL_TOTAL_RAIO_SIT = """
 #      devolve o CNPJ da linha (~0,4 s).
 # O resultado e o cursor keyset da linha ANTERIOR a primeira da pagina, que e
 # exatamente o que buscar_proximos espera em `depois`.
+# ---------------------------------------------------------------------------
+# Ordem por distancia do ENDERECO (ordem=endereco)
+# ---------------------------------------------------------------------------
+# O km do CEP e o que sustenta a paginacao rapida: todas as empresas de um CEP
+# dividem o mesmo km, entao a janela cumulativa por km e exata. Com o km do
+# endereco (c_estab_geo) isso deixa de valer, e a janela passa a usar
+# `km_cep - folga_cep` como limite inferior: se `km_cep - folga` ja passou do
+# corte, nenhum endereco daquele CEP pode estar mais perto. A folga vem de
+# c_ceps_folga (ProjetoCargaDados: carregar_folga_ceps) e e limitada a
+# FOLGA_MAX_ORDEM_ENDERECO; CEP com folga maior continua ordenando pelo km do
+# CEP (o endereco nao ajudaria mesmo).
+#
+# A janela e MATERIALIZED de proposito: sem isso o planner faz o join com
+# c_estabelecimentos para todos os CEPs do raio e so depois corta (~1,0 s em
+# Joinville/5 km, contra ~0,50 s com a materializacao).
+SQL_PROXIMOS_ENDERECO = """
+    WITH ceps_todos AS MATERIALIZED (
+        SELECT c.cep,
+               c.latitude,
+               c.longitude,
+               c.nome_municipio,
+               coalesce(f.folga_km, 0)::float AS folga,
+               6371 * acos(least(1.0,
+                   cos(radians(%(lat)s)) * cos(radians(c.latitude)) *
+                   cos(radians(c.longitude) - radians(%(lon)s)) +
+                   sin(radians(%(lat)s)) * sin(radians(c.latitude))
+               )) AS km
+          FROM c_ceps c
+          LEFT JOIN c_ceps_folga f ON f.cep = c.cep
+         WHERE c.latitude BETWEEN %(lat_min)s AND %(lat_max)s
+           AND c.longitude BETWEEN %(lon_min)s AND %(lon_max)s
+    )
+    , contagem AS MATERIALIZED (
+        SELECT t.*, coalesce(ce.{coluna_contagem}, 0) AS n
+          FROM ceps_todos t
+          LEFT JOIN {tabela_contagem} ce ON ce.cep = t.cep {filtro_contagem}
+         WHERE t.km >= %(km_min)s
+    )
+    , acumulado AS (
+        SELECT km, sum(n) OVER (ORDER BY km) - n AS antes
+          FROM (SELECT km, sum(n) AS n FROM contagem GROUP BY km) g
+    )
+    , corte AS (
+        SELECT coalesce(min(km), 1e9) AS km_corte
+          FROM acumulado WHERE antes >= %(alvo)s
+    )
+    , extensao AS (
+        SELECT coalesce(max(least(folga, %(folga_max)s)), 0) AS ext
+          FROM contagem WHERE km <= (SELECT km_corte FROM corte)
+    )
+    , janela AS MATERIALIZED (
+        SELECT * FROM contagem
+         WHERE km <= (SELECT km_corte + ext FROM corte, extensao)
+           AND km <= %(raio)s
+    )
+    {cte_total}
+    , base AS (
+        SELECT e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+               e.cnpj_basico,
+               e.cnpj_ordem,
+               e.cnpj_dv,
+               e.cd_matriz_filial,
+               e.nm_fantasia,
+               e.logradouro,
+               e.numero,
+               e.bairro,
+               e.uf,
+               COALESCE(mg.nome, c.nome_municipio) AS municipio_nome,
+               e.ddd_1 || e.tel_1 AS telefone_1,
+               e.email,
+               e.cnae_principal,
+               cn.nm_cnae AS atividade_principal,
+               e.cd_sit_cadastro,
+               CASE e.cd_sit_cadastro
+                   WHEN 1 THEN 'NULA'
+                   WHEN 2 THEN 'ATIVA'
+                   WHEN 3 THEN 'SUSPENSA'
+                   WHEN 4 THEN 'INAPTA'
+                   WHEN 8 THEN 'BAIXADA'
+               END AS situacao_descricao,
+               CASE WHEN g.latitude IS NOT NULL AND coalesce(c.folga, 0) <= %(folga_max)s
+                    THEN g.latitude ELSE c.latitude END AS latitude,
+               CASE WHEN g.latitude IS NOT NULL AND coalesce(c.folga, 0) <= %(folga_max)s
+                    THEN g.longitude ELSE c.longitude END AS longitude,
+               c.latitude  AS latitude_cep,
+               c.longitude AS longitude_cep,
+               c.km AS km_cep,
+               CASE WHEN g.latitude IS NOT NULL AND coalesce(c.folga, 0) <= %(folga_max)s
+                    THEN 6371 * acos(least(1.0,
+                         cos(radians(%(lat)s)) * cos(radians(g.latitude)) *
+                         cos(radians(g.longitude) - radians(%(lon)s)) +
+                         sin(radians(%(lat)s)) * sin(radians(g.latitude))
+                    ))
+                    ELSE c.km
+               END AS km,
+               g.precisao AS geo_precisao
+               {col_total}
+          FROM janela c
+          JOIN c_estabelecimentos e ON e.cep = c.cep
+          LEFT JOIN c_estab_geo g
+                 ON g.cnpj_completo = e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv
+          LEFT JOIN c_municipios_geo mg ON mg.cd_municipio = e.municipio
+          LEFT JOIN c_cnaes cn ON cn.cnae = e.cnae_principal
+         WHERE TRUE
+           {filtro_matriz}
+           {filtro_situacao}
+    )
+    SELECT * FROM base
+     WHERE (%(depois_km)s IS NULL
+            OR (km, cnpj_basico, cnpj_ordem, cnpj_dv) >
+               (%(depois_km)s, %(depois_basico)s, %(depois_ordem)s, %(depois_dv)s))
+     ORDER BY km, cnpj_basico, cnpj_ordem, cnpj_dv
+     LIMIT %(limite)s
+"""
+
+
+def buscar_proximos_endereco(cur, latitude, longitude, raio_km, somente_matrizes,
+                             depois=None, limite=LIMITE_PAGINA, situacao=None):
+    """
+    Como buscar_proximos, mas ordenando pelo km do ENDERECO (c_estab_geo).
+
+    O km devolvido em cada linha e o do endereco quando existe (precisao
+    'exato'/'rua' e folga do CEP <= 1 km); senao e o do CEP, como antes. O
+    keyset continua sendo (km, cnpj) - so muda a origem do km.
+    """
+    params = {
+        'lat': latitude,
+        'lon': longitude,
+        'raio': raio_km,
+        'limite': limite + 1,
+        'alvo': ALVO_JANELA_ENDERECO,
+        'folga_max': FOLGA_MAX_ORDEM_ENDERECO,
+        'km_min': 0.0,
+    }
+    params.update(caixa_geografica(latitude, longitude, raio_km))
+
+    if depois:
+        params.update({
+            'depois_km': depois[0],
+            'depois_basico': depois[1][:8],
+            'depois_ordem': depois[1][8:12],
+            'depois_dv': depois[1][12:14],
+        })
+        # Poda: um CEP cujo km - folga ja passou do cursor nao contribui.
+        params['km_min'] = depois[0] - FOLGA_MAX_ORDEM_ENDERECO
+    else:
+        params['depois_km'] = None
+        params['depois_basico'] = None
+        params['depois_ordem'] = None
+        params['depois_dv'] = None
+
+    filtro_matriz = 'AND e.cd_matriz_filial = 1' if somente_matrizes else ''
+    filtro_situacao = ''
+    if situacao:
+        filtro_situacao = 'AND e.cd_sit_cadastro = %(situacao)s'
+        params['situacao'] = situacao
+        tabela_contagem = 'c_ceps_estab_sit'
+        filtro_contagem = 'AND ce.cd_sit_cadastro = %(situacao)s'
+        coluna_contagem = 'n_matrizes' if somente_matrizes else 'n_total'
+        cte_total = SQL_TOTAL_RAIO_SIT.format(coluna=coluna_contagem,
+                                              cte_ceps='ceps_todos')
+        col_total = ', (SELECT n FROM total) AS total_raio'
+    else:
+        tabela_contagem = 'c_ceps_estab'
+        filtro_contagem = ''
+        coluna_contagem = 'n_matrizes' if somente_matrizes else 'n_total'
+        cte_total = SQL_TOTAL_RAIO.format(coluna=coluna_contagem,
+                                          cte_ceps='ceps_todos')
+        col_total = ', (SELECT n FROM total) AS total_raio'
+
+    sql = SQL_PROXIMOS_ENDERECO.format(
+        tabela_contagem=tabela_contagem,
+        coluna_contagem=coluna_contagem,
+        filtro_contagem=filtro_contagem,
+        cte_total=cte_total,
+        col_total=col_total,
+        filtro_matriz=filtro_matriz,
+        filtro_situacao=filtro_situacao,
+    )
+    cur.execute("SET LOCAL statement_timeout = 15000")
+    cur.execute(sql, params)
+    linhas = cur.fetchall()
+    tem_mais = len(linhas) > limite
+    linhas = list(linhas[:limite])
+
+    if linhas:
+        basicos = sorted({linha['cnpj_basico'] for linha in linhas})
+        cur.execute('SELECT cnpj_basico, razao_social FROM c_empresas '
+                    'WHERE cnpj_basico = ANY(%s)', [basicos])
+        razoes = {r['cnpj_basico']: r['razao_social'] for r in cur.fetchall()}
+        for linha in linhas:
+            linha['razao_social'] = razoes.get(linha['cnpj_basico'])
+            linha['maps_url'] = montar_maps_url(linha)
+            linha['geo_precisao'] = linha.get('geo_precisao')
+
+    if linhas and linhas[0].get('total_raio') is not None:
+        total = linhas[0]['total_raio']
+    else:
+        total = 0 if depois is None else None
+
+    return linhas, tem_mais, total
+
+
 SQL_CEP_DO_INDICE = """
     WITH ceps AS MATERIALIZED (
         SELECT c.cep,
@@ -782,6 +1005,87 @@ def buscar_proximos(cur, latitude, longitude, raio_km, somente_matrizes,
             linha['maps_url'] = montar_maps_url(linha)
 
     return linhas, tem_mais, total
+
+
+# ---------------------------------------------------------------------------
+# Densidade do raio (mapa da /proximidade/)
+# ---------------------------------------------------------------------------
+# Mesma varredura da busca (bbox em c_ceps + haversine), mas agrupada em grade
+# e somando a contagem por CEP (c_ceps_estab / c_ceps_estab_sit). Nao usa
+# c_estabelecimentos: o mapa mostra concentracao, nao linha a linha, e o
+# agregado por CEP e o que mantem o custo igual ao da propria busca.
+# floor() em vez de round(): com parametro float o Postgres usa divisao em
+# double precision, e round(double, int) nao existe (so round(numeric, int)).
+SQL_DENSIDADE = """
+    SELECT floor(c.latitude / %(grao)s) * %(grao)s AS lat,
+           floor(c.longitude / %(grao)s) * %(grao)s AS lon,
+           sum(ce.{coluna})::bigint AS n
+      FROM c_ceps c
+      JOIN {tabela} ce ON ce.cep = c.cep
+     WHERE c.latitude BETWEEN %(lat_min)s AND %(lat_max)s
+       AND c.longitude BETWEEN %(lon_min)s AND %(lon_max)s
+       AND 6371 * acos(least(1.0,
+              cos(radians(%(lat)s)) * cos(radians(c.latitude)) *
+              cos(radians(c.longitude) - radians(%(lon)s)) +
+              sin(radians(%(lat)s)) * sin(radians(c.latitude))
+           )) <= %(raio)s
+       {filtro_situacao}
+     GROUP BY 1, 2
+     ORDER BY n DESC
+"""
+
+
+def buscar_densidade(cur, latitude, longitude, raio_km, somente_matrizes,
+                     situacao=None):
+    """
+    Celulas da grade com a contagem de empresas no raio, para o mapa.
+
+    Devolve {'grao', 'celulas', 'truncado'} - celulas = [[lat, lon, n], ...],
+    lat/lon arredondados em 5 casas (o suficiente para o marcador). None quando
+    falta a tabela agregada correspondente (mesma degradacao do total: sem
+    c_ceps_estab nao ha contagem pronta e o COUNT no raio custa 5-15 s).
+
+    A grade comeca em 0.005 grau (~550 m) e engrossa se passar de
+    MAX_CELULAS_DENSIDADE: o payload do mapa fica pequeno e as areas mais
+    densas continuam visiveis. `truncado` avisa a tela quando nem o grao mais
+    grosso coube (ficam so as celulas mais densas).
+    """
+    if situacao:
+        if not tem_tabela_total(cur, 'c_ceps_estab_sit'):
+            return None
+        tabela = 'c_ceps_estab_sit'
+        filtro_situacao = 'AND ce.cd_sit_cadastro = %(situacao)s'
+    else:
+        if not tem_tabela_total(cur, 'c_ceps_estab'):
+            return None
+        tabela = 'c_ceps_estab'
+        filtro_situacao = ''
+
+    coluna = 'n_matrizes' if somente_matrizes else 'n_total'
+    params = {'lat': latitude, 'lon': longitude, 'raio': raio_km}
+    params.update(caixa_geografica(latitude, longitude, raio_km))
+    if situacao:
+        params['situacao'] = situacao
+    sql = SQL_DENSIDADE.format(tabela=tabela, coluna=coluna,
+                               filtro_situacao=filtro_situacao)
+
+    cur.execute("SET LOCAL statement_timeout = 15000")
+    celulas = []
+    grao = GRADES_DENSIDADE[0]
+    for grao in GRADES_DENSIDADE:
+        cur.execute(sql, {**params, 'grao': grao})
+        celulas = [
+            [round(float(linha['lat']), 5), round(float(linha['lon']), 5),
+             int(linha['n'])]
+            for linha in cur.fetchall() if linha['n']
+        ]
+        if len(celulas) <= MAX_CELULAS_DENSIDADE:
+            break
+
+    truncado = len(celulas) > MAX_CELULAS_DENSIDADE
+    if truncado:
+        celulas = celulas[:MAX_CELULAS_DENSIDADE]
+    return {'grao': grao, 'celulas': celulas, 'truncado': truncado}
 
 
 def cursor_para_pagina(cur, latitude, longitude, raio_km, somente_matrizes,

@@ -172,7 +172,7 @@ class UrlsDosAppsTests(_LandingBase):
 class SeoELoginTests(_LandingBase):
     def test_meta_title_description_canonical_e_og(self):
         html = self.get().content.decode()
-        self.assertIn('<title>busquecnpj — consulta de empresas, busca por proximidade e chat com IA</title>', html)
+        self.assertIn('<title>BusqueCNPJ — consulta de empresas, busca por proximidade e chat com IA</title>', html)
         self.assertIn('name="description"', html)
         self.assertIn('nome, ramo de atividade, cidade', html)  # descricao comercial preservada
         self.assertIn('<link rel="canonical" href="https://busquecnpj.com.br/">', html)

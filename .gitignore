@@ -50,3 +50,6 @@ Thumbs.db
 
 # Arquivos de IDE/agentes
 .roo/
+
+# cookie jar local (nunca no repo)
+jpx.txt

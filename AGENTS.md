@@ -44,7 +44,7 @@ decisoes que nao se reabrem).
 
 ## Stack e arquitetura
 
-- Django 6.1.1, Python 3.13, PostgreSQL 15 (**dois bancos**:
+- Django 6.1.1, Python 3.13, PostgreSQL 18 (**dois bancos**:
   `django_internal` para auth/chat e `bancocnpj` com as tabelas `c_*`),
   MongoDB 8 opcional (`CHAT_USE_MONGO=1`), DeepSeek via SDK `openai`.
 - Apps: `core` (consulta de CNPJ: views lista/detalhe/estatisticas) e
@@ -107,7 +107,9 @@ decisoes que nao se reabrem).
   o ProjetoCargaDados **nao existe na VPS**. Para atualizar: rodar o ETL local e
   reenviar com `~/ProjetosPython/Projetos/restaura_ceps.sh` (ver
   `docs/COMANDOS.md`). Nunca
-  `pg_dump -Fc` entre as duas maquinas: o local e PG 18 e a VPS e PG 16.
+  `pg_dump -Fc` entre as duas maquinas: o local e PG 18.6 e a VPS e PG 18.7
+  (a VPS ficou no PG 16 ate a migracao de 17/11/2026, que e o que o texto
+  historico abaixo descreve).
 - **WhatsApp** (`core/telefone.py`): `montar_whatsapp_url` so gera link quando o
   telefone da RFB parece **celular** (8 ou 9 digitos **comecando com 9**, DDD
   11..99). A base guarda 8 digitos, sem o nono. Fixo (2,3,4,5) nao gera link —
@@ -131,6 +133,35 @@ decisoes que nao se reabrem).
   o early stop na pagina 2. Tambem **nao** crie indice em
   `c_ceps(latitude, longitude)`: testado, o planner troca o early stop por
   bitmap scan e a pagina 1 vai para ~1,5 s (o indice foi removido).
+- **Coordenada do endereco** (`c_estab_geo`, do `ProjetoCargaDados`: CNEFE 2022
+  casado com a RFB por CEP + logradouro + numero): `core/views.py`
+  `_aplicar_endereco_geo` troca lat/lon das 20 linhas da pagina quando existe
+  linha (precisao `exato`/`rua`); sem a tabela, tudo cai no centroide do CEP.
+  `ordem=endereco` na querystring usa `buscar_proximos_endereco`
+  (`core/proximidade.py`), que ordena pelo km do endereco com janela por
+  `c_ceps_folga`; nesse modo o km da lista e o do endereco e o campo
+  "Ir para pagina" fica escondido (depende da contagem por CEP). O km do CEP
+  continua sendo o que sustenta a paginacao no modo padrao.
+- **Fundo do mapa** (25/11): dois niveis, nenhum tile de terceiro com chave.
+  1. **Mapa de rua**: OpenFreeMap (`tiles.openfreemap.org/styles/liberty`,
+     vetorial, sem chave, uso comercial permitido, sem limite) renderizado pelo
+     **MapLibre** via plugin `maplibre-gl-leaflet` (vendorizados em
+     `static/vendor/maplibre/`, ~1,1 MB). Roda no `tilePane`, abaixo das camadas
+     vetoriais; a atribuicao (OpenFreeMap/OpenMapTiles/OSM) vem do estilo.
+  2. **Fallback**: se o estilo nao carregar em 8 s (rede/WebGL), a camada de rua
+     sai e entra o **BC250** (`scripts/gera_mapa_bc250.py`, leitura de WKB em
+     Python puro, sem GDAL/shapely) em `static/mapa/{municipios,urbano,rodovias,cidades}_<UF>.geojson`
+     (~15 MB simplificados, ~520 KB por tela), no pane `baseMapa`.
+  `_ufs_do_mapa` (core/views.py) escolhe as UFs que encostam na caixa do raio e
+  manda a lista no JSON. **Nao** volte para `tile.openstreetmap.org`: o servidor
+  publico bloqueia rajadas com a imagem "403 Access blocked" em HTTP 200 (24 e
+  25/11/2026).
+- **Mapa interativo** (25/11): a area laranja da densidade e clicavel e abre um
+  popup com a contagem e o link **"Abrir consulta aqui"** (`/proximidade/` com
+  raio 1 km no centro da celula, mantendo filtros). Na tabela, o botao de alvo
+  (`.prox-centrar`, com `data-lat`/`data-lon`) centraliza a empresa no mapa sem
+  recarregar (nao conta consulta); na lista de empresas o botao de pino abre a
+  proximidade com o CNPJ como origem (em nova aba, e conta uma consulta).
 - **Ordenacao da lista**: so `cnpj` e `razao_social`. A ordenacao por nome
   fantasia foi **removida** (keyset instavel e fallback de 10s sobrescrevendo o
   resultado); o **filtro** por nome fantasia continua. Nao reintroduza a opcao
@@ -211,11 +242,43 @@ decisoes que nao se reabrem).
   o próprio cursor do keyset. Não ofereça "ordenar por CNPJ": sem o early stop
   na ordem de km a consulta varre o raio inteiro.
 
+## Produto: exportacao, creditos e contadores
+
+O app `exportacao/` e' a camada comercial, separada do `core/` de proposito:
+ele grava no banco `django_internal` (o `core` roteia para o `bancocnpj`).
+
+- Export CSV/JSON de lista e proximidade; amostra de 20 linhas para anonimo;
+  1 credito por CNPJ novo (dedup de 30 dias). O debito acontece **antes** do
+  streaming (abortar nao e' gratis); falha de entrega gera estorno e status
+  `falhou`.
+- `Cliente`/`MovimentoCredito` (livro-caixa), `Exportacao`, `LinhaExportada`,
+  `PesquisaAnonima` (contador por identidade/dia/tipo).
+- Contadores: `ConfiguracaoUso` (linha unica, global) + `LimiteUsuario`
+  (override por usuario). Tipos: `lista` (empresas), `proximidade`, `chat`,
+  `exportacao` (arquivos). O switch "aplicar limites" so' bloqueia; desligado,
+  **continua contando**.
+- Admin: `/admin/exportacao/configuracaouso/` (parametros),
+  `/admin/exportacao/configuracaouso/contadores/` (painel do dia) e o inline de
+  limites na pagina do usuario.
+- Antiabuso: export anonimo exige cookie `visitante_id` (sem ele, 403); teto
+  por IP/dia por tipo; desafio Cloudflare Turnstile em `/exportar/desafio/`
+  com ticket assinado de 15 min (20 tickets/IP/hora). Sem
+  `TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY` no `.env`, o desafio fica inativo.
+- Chat: layout amplo e' o padrao (gaveta + atalho `c`); `?layout=padrao` e'
+  backup manual. O export da ultima lista reinjeta o vetor do `%s` e eleva o
+  `LIMIT` do gerador ate o teto do arquivo.
+- Embedding: carrega do cache local do Hugging Face (`EMBEDDING_OFFLINE=auto`);
+  sem cache, tenta o Hub.
+
+    python manage.py limpar_exportacoes --dias 180 --dry-run   # expurgo
+    python manage.py limpar_exportacoes --dias 180
+
 ## Comandos do projeto
 
     source venv/bin/activate
     python manage.py runserver 8002          # app em http://localhost:8002/
-    python manage.py test chat               # 245 testes em chat/tests/
+    python manage.py test chat               # 347 testes em chat/tests/
+    python manage.py test exportacao         # 58 testes (creditos, cotas, desafio, admin)
     python manage.py test core               # 146 testes (lista, detalhe, Maps, WhatsApp, proximidade, log)
     python manage.py test chat.tests.test_sql_validator   # teste isolado
     CHAT_USE_MONGO=1 python manage.py test chat.tests.test_integracao  # backend Mongo

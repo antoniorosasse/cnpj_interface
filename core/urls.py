@@ -22,6 +22,13 @@ urlpatterns = [
     # Busca por proximidade (raio em km a partir de CNPJ/CEP/cidade/coordenada)
     path('proximidade/', views.proximidade, name='proximidade'),
 
+    # Densidade do raio em JSON (camada de areas do mapa da proximidade)
+    path('proximidade/mapa/', views.proximidade_mapa, name='proximidade_mapa'),
+
+    # Pontos individuais (zoom de quadra: troca a area pelos pontos)
+    path('proximidade/mapa/pontos/', views.proximidade_mapa_pontos,
+         name='proximidade_mapa_pontos'),
+
     # Busca rápida via AJAX
     path('busca-rapida/', views.buscar_empresas_rapido, name='busca_rapida'),
 
