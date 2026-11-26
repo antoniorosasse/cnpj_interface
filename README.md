@@ -1271,6 +1271,30 @@ e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
 `chat_conversas`** - não rodar com dados reais. Os testes de GeoIP usam cache
 local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 
+## Workspace do chat, identidade e proximidade (26/11/2026)
+
+- **Chat em workspace**: conversa à esquerda e painel de resultados à direita,
+  com todas as tabelas da conversa, abas **Resultado · SQL · Gráfico**,
+  Topo/Final, CSV/JSON por tabela, exportação global no rodapé, largura
+  ajustável (recolher/expandir) e preferência em `localStorage`. F5 abre no fim
+  e a conversa selecionada recarrega o painel correspondente.
+- **Proximidade filtrada no mapa**: painel mostra todos os resultados (até
+  2.000 automático; botão “Mostrar todas no mapa” acima disso); bolhas âmbar por
+  CEP/ponto acima do pino. Endpoint `proximidade_mapa_filtrado`.
+- **Identidade final**: paleta aço/platina + teal/âmbar; tokens em
+  `static/css/portal.css`; logo SVG em `static/img/logo-horizontal.svg`,
+  `logo-vertical.svg`, `logo-mono.svg`, `logo-mono-branco.svg`,
+  `marca-busquecnpj.svg` e `favicon.svg` (wordmark em texto vetorial; falta
+  outline).
+- **Copy**: H1 “Encontre empresas conversando com a IA ou busque por
+  geolocalização”; tagline “Prospecção B2B inteligente”; subheadline e pilar
+  atualizados para CRM/ERP.
+- **Migrações**: `chat.0006_mensagem_plano` e `chat.0007_mensagem_colunas_
+  mensagem_erro_mensagem_rows_and_more` aplicadas no deploy de 26/11.
+- **Validação**: 792 testes OK; deploy `cnpj` 23 s; smoke em produção OK.
+- **Pendência**: consultas de contagem do chat em produção levaram 42–54 s no
+  smoke (uma consulta quente 3,9 s); medir LLM x SQL e otimizar.
+
 ## Documentação de apoio
 
 - [Checklist de testes — integração Chat IA ↔ Proximidade](docs/TESTES_CHAT_PROXIMIDADE.md)
