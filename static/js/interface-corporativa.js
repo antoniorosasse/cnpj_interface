@@ -16,7 +16,7 @@
         var meta = document.getElementById('meta-tema');
         if (icone) { icone.className = t === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars'; }
         if (botao) { botao.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false'); }
-        if (meta) { meta.setAttribute('content', t === 'dark' ? '#070e18' : '#f5f8fb'); }
+        if (meta) { meta.setAttribute('content', t === 'dark' ? '#051512' : '#f4fbf8'); }
     }
     function temaAtual() { return root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
     pintaTema(temaAtual());

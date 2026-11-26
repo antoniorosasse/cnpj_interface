@@ -29,7 +29,8 @@ Estrutura de um documento:
           "truncado": bool,
           "tempo_ms": int,
           "resposta_texto": str,
-          "erro": str | None
+          "erro": str | None,
+          "plano": dict | None   # plano da consulta (JSON simples)
         }
       ]
     }
@@ -194,7 +195,7 @@ def adicionar_mensagem(
     Adiciona uma mensagem ao array 'mensagens' da conversa.
 
     extras: campos opcionais (sql, colunas, rows, total_linhas,
-            truncado, tempo_ms, resposta_texto, erro).
+            truncado, tempo_ms, resposta_texto, erro, plano).
 
     Retorna True se conseguiu, False se a conversa nao existe.
     """
@@ -212,9 +213,11 @@ def adicionar_mensagem(
         'criado_em': agora,
     }
 
-    # Campos opcionais (so adiciona se vierem)
+    # Campos opcionais (so adiciona se vierem).
+    # 'plano' e' JSON simples (str/int/float/list/dict): vai direto pro Mongo,
+    # sem passar por _serializar_rows (nao carrega Decimal/date do Postgres).
     for campo in ('sql', 'colunas', 'rows', 'total_linhas',
-                  'truncado', 'tempo_ms', 'resposta_texto', 'erro'):
+                  'truncado', 'tempo_ms', 'resposta_texto', 'erro', 'plano'):
         if campo in extras and extras[campo] is not None:
             valor = extras[campo]
             if campo == 'rows':

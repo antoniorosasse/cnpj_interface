@@ -4,60 +4,92 @@
    Carrega por ultimo, depois de sistema.css e dos blocos extra_css. */
 
 /* 1. TOKENS - tema claro */
+/* 1. TOKENS - tema claro */
 :root {
-    /* paleta "oil" (azul petroleo) */
-    --p-oil-50: #f0f9ff;
-    --p-oil-100: #e0f2fe;
-    --p-oil-200: #bae6fd;
-    --p-oil-300: #7dd3fc;
-    --p-oil-400: #38bdf8;
-    --p-oil-500: #0284c7;
-    --p-oil-600: #0369a1;
-    --p-oil-700: #075985;
-    --p-oil-800: #0c4a6e;
-    --p-oil-900: #082f49;
+    /* ------------------------------------------------------------
+       PRIMITIVOS DE MARCA (26/11/2026) - paleta 1 (aco/platina):
+       neutros de aco + teal de acao + amber de destaque. Componentes nao usam
+       --brand-* direto: usam os semanticos --p-* abaixo.
+       ------------------------------------------------------------ */
+    --brand-teal-50: #f0fdfa;
+    --brand-teal-100: #ccfbf1;
+    --brand-teal-200: #99f6e4;
+    --brand-teal-300: #5eead4;
+    --brand-teal-400: #2dd4bf;
+    --brand-teal-500: #14b8a6;
+    --brand-teal-600: #0d9488;
+    --brand-teal-700: #0f766e;
+    --brand-teal-800: #115e59;
+    --brand-teal-900: #134e4a;
+
+    --brand-lime-300: #bef264;
+    --brand-lime-400: #a3e635;
+    --brand-lime-500: #84cc16;
+
+    --brand-amber-300: #fcd34d;
+    --brand-amber-400: #fbbf24;
+    --brand-amber-500: #f59e0b;
+    --brand-amber-600: #d97706;
+    --brand-amber-700: #b45309;
+
+    --brand-steel-300: #a9b4c2;   /* powder blue */
+    --brand-steel-400: #7d98a1;   /* cool steel */
+    --brand-slate-500: #5e6572;   /* blue slate */
+    --brand-neutral-0: #ffffff;
+    --brand-neutral-50: #eef1ef;  /* platinum */
+    --brand-neutral-100: #e5eae7;
+    --brand-neutral-200: #c9d1ce;
+    --brand-neutral-300: #a9b4c2;  /* powder blue */
+    --brand-neutral-700: #3b4743;
+    --brand-neutral-800: #242e2a;
+    --brand-neutral-900: #1c2321;  /* carbon black */
 
     /* superficies e tinta */
-    --p-bg: #f5f8fb;
-    --p-bg-deep: #eef3f8;
-    --p-surface: #ffffff;
-    --p-surface-2: #f7fafc;
-    --p-surface-3: #edf2f7;
-    --p-ink: #0f1b26;
-    --p-ink-soft: #33475b;
-    --p-muted: #5c7086;
-    --p-line: #e2e9f0;
-    --p-line-strong: #c6d3df;
+    --p-bg: var(--brand-neutral-50);
+    --p-bg-deep: var(--brand-neutral-100);
+    --p-surface: var(--brand-neutral-0);
+    --p-surface-2: #f5f7f5;
+    --p-surface-3: #e7ece9;
+    --p-ink: var(--brand-neutral-900);
+    --p-ink-soft: var(--brand-neutral-700);
+    --p-muted: var(--brand-slate-500);
+    --p-line: #c9d1ce;
+    --p-line-strong: var(--brand-steel-300);
 
-    /* acao */
-    --p-accent: #0369a1;
-    --p-accent-rgb: 3, 105, 161;
-    --p-accent-strong: #075985;
-    --p-accent-soft: #e8f3fb;
-    --p-accent-line: #b9ddf3;
+    /* acao / marca */
+    --p-accent: var(--brand-teal-700);
+    --p-accent-rgb: 15, 118, 110;
+    --p-accent-strong: var(--brand-teal-800);
+    --p-accent-soft: #e6f7f1;
+    --p-accent-line: #b7e4d6;
     --p-accent-ink: #ffffff;
+    --p-brand-cnpj: var(--brand-amber-700);
+    --p-action: var(--brand-amber-700);
+    --p-action-ink: #ffffff;
+    --p-lime: var(--brand-lime-400);
+    --p-lime-soft: #f4fce4;
 
     /* estados */
-    --p-ok: #157347;
-    --p-ok-rgb: 21, 115, 71;
-    --p-ok-soft: #e7f4ec;
-    --p-ok-line: #c4e6d2;
-    --p-warn: #8a4b04;
-    --p-warn-rgb: 138, 75, 4;
-    --p-warn-soft: #fdf1d9;
-    --p-warn-line: #f1dcaa;
-    --p-danger: #b42318;
-    --p-danger-rgb: 180, 35, 24;
-    --p-danger-soft: #fdecea;
-    --p-danger-line: #f5c9c4;
+    --p-ok: #15803d;
+    --p-ok-rgb: 21, 128, 61;
+    --p-ok-soft: #e8f7ec;
+    --p-ok-line: #bfe5cb;
+    --p-warn: #b45309;
+    --p-warn-rgb: 180, 83, 9;
+    --p-warn-soft: #fdf3df;
+    --p-warn-line: #f3ddb0;
+    --p-danger: #b91c1c;
+    --p-danger-rgb: 185, 28, 28;
+    --p-danger-soft: #fdeceb;
+    --p-danger-line: #f5c9c6;
     --p-info: var(--p-accent);
-    --p-focus: #0284c7;
+    --p-focus: var(--brand-teal-600);
 
     /* foco / sombras */
-    --p-focus-ring: 0 0 0 3px rgba(2, 132, 199, .30);
-    --p-shadow-1: 0 1px 2px rgba(15, 27, 38, .05), 0 2px 6px -2px rgba(15, 27, 38, .06);
-    --p-shadow-2: 0 10px 24px -12px rgba(15, 27, 38, .22), 0 2px 8px -3px rgba(15, 27, 38, .10);
-    --p-shadow-3: 0 28px 64px -20px rgba(15, 27, 38, .32);
+    --p-focus-ring: 0 0 0 3px rgba(13, 148, 136, .28);
+    --p-shadow-1: 0 1px 2px rgba(11, 31, 28, .05), 0 2px 6px -2px rgba(11, 31, 28, .06);
+    --p-shadow-2: 0 10px 24px -12px rgba(11, 31, 28, .22), 0 2px 8px -3px rgba(11, 31, 28, .10);
+    --p-shadow-3: 0 28px 64px -20px rgba(11, 31, 28, .30);
 
     /* forma */
     --p-r-xs: 6px;
@@ -73,7 +105,33 @@
     --p-fs: 15px;
     --p-topbar-h: 66px;
     --p-container: 1360px;
-    --p-topbar: rgba(255, 255, 255, .86);
+    --p-topbar: rgba(255, 255, 255, .88);
+
+    /* aliases legados: componentes antigos usam --p-oil-* */
+    --p-oil-50: var(--brand-teal-50);
+    --p-oil-100: var(--brand-teal-100);
+    --p-oil-200: var(--brand-teal-200);
+    --p-oil-300: var(--brand-teal-300);
+    --p-oil-400: var(--brand-teal-400);
+    --p-oil-500: var(--brand-teal-500);
+    --p-oil-600: var(--brand-teal-600);
+    --p-oil-700: var(--brand-teal-700);
+    --p-oil-800: var(--brand-teal-800);
+    --p-oil-900: var(--brand-teal-900);
+
+    /* codigo/SQL e visualizacao (identidade do produto) */
+    --chat-code-bg: #07201c;
+    --chat-code-ink: #d9f3ea;
+    --chat-code-line: #16463c;
+    --chat-code-label: #8fc7b8;
+    --viz-1: var(--p-accent);
+    --viz-2: var(--brand-amber-700);
+    --viz-3: var(--brand-slate-500);
+    --viz-4: var(--brand-steel-400);
+    --viz-5: var(--p-ok);
+    --viz-6: #84596b;
+    --viz-7: #282f44;
+    --viz-8: #83781b;
 
     color-scheme: light;
 
@@ -89,38 +147,43 @@
     --bs-secondary-bg: var(--p-surface-3);
     --bs-tertiary-bg: var(--p-surface-2);
     --bs-border-color: var(--p-line);
-    --bs-border-color-translucent: rgba(15, 27, 38, .08);
-    --bs-primary: #0369a1;
-    --bs-primary-rgb: 3, 105, 161;
-    --bs-link-color: #0369a1;
-    --bs-link-color-rgb: 3, 105, 161;
-    --bs-link-hover-color: #075985;
-    --bs-link-hover-color-rgb: 7, 89, 133;
-    --bs-focus-ring-color: rgba(2, 132, 199, .30);
-    --bs-code-color: #8a4b04;
+    --bs-border-color-translucent: rgba(11, 31, 28, .08);
+    --bs-primary: var(--p-accent);
+    --bs-primary-rgb: var(--p-accent-rgb);
+    --bs-link-color: var(--p-accent);
+    --bs-link-color-rgb: var(--p-accent-rgb);
+    --bs-link-hover-color: var(--p-accent-strong);
+    --bs-link-hover-color-rgb: 17, 94, 89;
+    --bs-focus-ring-color: rgba(13, 148, 136, .28);
+    --bs-code-color: var(--p-brand-cnpj);
     --bs-font-sans-serif: var(--p-font-sans);
     --bs-font-monospace: var(--p-font-mono);
 }
 
 /* 2. TOKENS - tema escuro */
 [data-theme="dark"] {
-    --p-bg: #070e18;
-    --p-bg-deep: #050b13;
-    --p-surface: #0d1724;
-    --p-surface-2: #111f30;
-    --p-surface-3: #16283c;
-    --p-ink: #e9f0f7;
-    --p-ink-soft: #b9c7d6;
-    --p-muted: #8ba1b7;
-    --p-line: #1c2c3f;
-    --p-line-strong: #2b4058;
+    --p-bg: #101614;
+    --p-bg-deep: #0b100e;
+    --p-surface: #171f1c;
+    --p-surface-2: #1d2723;
+    --p-surface-3: #25322c;
+    --p-ink: #eef1ef;
+    --p-ink-soft: #c4d0ca;
+    --p-muted: #a9b4c2;
+    --p-line: #2f3d37;
+    --p-line-strong: #45564f;
 
-    --p-accent: #38bdf8;
-    --p-accent-rgb: 56, 189, 248;
-    --p-accent-strong: #7dd3fc;
-    --p-accent-soft: rgba(56, 189, 248, .12);
-    --p-accent-line: rgba(56, 189, 248, .32);
-    --p-accent-ink: #04121f;
+    --p-accent: var(--brand-teal-400);
+    --p-accent-rgb: 45, 212, 191;
+    --p-accent-strong: var(--brand-teal-300);
+    --p-accent-soft: rgba(45, 212, 191, .14);
+    --p-accent-line: rgba(45, 212, 191, .34);
+    --p-accent-ink: #04211d;
+    --p-brand-cnpj: var(--brand-amber-300);
+    --p-action: var(--brand-amber-300);
+    --p-action-ink: #1c2321;
+    --p-lime: var(--brand-lime-300);
+    --p-lime-soft: rgba(190, 242, 100, .12);
 
     --p-ok: #4ade80;
     --p-ok-rgb: 74, 222, 128;
@@ -135,13 +198,18 @@
     --p-danger-soft: rgba(248, 113, 113, .13);
     --p-danger-line: rgba(248, 113, 113, .32);
     --p-info: var(--p-accent);
-    --p-focus: #38bdf8;
+    --p-focus: var(--brand-teal-400);
 
-    --p-focus-ring: 0 0 0 3px rgba(56, 189, 248, .32);
+    --p-focus-ring: 0 0 0 3px rgba(45, 212, 191, .32);
     --p-shadow-1: 0 1px 2px rgba(0, 0, 0, .40);
     --p-shadow-2: 0 12px 28px -12px rgba(0, 0, 0, .70), 0 2px 8px -3px rgba(0, 0, 0, .50);
     --p-shadow-3: 0 32px 72px -20px rgba(0, 0, 0, .80);
-    --p-topbar: rgba(7, 14, 24, .84);
+    --p-topbar: rgba(16, 22, 20, .88);
+
+    --chat-code-bg: #03100e;
+    --chat-code-ink: #d9f3ea;
+    --chat-code-line: #1b3a33;
+    --chat-code-label: #8fc7b8;
 
     color-scheme: dark;
 
@@ -154,14 +222,14 @@
     --bs-tertiary-bg: var(--p-surface-2);
     --bs-border-color: var(--p-line);
     --bs-border-color-translucent: rgba(255, 255, 255, .08);
-    --bs-primary: #38bdf8;
-    --bs-primary-rgb: 56, 189, 248;
-    --bs-link-color: #7dd3fc;
-    --bs-link-color-rgb: 125, 211, 252;
-    --bs-link-hover-color: #bae6fd;
-    --bs-link-hover-color-rgb: 186, 230, 253;
-    --bs-focus-ring-color: rgba(56, 189, 248, .32);
-    --bs-code-color: #fbbf24;
+    --bs-primary: var(--p-accent);
+    --bs-primary-rgb: var(--p-accent-rgb);
+    --bs-link-color: var(--brand-teal-300);
+    --bs-link-color-rgb: 94, 234, 212;
+    --bs-link-hover-color: var(--brand-teal-200);
+    --bs-link-hover-color-rgb: 153, 246, 228;
+    --bs-focus-ring-color: rgba(45, 212, 191, .32);
+    --bs-code-color: var(--brand-amber-300);
 }
 
 /* 3. BASE */
@@ -181,7 +249,7 @@ body {
     flex-direction: column;
     background-color: var(--p-bg);
     background-image:
-        radial-gradient(1100px 520px at 50% -260px, rgba(2, 132, 199, .10), transparent 70%);
+        radial-gradient(1100px 520px at 50% -260px, rgba(13, 148, 136, .10), transparent 70%);
     background-repeat: no-repeat;
     color: var(--p-ink);
     font-family: var(--p-font-sans);
@@ -193,7 +261,7 @@ body {
 
 [data-theme="dark"] body {
     background-image:
-        radial-gradient(1100px 520px at 50% -240px, rgba(56, 189, 248, .13), transparent 70%);
+        radial-gradient(1100px 520px at 50% -240px, rgba(45, 212, 191, .12), transparent 70%);
 }
 
 h1, h2, h3, h4, h5, h6,
@@ -329,6 +397,17 @@ hr { border: 0; border-top: 1px solid var(--p-line); opacity: 1; margin: 1.5rem 
 }
 .ui-topbar .navbar-brand:hover { color: var(--p-ink); }
 
+.ui-brand-logo {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 38px;
+    height: 38px;
+}
+.ui-brand-logo svg,
+.ui-brand-logo img { display: block; width: 100%; height: 100%; }
+.ui-footer .ui-brand-logo { width: 28px; height: 28px; }
+
 .ui-brand-mark {
     display: grid;
     place-items: center;
@@ -336,17 +415,18 @@ hr { border: 0; border-top: 1px solid var(--p-line); opacity: 1; margin: 1.5rem 
     width: 34px;
     height: 34px;
     border-radius: 11px;
-    background: linear-gradient(145deg, #0369a1 5%, #0284c7 45%, #38bdf8 100%);
-    box-shadow: 0 8px 18px -8px rgba(2, 132, 199, .75), inset 0 1px 0 rgba(255, 255, 255, .35);
+    background: linear-gradient(145deg, #0f766e 5%, #14b8a6 55%, #2dd4bf 100%);
+    box-shadow: 0 8px 18px -8px rgba(15, 118, 110, .55), inset 0 1px 0 rgba(255, 255, 255, .35);
     color: #ffffff;
     font-size: 1.02rem;
 }
 [data-theme="dark"] .ui-brand-mark {
-    box-shadow: 0 0 0 1px rgba(56, 189, 248, .35), 0 10px 24px -10px rgba(56, 189, 248, .55);
+    box-shadow: 0 0 0 1px rgba(45, 212, 191, .35), 0 10px 24px -10px rgba(45, 212, 191, .45);
 }
 
 .ui-brand-text { display: flex; flex-direction: column; gap: 2px; }
 .ui-brand-name { color: inherit; }
+.ui-brand-name__cnpj { color: var(--p-brand-cnpj); }
 .ui-brand-tag {
     color: var(--p-muted);
     font-size: .5938rem;
@@ -685,7 +765,7 @@ hr { border: 0; border-top: 1px solid var(--p-line); opacity: 1; margin: 1.5rem 
     --bs-btn-disabled-border-color: var(--p-accent);
     box-shadow: 0 1px 2px rgba(15, 27, 38, .12);
 }
-.btn-primary:hover { box-shadow: 0 6px 14px -8px rgba(2, 132, 199, .8); }
+.btn-primary:hover { box-shadow: 0 6px 14px -8px rgba(15, 118, 110, .55); }
 
 .btn-secondary {
     --bs-btn-color: var(--p-ink);

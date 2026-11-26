@@ -4,7 +4,7 @@
 {% block title %}Chat IA — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261121">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261126i">
 {% endblock %}
 
 {% block content %}
@@ -15,13 +15,14 @@
     {# ============================================================ #}
     <div class="ui-page-head">
         <div>
-            <p class="ui-eyebrow"><i class="bi bi-chat-dots" aria-hidden="true"></i> Chat IA</p>
-            <h1>Chat IA — Análise de CNPJ</h1>
+            <p class="ui-eyebrow"><i class="bi bi-chat-dots" aria-hidden="true"></i> Inteligência comercial</p>
+            <h1>Converse com a base de CNPJs</h1>
             <p>
-                Pergunte em português. O sistema gera SQL, valida e executa em modo
-                somente-leitura — e responde com um <strong>RAG sobre dados
-                estruturados</strong>: o texto sai só das linhas que a consulta
-                recuperou, nunca da memória do modelo.
+                Descreva em português o perfil de empresa que você procura. A IA
+                traduz a pergunta em filtros, executa na base pública de CNPJs e
+                responde só com o que está registrado — em modo somente-leitura.
+                O texto sai das linhas que a consulta recuperou — RAG sobre dados —
+                e nunca da memória do modelo.
             </p>
         </div>
     </div>
@@ -80,9 +81,14 @@
 
         <!-- CONTEUDO DO CHAT -->
         <div class="chat-main">
+          <div class="chat-workspace" id="chat-workspace">
+            <div class="chat-col">
             <button type="button" class="chat-drawer-toggle" id="chat-drawer-toggle"
                     aria-controls="sidebar-conversas" aria-expanded="false">
                 <i class="bi bi-list" aria-hidden="true"></i> Conversas
+            </button>
+            <button type="button" class="chat-panel-abrir" id="chat-panel-abrir" hidden>
+                <i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i> Resultados
             </button>
 
             {% if mensagens_json == '[]' %}
@@ -90,11 +96,29 @@
                 <div class="ui-bubble ui-bubble--bot">
                     <div class="ui-bubble__meta"><i class="bi bi-stars" aria-hidden="true"></i> Assistente</div>
                     <p>
-                        Pergunte em português sobre a base de CNPJs — por exemplo, quantas
-                        empresas ativas existem por UF, quais são os CNAEs mais frequentes
-                        ou como o total varia por porte. Cada resposta vem de uma consulta
-                        SQL real, executada em modo somente-leitura.
+                        Pergunte em português sobre a base de CNPJs: encontre empresas
+                        por perfil, tempo de abertura, capital ou proximidade. Cada
+                        resposta vem de uma consulta real, executada em modo
+                        somente-leitura.
                     </p>
+                </div>
+            </div>
+
+            <div class="chat-sugestoes" id="chat-sugestoes">
+                <p class="chat-sugestoes__titulo">Experimente perguntar</p>
+                <div class="chat-sugestoes__lista">
+                    <button type="button" class="chat-sugestao"
+                            data-pergunta="Indústrias metalúrgicas em Santa Catarina abertas há mais de 3 anos">
+                        <i class="bi bi-buildings" aria-hidden="true"></i> Metalúrgicas em SC abertas há mais de 3 anos
+                    </button>
+                    <button type="button" class="chat-sugestao"
+                            data-pergunta="Clínicas médicas e odontológicas em um raio de 5 km da Av. Paulista">
+                        <i class="bi bi-geo-alt" aria-hidden="true"></i> Clínicas em 5 km da Av. Paulista
+                    </button>
+                    <button type="button" class="chat-sugestao"
+                            data-pergunta="Transportadoras com capital social acima de R$ 500 mil no Paraná">
+                        <i class="bi bi-cash-stack" aria-hidden="true"></i> Transportadoras no PR com capital acima de R$ 500 mil
+                    </button>
                 </div>
             </div>
             {% endif %}
@@ -103,7 +127,7 @@
 
             <div class="composer">
                 <label class="visually-hidden" for="pergunta">Digite sua pergunta sobre os dados de CNPJ</label>
-                <textarea id="pergunta" class="form-control" rows="2" placeholder="Ex: Quantas empresas ativas existem por porte?"></textarea>
+                <textarea id="pergunta" class="form-control" rows="2" placeholder="Ex: Encontre padarias ativas em um raio de 1 km da Rua do Príncipe, 500, Joinville"></textarea>
                 <div class="composer-actions">
                     <button id="enviar" type="button" class="btn btn-primary">
                         <i class="bi bi-search" aria-hidden="true"></i> Consultar
@@ -113,6 +137,52 @@
                 </div>
                 <p class="composer-hint ui-muted">Ctrl + Enter envia a pergunta.</p>
             </div>
+            </div><!-- /chat-col -->
+
+            {% if not layout_padrao %}
+            <aside class="chat-panel" id="chat-panel" aria-label="Resultado da última consulta">
+                <div class="chat-panel__head">
+                    <div>
+                        <p class="ui-eyebrow">Resultado</p>
+                        <h2 class="chat-panel__title">Resultados da conversa</h2>
+                        <p class="chat-panel__contexto">
+                            {{ conversa.titulo|default:"Conversa atual"|truncatechars:44 }}
+                            · role o painel para ver as tabelas anteriores
+                        </p>
+                    </div>
+                    <div class="chat-panel__actions">
+                        <span class="ui-badge ui-badge--neutral" id="chat-panel-status">aguardando</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="chat-panel-expandir"
+                                title="Expandir painel de resultados" aria-label="Expandir painel de resultados">
+                            <i class="bi bi-arrows-angle-expand" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="chat-panel-recolher"
+                                title="Recolher painel de resultados" aria-label="Recolher painel de resultados">
+                            <i class="bi bi-chevron-double-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="chat-panel__body" id="chat-resultado">
+                    <div class="chat-panel__vazio" id="chat-panel-vazio">
+                        <i class="bi bi-kanban" aria-hidden="true"></i>
+                        <p>Faça uma pergunta para ver aqui a tabela, o SQL e os filtros do resultado.</p>
+                    </div>
+                </div>
+                <div class="chat-panel__foot">
+                    <a href="{% url 'exportacao:exportar_chat' %}?formato=csv"
+                       class="btn btn-sm btn-outline-primary" rel="nofollow"
+                       title="Baixar a última lista desta conversa em CSV">
+                        <i class="bi bi-filetype-csv" aria-hidden="true"></i> CSV<span id="export-chat-count">{% if ultima_lista_linhas %} ({{ ultima_lista_linhas }} linhas){% endif %}</span>
+                    </a>
+                    <a href="{% url 'exportacao:exportar_chat' %}?formato=json"
+                       class="btn btn-sm btn-outline-primary" rel="nofollow"
+                       title="Baixar a última lista desta conversa em JSON">
+                        <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
+                    </a>
+                </div>
+            </aside>
+            {% endif %}
+          </div><!-- /chat-workspace -->
         </div>
     </div>
 
@@ -122,19 +192,18 @@
             <i class="bi bi-arrow-left" aria-hidden="true"></i> Voltar para Empresas
         </a>
         {% endif %}
-        {# Export vale em qualquer host: o chat em producao roda em
-           chat.busquecnpj.com.br, onde "Voltar para Empresas" nao faz sentido,
-           mas baixar a lista sim. #}
+        {% if layout_padrao %}
         <a href="{% url 'exportacao:exportar_chat' %}?formato=csv"
            class="btn btn-outline-primary" rel="nofollow"
            title="Baixar a última lista desta conversa em CSV">
-            <i class="bi bi-filetype-csv" aria-hidden="true"></i> Baixar última lista (CSV)<span id="export-chat-count">{% if ultima_lista_linhas %} ({{ ultima_lista_linhas }} linhas){% endif %}</span>
+            <i class="bi bi-filetype-csv" aria-hidden="true"></i> Baixar última lista (CSV)
         </a>
         <a href="{% url 'exportacao:exportar_chat' %}?formato=json"
            class="btn btn-outline-primary" rel="nofollow"
            title="Baixar a última lista desta conversa em JSON">
             <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
         </a>
+        {% endif %}
     </div>
 
 </div>
@@ -151,8 +220,62 @@
     const spinnerEl  = document.getElementById('spinner');
     const infoEl     = document.getElementById('info');
     const threadEl   = document.getElementById('thread');
+    const painelEl   = document.getElementById('chat-resultado');
+    const painelStatusEl = document.getElementById('chat-panel-status');
 
-    const conversaId = {{ conversa.pk|default:"null" }};
+    function mostrarNoPainel(html, status) {
+        if (!painelEl) return false;
+        painelEl.innerHTML = html;
+        prepararAbas();
+        rolarParaUltimoResultado();
+        if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
+        return true;
+    }
+
+    function acrescentarNoPainel(html, status) {
+        if (!painelEl) return false;
+        painelEl.insertAdjacentHTML('beforeend', html);
+        prepararAbas();
+        rolarParaUltimoResultado();
+        if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
+        return true;
+    }
+
+    function blocoResultado(pergunta, html) {
+        const titulo = escaparHtml(pergunta || 'Resultado');
+        return '<section class="chat-panel__item" data-aba="resultado">' +
+            '<div class="chat-panel__item-head"><i class="bi bi-chat-left-text" aria-hidden="true"></i> ' +
+            titulo + '</div>' +
+            '<div class="chat-result-tabs" role="tablist">' +
+                '<button type="button" class="chat-result-tab is-active" data-result-aba="resultado" role="tab">Resultado</button>' +
+                '<button type="button" class="chat-result-tab" data-result-aba="sql" role="tab">SQL</button>' +
+                '<button type="button" class="chat-result-tab" data-result-aba="grafico" role="tab">Gráfico</button>' +
+            '</div>' +
+            '<div class="chat-result-conteudo">' + html + '</div></section>';
+    }
+
+    function rolarParaUltimoResultado() {
+        if (!painelEl) return;
+        const itens = painelEl.querySelectorAll('.chat-panel__item');
+        if (!itens.length) return;
+        const ultimo = itens[itens.length - 1];
+        const topo = ultimo.getBoundingClientRect().top
+            - painelEl.getBoundingClientRect().top + painelEl.scrollTop;
+        painelEl.scrollTop = Math.max(0, topo - 4);
+    }
+
+    function prepararAbas() {
+        document.querySelectorAll('.chat-panel__item').forEach(function (item) {
+            if (!item.hasAttribute('data-aba')) item.setAttribute('data-aba', 'resultado');
+            const sql = item.querySelector('.sql-detalhe');
+            const grafico = item.querySelector('button[onclick*="__toggleGrafico"]');
+            const bsql = item.querySelector('[data-result-aba="sql"]');
+            const bgraf = item.querySelector('[data-result-aba="grafico"]');
+            if (bsql) bsql.hidden = !sql;
+            if (bgraf) bgraf.hidden = !grafico;
+        });
+    }
+
     const mensagensIniciais = {{ mensagens_json|default:"[]"|safe }};
     // Mantem a contagem real de linhas no botao de export do chat.
     function atualizarContagemExport(n) {
@@ -197,7 +320,31 @@
         if (typeof v === 'number' && Number.isFinite(v)) {
             return fmtNum.format(v);
         }
+        // Datas ISO (dt_ini etc.) em dd/mm/aaaa, como o resto da UI.
+        if (typeof v === 'string') {
+            const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) return m[3] + '/' + m[2] + '/' + m[1];
+        }
         return String(v);
+    }
+
+    // Depois de responder, leva o resultado para a area visivel. Antes o
+    // usuario precisava rolar a pagina E o thread (dois scrolls).
+    function revelarResultado() {
+        if (painelEl) {
+            if (window.matchMedia('(max-width: 1199.98px)').matches) {
+                window.requestAnimationFrame(function () {
+                    painelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            }
+            return;
+        }
+        const alvo = threadEl.querySelector('.resultado-historico:last-child')
+            || threadEl.querySelector('.resposta-natural:last-child');
+        if (!alvo) return;
+        window.requestAnimationFrame(function () {
+            alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
     }
 
     function renderTurno(papel, conteudo) {
@@ -241,6 +388,37 @@
                `</details>`;
     }
 
+    // Link para a pagina /proximidade/ com a mesma origem e raio da consulta.
+    function renderLinkProximidade(plano) {
+        if (!plano || !plano.link_proximidade) return '';
+        return '<div class="mt-2">' +
+            '<a class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" ' +
+            `href="${escaparHtml(plano.link_proximidade)}">` +
+            '<i class="bi bi-geo-alt"></i> Abrir na página de proximidade</a>' +
+            '</div>';
+    }
+
+    // Bloco de resultado da consulta por proximidade (link + tabela).
+    function renderProximidadeResultado(dados) {
+        let html = '<div class="resultado-historico">' +
+            '<div class="card mt-3"><div class="card-body">';
+        // O botao de abrir na pagina fica no topo do resultado.
+        html += renderLinkProximidade(dados.plano);
+        const info = `${dados.total_linhas || 0} resultado(s) · ${dados.tempo_ms || 0}ms`;
+        html += `<div class="text-muted small mb-2">${escaparHtml(info)}` +
+            (dados.truncado
+                ? '<span class="badge-aviso">mostrando os mais próximos</span>'
+                : '<span class="badge-ok">ok</span>') +
+            '</div>';
+        if (dados.filtros_resumo) {
+            html += `<div class="text-muted small mb-2">Filtros: ${escaparHtml(dados.filtros_resumo)}</div>`;
+        }
+        html += renderTabela(dados.colunas, dados.rows)
+            .replace('class="tabela-wrapper"', 'class="tabela-wrapper tabela-wrapper--larga"');
+        html += '</div></div></div>';
+        return html;
+    }
+
     function renderThreadInicial() {
         if (!mensagensIniciais || mensagensIniciais.length === 0) {
             threadEl.innerHTML = '';
@@ -248,6 +426,9 @@
         }
 
         let html = '';
+        let resultadosHtml = '';
+        let resultadosCount = 0;
+        let perguntaAtual = '';
 
         // Agrupa: cada par user/assistant vira um "turno" visual
         let i = 0;
@@ -256,6 +437,7 @@
 
             if (m.papel === 'user') {
                 // Renderiza a pergunta do usuário
+                perguntaAtual = m.conteudo || '';
                 html += renderTurno('user', m.conteudo);
                 i++;
 
@@ -263,8 +445,9 @@
                 if (i < mensagensIniciais.length && mensagensIniciais[i].papel === 'assistant') {
                     const a = mensagensIniciais[i];
 
-                    // 1) Texto natural (se houver), senao cai pro comportamento antigo
-                    const textoNatural = renderRespostaTexto(a.resposta_texto, {
+                    // 1) Texto natural (se houver), senao cai pro comportamento antigo.
+                    // Consulta de proximidade nao tem rodape de RAG (nao houve SQL).
+                    const textoNatural = renderRespostaTexto(a.resposta_texto, a.plano ? null : {
                         linhas: a.total_linhas,
                         truncado: a.truncado,
                     });
@@ -274,27 +457,53 @@
                         html += renderTurno('assistant', a.sql || a.conteudo);
                     }
 
-                    // 2) SQL colapsavel + tabela, se tiver dados
-                    if (a.sql || a.colunas || a.rows) {
-                        html += '<div class="resultado-historico">';
-                        if (a.sql) html += renderSqlColapsavel(a.sql);
+                    // 2) Consulta de proximidade: link + tabela (se o backend
+                    // guardou as linhas; no Postgres so o texto persiste).
+                    if (a.plano) {
+                        let blocoProx;
                         if (a.colunas && a.rows) {
-                            html += '<div class="card mt-3"><div class="card-body">';
+                            blocoProx = renderProximidadeResultado(a);
+                        } else {
+                            blocoProx = '<div class="resultado-historico">' +
+                                renderLinkProximidade(a.plano) + '</div>';
+                        }
+                        if (painelEl) {
+                            resultadosHtml += blocoResultado(perguntaAtual, blocoProx);
+                            resultadosCount++;
+                        } else {
+                            html += blocoProx;
+                        }
+                        i++;
+                        continue;
+                    }
+
+                    // 3) SQL colapsavel + tabela, se tiver dados
+                    if (a.sql || a.colunas || a.rows) {
+                        let blocoSql = '<div class="resultado-historico">';
+                        if (a.sql) blocoSql += renderSqlColapsavel(a.sql);
+                        if (a.colunas && a.rows) {
+                            blocoSql += '<div class="card mt-3"><div class="card-body">';
                             if (a.tempo_ms !== undefined || a.total_linhas !== undefined) {
                                 const info = `${a.total_linhas || 0} linha(s) · ${a.tempo_ms || 0}ms`;
-                                html += `<div class="text-muted small mb-2">${escaparHtml(info)}`;
+                                blocoSql += `<div class="text-muted small mb-2">${escaparHtml(info)}`;
                                 if (a.truncado) {
-                                    html += '<span class="badge-aviso">truncado</span>';
+                                    blocoSql += '<span class="badge-aviso">truncado</span>';
                                 } else {
-                                    html += '<span class="badge-ok">ok</span>';
+                                    blocoSql += '<span class="badge-ok">ok</span>';
                                 }
-                                html += '</div>';
+                                blocoSql += '</div>';
                             }
-                            html += renderTabela(a.colunas, a.rows);
+                            blocoSql += renderTabela(a.colunas, a.rows);
                             atualizarContagemExport(a.total_linhas);
-                            html += '</div></div>';
+                            blocoSql += '</div></div>';
                         }
-                        html += '</div>';
+                        blocoSql += '</div>';
+                        if (painelEl) {
+                            resultadosHtml += blocoResultado(perguntaAtual, blocoSql);
+                            resultadosCount++;
+                        } else {
+                            html += blocoSql;
+                        }
                     }
                     i++;
                 }
@@ -311,6 +520,13 @@
         }
 
         threadEl.innerHTML = html;
+        if (painelEl && resultadosHtml) {
+            mostrarNoPainel(resultadosHtml, resultadosCount + ' resultado(s)');
+        }
+        // Abre a conversa no fim (mensagem/resultado mais recente), nao no topo.
+        window.requestAnimationFrame(function () {
+            threadEl.scrollTop = threadEl.scrollHeight;
+        });
     }
 
     // Versao simples do SQL (usada dentro de alertas de erro).
@@ -336,6 +552,12 @@
         const temCnpjCompleto = colunas.includes('cnpj_completo');
 
         let html = '';
+        html += `<div class="tabela-controles">`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-tabela-topo title="Ir para o topo da tabela"><i class="bi bi-arrow-up"></i> Topo</button>`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-tabela-fim title="Ir para o final da tabela"><i class="bi bi-arrow-down"></i> Final</button>`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-baixar="csv" data-tabela-id="${idTabela}" title="Baixar esta tabela em CSV"><i class="bi bi-filetype-csv"></i> CSV</button>`;
+        html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-baixar="json" data-tabela-id="${idTabela}" title="Baixar esta tabela em JSON"><i class="bi bi-filetype-json"></i> JSON</button>`;
+        html += `</div>`;
         html += `<div class="d-flex justify-content-end mb-2">`;
         html += `<button type="button" class="btn btn-sm btn-outline-secondary" `;
         html += `onclick="window.__toggleGrafico('${idTabela}')">`;
@@ -348,6 +570,7 @@
         const TITULOS_COLUNAS = {
             cnpj_completo: 'CNPJ',
             qtd_estabelecimentos: 'Estabelecimentos',
+            dt_ini: 'Data Abertura',
         };
         // Nome da coluna como rotulo: tira o underscore (cnpj_basico -> cnpj basico)
         function labelColuna(c) {
@@ -532,6 +755,23 @@
             graficoStore[idTabela]._instancia.destroy();
         }
 
+        // Cores da identidade (tokens --viz-*). Chart.js usa Canvas, que nao
+        // entende var(--x): resolve o token num elemento temporario.
+        const probe = document.createElement('span');
+        probe.style.display = 'none';
+        document.body.appendChild(probe);
+        function corDoToken(nome, fallback) {
+            probe.style.color = '';
+            probe.style.color = 'var(' + nome + ')';
+            const cor = getComputedStyle(probe).color;
+            return (cor && cor !== 'rgba(0, 0, 0, 0)') ? cor : fallback;
+        }
+        const viz = [];
+        for (let k = 1; k <= 8; k++) {
+            viz.push(corDoToken('--viz-' + k, '#0F766E'));
+        }
+        const vizSuave = corDoToken('--p-accent-soft', '#e6f7f1');
+        probe.remove();
         graficoStore[idTabela]._instancia = new Chart(canvas, {
             type: decisao.tipo,
             data: {
@@ -539,10 +779,8 @@
                 datasets: [{
                     label: decisao.colunaY,
                     data: valores,
-                    backgroundColor: decisao.tipo === 'pie'
-                        ? ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#0d9488']
-                        : 'rgba(37, 99, 235, 0.5)',
-                    borderColor: 'rgba(37, 99, 235, 1)',
+                    backgroundColor: decisao.tipo === 'pie' ? viz : vizSuave,
+                    borderColor: viz[0],
                     borderWidth: 1,
                 }],
             },
@@ -565,6 +803,8 @@
     async function consultar() {
         const pergunta = perguntaEl.value.trim();
         if (!pergunta) { perguntaEl.focus(); return; }
+        var sugestoes = document.getElementById('chat-sugestoes');
+        if (sugestoes) sugestoes.style.display = 'none';
 
         setLoading(true);
 
@@ -605,15 +845,36 @@
             }
 
             // 2) Texto natural do assistant (com fallback pro SQL bruto)
-            const textoNatural = renderRespostaTexto(dados.resposta_texto, {
-                linhas: dados.total_linhas,
-                truncado: dados.truncado,
-            });
+            const ehProximidade = dados.tipo === 'proximidade';
+            const textoNatural = renderRespostaTexto(
+                dados.resposta_texto,
+                ehProximidade ? null : {
+                    linhas: dados.total_linhas,
+                    truncado: dados.truncado,
+                },
+            );
             if (textoNatural) {
                 threadEl.insertAdjacentHTML('beforeend', textoNatural);
             } else {
                 threadEl.insertAdjacentHTML('beforeend',
                     renderTurno('assistant', dados.sql || ''));
+            }
+
+            // 2.1) Consulta de proximidade: link + tabela, sem SQL
+            if (ehProximidade) {
+                let blocoProx;
+                if (dados.rows && dados.rows.length) {
+                    blocoProx = renderProximidadeResultado(dados);
+                } else {
+                    blocoProx = '<div class="resultado-historico">' +
+                        renderLinkProximidade(dados.plano) + '</div>';
+                }
+                if (!acrescentarNoPainel(blocoResultado(pergunta, blocoProx), 'proximidade')) {
+                    threadEl.insertAdjacentHTML('beforeend', blocoProx);
+                }
+                perguntaEl.value = '';
+                revelarResultado();
+                return;
             }
 
             // 3) SQL colapsavel + tabela + (grafico)
@@ -623,28 +884,100 @@
                 ? `<span class="badge-aviso">truncado em ${dados.limit_valor}</span>`
                 : '<span class="badge-ok">ok</span>';
 
-            threadEl.insertAdjacentHTML('beforeend',
-                '<div class="resultado-historico">' +
+            const blocoSql = '<div class="resultado-historico">' +
                     renderSqlColapsavel(dados.sql) +
                     `<div class="card mt-3"><div class="card-body">` +
                         `<div class="text-muted small mb-2">${escaparHtml(infoTxt)}${badgeOk}</div>` +
                         renderTabela(dados.colunas, dados.rows) +
                     `</div></div>` +
-                '</div>'
-            );
+                '</div>';
+            if (!acrescentarNoPainel(blocoResultado(pergunta, blocoSql), `${dados.total_linhas || 0} linha(s)`)) {
+                threadEl.insertAdjacentHTML('beforeend', blocoSql);
+            }
 
             perguntaEl.value = '';
+            revelarResultado();
 
         } catch (e) {
             threadEl.insertAdjacentHTML('beforeend',
                 renderTurno('assistant', String(e)));
         } finally {
             setLoading(false);
-            // Rola pro final, pra textarea ficar visivel
-            threadEl.scrollTop = threadEl.scrollHeight;
-            window.scrollTo(0, document.body.scrollHeight);
         }
     }
+
+    // Baixa a tabela exibida (CSV/JSON) sem sair da conversa.
+    function baixarTabela(idTabela, formato) {
+        const dados = tabelaStore[idTabela];
+        if (!dados) return;
+        let conteudo;
+        let tipo;
+        if (formato === 'json') {
+            conteudo = JSON.stringify({ colunas: dados.colunas, rows: dados.rows }, null, 2);
+            tipo = 'application/json;charset=utf-8';
+        } else {
+            function celula(v) {
+                const txt = (v === null || v === undefined) ? '' : String(v);
+                return /[";\r\n]/.test(txt) ? '"' + txt.replace(/"/g, '""') + '"' : txt;
+            }
+            const linhas = [dados.colunas.join(';')];
+            dados.rows.forEach(function (linha) {
+                linhas.push(dados.colunas.map(function (c) { return celula(linha[c]); }).join(';'));
+            });
+            conteudo = '\ufeff' + linhas.join('\r\n');
+            tipo = 'text/csv;charset=utf-8';
+        }
+        const blob = new Blob([conteudo], { type: tipo });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'resultado-' + idTabela + '.' + formato;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    // Controles Topo/Final: rolam a tabela (ou o painel) para o extremo.
+    document.addEventListener('click', function (ev) {
+        const aba = ev.target.closest('[data-result-aba]');
+        if (aba) {
+            const item = aba.closest('.chat-panel__item');
+            if (!item) return;
+            const nome = aba.getAttribute('data-result-aba');
+            item.setAttribute('data-aba', nome);
+            item.querySelectorAll('[data-result-aba]').forEach(function (b) {
+                b.classList.toggle('is-active', b === aba);
+            });
+            if (nome === 'sql') {
+                const det = item.querySelector('.sql-detalhe');
+                if (det) det.open = true;
+            }
+            if (nome === 'grafico') {
+                const botaoGrafico = item.querySelector('button[onclick*="__toggleGrafico"]');
+                const canvasGrafico = item.querySelector('[id$="-canvas"]');
+                if (botaoGrafico && (!canvasGrafico || canvasGrafico.style.display === 'none')) {
+                    botaoGrafico.click();
+                }
+            }
+            return;
+        }
+        const baixar = ev.target.closest('[data-baixar]');
+        if (baixar) {
+            ev.preventDefault();
+            baixarTabela(baixar.getAttribute('data-tabela-id'), baixar.getAttribute('data-baixar'));
+            return;
+        }
+        const botao = ev.target.closest('[data-tabela-topo], [data-tabela-fim]');
+        if (!botao) return;
+        const bloco = botao.closest('.resultado-historico') || painelEl;
+        const wrapper = bloco ? bloco.querySelector('.tabela-wrapper') : null;
+        const alvo = (wrapper && wrapper.scrollHeight > wrapper.clientHeight + 4)
+            ? wrapper : (painelEl || wrapper);
+        if (!alvo) return;
+        const fim = botao.hasAttribute('data-tabela-fim');
+        alvo.scrollTo({ top: fim ? alvo.scrollHeight : 0, behavior: 'smooth' });
+    });
 
     botaoEl.addEventListener('click', consultar);
     perguntaEl.addEventListener('keydown', function (ev) {
@@ -654,7 +987,52 @@
         }
     });
 
+    // Sugestoes clicaveis: preenchem e ja consultam.
+    document.querySelectorAll('.chat-sugestao').forEach(function (botao) {
+        botao.addEventListener('click', function () {
+            perguntaEl.value = botao.getAttribute('data-pergunta') || '';
+            consultar();
+        });
+    });
+
     renderThreadInicial();
+    if (mensagensIniciais.length > 0) revelarResultado();
+
+    // ?pergunta=... (links da landing) preenche a conversa nova.
+    (function () {
+        var q = new URLSearchParams(window.location.search).get('pergunta');
+        if (!q) return;
+        if (!perguntaEl.value) perguntaEl.value = q;
+        if (mensagensIniciais.length === 0) setTimeout(consultar, 300);
+    })();
+
+    // Recolher/expandir o painel de resultados; preferencia no navegador.
+    (function () {
+        var workspace = document.getElementById('chat-workspace');
+        var painel = document.getElementById('chat-panel');
+        var abrir = document.getElementById('chat-panel-abrir');
+        var expandir = document.getElementById('chat-panel-expandir');
+        var recolher = document.getElementById('chat-panel-recolher');
+        if (!workspace || !painel || !abrir || !expandir || !recolher) return;
+        var CHAVE = 'chat-panel-layout';
+
+        function aplicar(estado) {
+            if (estado !== 'largo' && estado !== 'recolhido') estado = 'normal';
+            workspace.classList.toggle('chat-workspace--largo', estado === 'largo');
+            workspace.classList.toggle('chat-workspace--recolhido', estado === 'recolhido');
+            abrir.hidden = estado !== 'recolhido';
+            expandir.setAttribute('aria-pressed', estado === 'largo' ? 'true' : 'false');
+            expandir.title = estado === 'largo' ? 'Reduzir painel de resultados' : 'Expandir painel de resultados';
+            try { localStorage.setItem(CHAVE, estado); } catch (e) {}
+        }
+
+        abrir.addEventListener('click', function () { aplicar('normal'); });
+        recolher.addEventListener('click', function () { aplicar('recolhido'); });
+        expandir.addEventListener('click', function () {
+            aplicar(workspace.classList.contains('chat-workspace--largo') ? 'normal' : 'largo');
+        });
+        try { aplicar(localStorage.getItem(CHAVE) || 'normal'); } catch (e) { aplicar('normal'); }
+    })();
 
     // Drawer do protótipo "layout amplo" (inofensivo no layout padrão)
     (function () {

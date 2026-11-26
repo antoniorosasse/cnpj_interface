@@ -5,7 +5,7 @@
     'use strict';
 
     // Mesma ordem de cores usada no {% cycle %} da legenda (portal-inteligencia.css).
-    var CORES = ['var(--p-accent)', '#7dd3fc', '#a5b4fc', '#38bdf8'];
+    var CORES = ['var(--viz-1)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-2)'];
 
     function fmt(n) {
         var v = Number(n);

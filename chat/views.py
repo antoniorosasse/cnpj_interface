@@ -27,6 +27,8 @@ from django.views.decorators.http import require_POST
 
 from .services.sql_generator import gerar_sql
 from .services.sql_executor import executar_sql
+from .services.planner import parece_proximidade, planejar
+from .services.proximidade_service import consultar_proximidade
 from .services.resposta_natural import (
     LIMITE_LINHAS,
     gerar_texto_resposta,
@@ -119,6 +121,101 @@ def _historico_para_llm(conversa, limite=MAX_CONTEXTO):
     return historico
 
 
+def _contexto_geo_da_conversa(conversa):
+    """
+    Ultima origem geografica usada na conversa (para "deste endereco").
+
+    Le o campo `plano` da mensagem do assistente (Postgres: JSONField;
+    Mongo: dict). Devolve {'latitude','longitude','rotulo','texto'} ou None.
+    """
+    if conversa is None:
+        return None
+    cid = _conversa_id(conversa)
+    if cid is None:
+        return None
+    try:
+        mensagens = repo.ultimas_mensagens(cid, limite=20)
+    except Exception:
+        logger.exception('Falha ao ler mensagens para o contexto geo')
+        return None
+
+    for mensagem in reversed(list(mensagens or [])):
+        if isinstance(mensagem, dict):
+            plano = mensagem.get('plano')
+        else:
+            plano = getattr(mensagem, 'plano', None)
+        if not isinstance(plano, dict):
+            continue
+        origem = plano.get('origem')
+        if not isinstance(origem, dict):
+            continue
+        if origem.get('latitude') is None or origem.get('longitude') is None:
+            continue
+        return {
+            'latitude': origem.get('latitude'),
+            'longitude': origem.get('longitude'),
+            'rotulo': origem.get('rotulo') or origem.get('texto') or '',
+            'texto': origem.get('texto') or '',
+        }
+    return None
+
+
+def _resposta_proximidade(cid, pergunta, consulta):
+    """Salva as mensagens e devolve o JSON da consulta de proximidade."""
+    if consulta.get('ok'):
+        repo.adicionar_mensagem(cid, 'user', pergunta)
+        repo.adicionar_mensagem(
+            cid,
+            'assistant',
+            consulta['resumo'],
+            resposta_texto=consulta['resumo'],
+            plano=consulta.get('plano'),
+            colunas=consulta.get('colunas'),
+            rows=consulta.get('rows'),
+            total_linhas=consulta.get('total'),
+            truncado=consulta.get('tem_mais'),
+            tempo_ms=consulta.get('tempo_ms'),
+        )
+        return JsonResponse({
+            'ok': True,
+            'tipo': 'proximidade',
+            'etapa': 'ok',
+            'sql': '',
+            'resposta_texto': consulta['resumo'],
+            'colunas': consulta.get('colunas') or [],
+            'rows': consulta.get('rows') or [],
+            'total_linhas': consulta.get('total') or 0,
+            'truncado': bool(consulta.get('tem_mais')),
+            'tempo_ms': consulta.get('tempo_ms') or 0,
+            'erro': None,
+            'link_proximidade': consulta.get('link') or '',
+            'origem': consulta.get('origem') or {},
+            'raio_km': consulta.get('raio_km'),
+            'filtros_resumo': consulta.get('filtros_resumo') or '',
+            'plano': consulta.get('plano') or {},
+        })
+
+    # Esclarecimento (falta origem/atividade) ou erro de execucao: vira uma
+    # mensagem normal do assistente, sem tabela.
+    texto = consulta.get('erro') or 'Nao consegui fazer a consulta de proximidade.'
+    repo.adicionar_mensagem(cid, 'user', pergunta)
+    repo.adicionar_mensagem(cid, 'assistant', texto, resposta_texto=texto)
+    esclarecimento = consulta.get('etapa') == 'esclarecimento'
+    return JsonResponse({
+        'ok': esclarecimento,
+        'tipo': 'proximidade',
+        'etapa': consulta.get('etapa') or 'execucao',
+        'sql': '',
+        'resposta_texto': texto,
+        'colunas': [],
+        'rows': [],
+        'total_linhas': 0,
+        'truncado': False,
+        'tempo_ms': 0,
+        'erro': None if esclarecimento else texto,
+    })
+
+
 @login_required
 def chat_view(request):
     """Renderiza a pagina do chat (com a conversa atual ou nova)."""
@@ -165,9 +262,15 @@ def chat_view(request):
     # Quantidade de linhas da ultima resposta com lista (rotulo do botao de export)
     ultima_lista_linhas = None
     for msg in reversed(list(mensagens)):
-        tem_sql = bool(msg.get('sql') if isinstance(msg, dict) else getattr(msg, 'sql', ''))
-        if tem_sql:
-            valor = msg.get('total_linhas') if isinstance(msg, dict) else getattr(msg, 'total_linhas', None)
+        if isinstance(msg, dict):
+            tem_sql = bool(msg.get('sql'))
+            tem_plano = bool(msg.get('plano'))
+            valor = msg.get('total_linhas')
+        else:
+            tem_sql = bool(getattr(msg, 'sql', ''))
+            tem_plano = bool(getattr(msg, 'plano', None))
+            valor = getattr(msg, 'total_linhas', None)
+        if tem_sql or tem_plano:
             ultima_lista_linhas = valor
             break
 
@@ -179,7 +282,8 @@ def chat_view(request):
                 'conteudo': m.get('conteudo', ''),
             }
             for chave in ('sql', 'resposta_texto', 'colunas', 'rows',
-                          'total_linhas', 'truncado', 'tempo_ms', 'erro'):
+                          'total_linhas', 'truncado', 'tempo_ms', 'erro',
+                          'plano'):
                 if chave in m and m[chave] is not None:
                     d[chave] = m[chave]
             return d
@@ -193,10 +297,20 @@ def chat_view(request):
                 d['sql'] = m.sql
             if m.resposta_texto:
                 d['resposta_texto'] = m.resposta_texto
+            if getattr(m, 'colunas', None):
+                d['colunas'] = m.colunas
+            if getattr(m, 'rows', None):
+                d['rows'] = m.rows
             if m.total_linhas is not None:
                 d['total_linhas'] = m.total_linhas
+            if getattr(m, 'truncado', None) is not None:
+                d['truncado'] = m.truncado
             if m.tempo_ms is not None:
                 d['tempo_ms'] = m.tempo_ms
+            if getattr(m, 'erro', ''):
+                d['erro'] = m.erro
+            if getattr(m, 'plano', None):
+                d['plano'] = m.plano
             return d
 
     from exportacao.servicos import uso_atual
@@ -281,6 +395,20 @@ def chat_api_view(request):
 
     # --- historico para o LLM ---
     historico = _historico_para_llm(conversa)
+
+    # --- 0) rota de proximidade (ferramenta deterministica) ---
+    # A heuristica existe para nao pagar uma chamada de LLM em toda pergunta.
+    # Se o planner disser que nao e' geo (ou falhar), cai no pipeline SQL.
+    contexto_geo = _contexto_geo_da_conversa(conversa)
+    if parece_proximidade(pergunta):
+        resultado_plano = planejar(
+            pergunta, historico=historico, contexto_geo=contexto_geo)
+        if (resultado_plano.get('ok')
+                and resultado_plano.get('intencao') == 'proximidade'):
+            consulta = consultar_proximidade(
+                resultado_plano['plano'], contexto_geo=contexto_geo,
+                pergunta=pergunta)
+            return _resposta_proximidade(cid, pergunta, consulta)
 
     # --- 1) gera SQL ---
     geracao = gerar_sql(pergunta=pergunta, historico=historico)

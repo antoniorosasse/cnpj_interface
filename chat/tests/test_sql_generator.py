@@ -15,6 +15,7 @@ from django.test import TestCase
 
 from chat.services.sql_generator import (
     gerar_sql,
+    montar_bloco_categorias,
     _limpar_sql,
     _montar_user_prompt,
     _usa_fallback_vetor,
@@ -338,6 +339,9 @@ class AtividadeENomeTests(TestCase):
         self.assertIn('mercados KOCH', texto)
         self.assertIn('NUNCA descarte o filtro de atividade', texto)
         self.assertIn('ORDER BY emp.razao_social', texto)
+        # Regras novas: capital social e data de abertura (dt_ini).
+        self.assertIn('capital_social', texto)
+        self.assertIn('dt_ini', texto)
 
     def test_schema_context_tem_secao_atividade_e_nome(self):
         texto = self._sem_quebras(SCHEMA_CONTEXT)
@@ -500,4 +504,65 @@ class HistoricoNoPromptTests(TestCase):
         args, kwargs = mock_llm.call_args
         user_prompt = kwargs.get('user_prompt') or args[1]
 
-        self.assertNotIn('Historico da conversa', user_prompt)        
+        self.assertNotIn('Historico da conversa', user_prompt)
+
+
+class CategoriaCnaeKBTests(TestCase):
+    """
+    KB fixa de categorias de negocio (core/cnae_categorias.py).
+
+    As perguntas reais ("industrias metalurgicas", "clinicas medicas e
+    odontologicas") nao sao termos do nm_cnae: o ILIKE acha coisa errada
+    ("clinica" casa "clinicas de estetica") e o vetor, sozinho, traz no
+    maximo 2 vizinhos. O bloco entra no prompt do usuario com o filtro
+    CNAE exato e proibe o embedding para a atividade.
+    """
+
+    def test_bloco_de_metalurgicas_usa_as_divisoes_24_e_25(self):
+        bloco = montar_bloco_categorias('industrias metalurgicas em SC')
+        self.assertIn('2400000', bloco)
+        self.assertIn('2599999', bloco)
+        self.assertIn('e.cnae_principal BETWEEN 2400000 AND 2599999', bloco)
+        # Instrucao explicita: nada de embedding/vetor para a atividade.
+        self.assertIn('NAO use embedding', bloco)
+        self.assertIn('%s::halfvec(384)', bloco)
+
+    def test_bloco_de_clinicas_usa_os_codigos_da_kb(self):
+        bloco = montar_bloco_categorias('clinicas medicas e odontologicas')
+        self.assertIn('8630501', bloco)
+        self.assertIn('8640202', bloco)
+        self.assertIn('e.cnae_principal IN (', bloco)
+        self.assertNotIn('BETWEEN', bloco)
+
+    def test_termo_fora_da_kb_nao_gera_bloco(self):
+        self.assertEqual(
+            montar_bloco_categorias('empresas de energia solar'), '')
+
+    def test_prompt_e_schema_citam_a_kb_e_a_quantidade(self):
+        texto = re.sub(r'\s+', ' ', SYSTEM_PROMPT)
+        self.assertIn('CATEGORIA CNAE DETECTADA PELA KB', texto)
+        self.assertIn('LIMIT N', texto)
+        schema = re.sub(r'\s+', ' ', SCHEMA_CONTEXT)
+        self.assertIn('CATEGORIAS DE NEGOCIO (KB FIXA)', schema)
+        self.assertIn('BETWEEN 1000000 AND 3399999', schema)
+        self.assertIn('8630501', schema)
+
+    @patch(ALVO_LLM)
+    def test_gerar_sql_inclui_o_bloco_no_user_prompt(self, mock_llm):
+        # SQL fake valido: o fluxo (limpeza + validador + LIMIT) nao muda.
+        mock_llm.return_value = 'SELECT 1 AS x'
+        r = gerar_sql('industrias metalurgicas em SC')
+
+        self.assertTrue(r['ok'], msg=r.get('erro'))
+        self.assertEqual(r['sql'], 'SELECT 1 AS x LIMIT 1000')
+
+        user_prompt = mock_llm.call_args.kwargs.get('user_prompt')
+        self.assertIn('CATEGORIA CNAE DETECTADA PELA KB', user_prompt)
+        self.assertIn('2400000', user_prompt)
+        self.assertIn(
+            'Pergunta atual: industrias metalurgicas em SC', user_prompt)
+        # O bloco vem DEPOIS da pergunta atual (nao a substitui).
+        self.assertGreater(
+            user_prompt.index('CATEGORIA CNAE DETECTADA PELA KB'),
+            user_prompt.index('Pergunta atual'),
+        )

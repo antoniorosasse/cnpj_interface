@@ -29,6 +29,10 @@ urlpatterns = [
     path('proximidade/mapa/pontos/', views.proximidade_mapa_pontos,
          name='proximidade_mapa_pontos'),
 
+    # Todos os pontos do recorte filtrado (botao "mostrar todos no mapa")
+    path('proximidade/mapa/filtrado/', views.proximidade_mapa_filtrado,
+         name='proximidade_mapa_filtrado'),
+
     # Busca rápida via AJAX
     path('busca-rapida/', views.buscar_empresas_rapido, name='busca_rapida'),
 

@@ -33,6 +33,21 @@ sai de `c_ceps_estab_sit` (cep, cd_sit_cadastro, n_matrizes, n_total), criada po
 situacao (`c_ceps_estab`) nao serve para o filtro. Se `c_ceps_estab_sit` nao
 existir, a tela cai para "Pagina X" (sem total) e continua funcionando.
 
+Busca filtrada (`buscar_proximos_filtrado`, desde 25/11/2026): quando a
+pergunta traz CNAE, data de abertura ou capital social, os CEPs do bbox sao
+lidos em Python e passados como array (`= ANY(%(ceps)s)`); o filtro roda num
+CTE MATERIALIZED antes da distancia. A ordem importa: com a varredura do raio
+(ceps primeiro) + filtro de CNAE a consulta estourou 30 s, e a CTE de CEPs
+sem array tem estimativa ~20x menor que o real (147 x 3.275 em Curitiba/5 km),
+o que leva o planner a um hash join de 74 M de linhas. O total exato vem de
+`count(*) OVER ()` na mesma consulta. Nessa funcao as filiais entram por
+padrao (o raio de supermercado/padaria e' lead); a pagina continua com o
+checkbox "somente matrizes". Medido em dev (25/11/2026): 4 a 22 s no
+primeiro acesso (banco frio e I/O-bound) e 1,8 a 3,2 s na segunda execucao nos
+3 casos sem capital; o caso com capital social e' o pior (17 a 22 s). Um indice
+nao-parcial em cnae_principal foi testado e nao mudou o tempo: o gargalo e'
+I/O aleatorio no heap ao varrer o raio (ver README).
+
 Cursor do keyset: o km vai e volta na querystring com `repr(float)`
 (round-trip exato; ver `km_para_texto`). Arredondar o km (f'{km:.6f}', que era o
 codigo ate 2026-11) quebra a paginacao quando varias linhas empatam no mesmo km
@@ -172,6 +187,39 @@ SQL_LOGRADOURO = f"""
        AND (%(ibge)s = 0 OR id_municipio = %(ibge)s)
        AND {sql_sem_acento('logradouro')} LIKE %(termo)s
 """
+
+# Media das coordenadas do ENDERECO (c_estab_geo/CNEFE) das empresas do
+# logradouro. A media dos CEPs pode cair fora da rua quando o logradouro e'
+# longo/curvo ou tem CEP com coordenada ruim (caso Rua do Principe,
+# Joinville/SC: media dos CEPs -26.3051/-48.8364 x enderecos -26.30296/-48.84527,
+# ~1 km fora). Usada quando ha pelo menos N_GEO_MIN enderecos casados.
+SQL_LOGRADOURO_GEO = f"""
+    WITH ceps AS MATERIALIZED (
+        SELECT cep
+          FROM c_ceps
+         WHERE latitude IS NOT NULL
+           AND longitude IS NOT NULL
+           AND latitude BETWEEN %(lat_min)s AND %(lat_max)s
+           AND longitude BETWEEN %(lon_min)s AND %(lon_max)s
+           AND (%(uf)s = '' OR uf = %(uf)s)
+           AND (%(ibge)s = 0 OR id_municipio = %(ibge)s)
+           AND {sql_sem_acento('logradouro')} LIKE %(termo)s
+    )
+    SELECT count(*) AS n_geo,
+           avg(g.latitude) AS latitude,
+           avg(g.longitude) AS longitude
+      FROM c_estabelecimentos e
+      JOIN c_estab_geo g
+        ON g.cnpj_completo = e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv
+     WHERE e.cep IN (SELECT cep FROM ceps)
+       AND {sql_sem_acento('e.logradouro')} LIKE %(termo)s
+"""
+
+# Minimo de enderecos casados para trocar a media dos CEPs pela dos enderecos.
+N_GEO_MIN = 5
+# Acima deste numero de CEPs o join com c_estab_geo fica caro demais; fica
+# a media dos CEPs (avenida longa/reta).
+N_CEPS_GEO_MAX = 20
 
 SQL_CEP = """
     SELECT cep, latitude, longitude, nome_municipio, uf
@@ -360,13 +408,43 @@ def _origem_endereco(cur, texto):
                       f'{cidade["rotulo"].split(" (")[0]}. '
                       'Tente só a cidade ou um CEP.')
 
+    # Tenta a media dos ENDERECOS (CNEFE). A media dos CEPs fica no meio
+    # geometrico dos centroides e, em rua longa/curva, cai fora da rua.
+    latitude = float(linha['latitude'])
+    longitude = float(linha['longitude'])
+    rotulo_geo = f'média de {linha["n_ceps"]} CEPs do logradouro'
+    try:
+        # Logradouro com muitos CEPs (avenida longa: Avenida Paulista tem 86)
+        # faz o join com c_estab_geo varrer dezenas de milhares de enderecos
+        # (medido: 29 s). Nesses casos a media dos CEPs ja e' boa e barata.
+        if (int(linha['n_ceps']) <= N_CEPS_GEO_MAX
+                and tem_tabela_total(cur, 'c_estab_geo')):
+            # A RFB grava o logradouro SEM o tipo ("DO PRINCIPE", nao "RUA DO
+            # PRINCIPE"); por isso tenta os dois termos e usa o que tiver
+            # enderecos suficientes (o primeiro pode casar so 5 ruas/CEP).
+            # O termo sem o tipo ("DO PRINCIPE") e' o que casa com a RFB;
+            # tenta ele primeiro para nao pagar duas consultas.
+            for termo_geo in reversed(termos):
+                cur.execute(SQL_LOGRADOURO_GEO,
+                            {**params, 'termo': f'%{termo_geo}%'})
+                geo = cur.fetchone()
+                if (geo and geo.get('n_geo')
+                        and _float(geo.get('latitude')) is not None
+                        and int(geo['n_geo']) >= N_GEO_MIN):
+                    latitude = float(geo['latitude'])
+                    longitude = float(geo['longitude'])
+                    rotulo_geo = 'média dos endereços do logradouro'
+                    break
+    except Exception:
+        # Sem c_estab_geo (ou consulta falhou): mantem a media dos CEPs.
+        pass
+
     municipio = linha['nome_municipio'] or cidade['rotulo'].split('/')[0]
     rotulo_uf = f'/{linha["uf"]}' if linha['uf'] else ''
     return {
-        'latitude': float(linha['latitude']),
-        'longitude': float(linha['longitude']),
-        'rotulo': (f'{logradouro} - {municipio}{rotulo_uf} '
-                   f'(média de {linha["n_ceps"]} CEPs do logradouro)'),
+        'latitude': latitude,
+        'longitude': longitude,
+        'rotulo': f'{logradouro} - {municipio}{rotulo_uf} ({rotulo_geo})',
     }, None
 
 
@@ -562,6 +640,125 @@ SQL_PROXIMOS = """
      ORDER BY c.km, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv
      LIMIT %(limite)s
 """
+
+# Busca filtrada (chat e filtros que a pagina ainda nao tem): os CEPs do
+# bbox sao lidos ANTES, em Python (uma consulta barata em c_ceps), e passados
+# como array no `= ANY(%(ceps)s)`. Assim o planner nao tem a estimativa errada
+# da CTE (ele achava 147 CEPs onde havia 3.275 em Curitiba/5 km e trocava o
+# nested loop por um hash join que varria 74 M de linhas).
+#
+# A ordem foi medida em 25/11/2026 (base de 74,4 M, banco local):
+#   - filtro no join do raio com CNAE: estourou 30 s;
+#   - candidato por CNAE antes do raio: varre o estado inteiro (e filial nao
+#     tem indice de cnae) -> timeout;
+#   - CEPs do raio + array + filtro: 1,5 a 3 s quentes nos casos do chat.
+#
+# `cand_estab` MATERIALIZED garante que o filtro de estabelecimento roda
+# primeiro. O capital social vira um EXISTS correlacionado (lookup por
+# cnpj_basico so nos candidatos): como JOIN o planner comeca por c_empresas
+# (71 M) e a consulta chega a 22 s.
+#
+# `count(*) OVER ()` traz o total exato com os mesmos filtros na mesma
+# passada. Cuidado: o total conta estabelecimentos, nao empresas - com
+# filiais incluidas (padrao do chat) a mesma empresa pode aparecer mais de
+# uma vez.
+#
+# Modo ENDERECO (usar_endereco=True): junta c_estab_geo (CNEFE) e usa a
+# coordenada do endereco quando existe E a folga do CEP (c_ceps_folga) e' de
+# ate 1 km; senao continua o centroide do CEP. O bbox dos CEPs e' aberto em
+# FOLGA_MAX_ORDEM_ENDERECO para nao perder enderecos que caem dentro do raio
+# mas cujo CEP esta fora da caixa. O km da linha passa a ser o do endereco
+# (e o keyset/total acompanham).
+SQL_CEPS_CAIXA = """
+    SELECT cep
+      FROM c_ceps
+     WHERE latitude BETWEEN %(lat_min)s AND %(lat_max)s
+       AND longitude BETWEEN %(lon_min)s AND %(lon_max)s
+"""
+
+SQL_PROXIMOS_FILTRADO = """
+    WITH cand_estab AS MATERIALIZED (
+        SELECT e.cnpj_basico,
+               e.cnpj_ordem,
+               e.cnpj_dv,
+               e.cep,
+               e.cd_matriz_filial,
+               e.nm_fantasia,
+               e.logradouro,
+               e.numero,
+               e.bairro,
+               e.uf,
+               e.municipio,
+               e.ddd_1,
+               e.tel_1,
+               e.email,
+               e.cnae_principal,
+               e.cd_sit_cadastro,
+               e.dt_ini
+          FROM c_estabelecimentos e
+         WHERE e.cep = ANY(%(ceps)s)
+           {filtros}
+    )
+    , cand_km AS (
+        SELECT e.*,
+               {campos_coordenada}
+               c.nome_municipio AS cep_municipio,
+               {campos_km}
+               {campo_precisao_cand}
+          FROM cand_estab e
+          JOIN c_ceps c ON c.cep = e.cep
+          {join_endereco}
+    )
+    SELECT e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+           e.cnpj_basico,
+           e.cnpj_ordem,
+           e.cnpj_dv,
+           e.cd_matriz_filial,
+           e.nm_fantasia,
+           e.logradouro,
+           e.numero,
+           e.bairro,
+           e.uf,
+           COALESCE(mg.nome, e.cep_municipio) AS municipio_nome,
+           e.ddd_1 || e.tel_1 AS telefone_1,
+           e.email,
+           e.cnae_principal,
+           cn.nm_cnae AS atividade_principal,
+           e.cd_sit_cadastro,
+           CASE e.cd_sit_cadastro
+               WHEN 1 THEN 'NULA'
+               WHEN 2 THEN 'ATIVA'
+               WHEN 3 THEN 'SUSPENSA'
+               WHEN 4 THEN 'INAPTA'
+               WHEN 8 THEN 'BAIXADA'
+           END AS situacao_descricao,
+           e.dt_ini,
+           e.latitude,
+           e.longitude,
+           e.km
+           {campo_precisao}
+           {col_total}
+      FROM cand_km e
+      LEFT JOIN c_municipios_geo mg ON mg.cd_municipio = e.municipio
+      LEFT JOIN c_cnaes cn ON cn.cnae = e.cnae_principal
+     WHERE e.km <= %(raio)s
+       {filtro_depois}
+     ORDER BY e.km, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv
+     LIMIT %(limite_mais)s
+"""
+
+# Teto e timeout da busca filtrada. O teto de 5.000 e' o mesmo do export do
+# chat; a tela usa 1.000 (CHAT_SQL_MAX_ROWS). O timeout e' maior que o da
+# pagina porque o candidato filtrado pode ser grande (atividade comum em
+# capital) - mesmo assim, acima disso o certo e' refinar o filtro.
+LIMITE_MAX_FILTRADO = 5000
+TIMEOUT_FILTRADO_MS = 25000
+
+# CEPs do bbox passados como array no `= ANY`. Em capital densa 5 km ja da
+# ~3.300 (Curitiba) a ~9.500 (Av. Paulista); 50 mil cobre ate ~10 km nesses
+# casos. Acima disso o array fica grande demais e o certo e' reduzir o raio
+# (medido em 25/11/2026).
+MAX_CEPS_FILTRADO = 50000
 
 # Soma das contagens por CEP: c_ceps_estab (ProjetoCargaDados:
 # contar_estab_por_cep) evita o COUNT no raio, que custa 5-15 s. O ANY(ARRAY)
@@ -1002,6 +1199,264 @@ def buscar_proximos(cur, latitude, longitude, raio_km, somente_matrizes,
         razoes = {r['cnpj_basico']: r['razao_social'] for r in cur.fetchall()}
         for linha in linhas:
             linha['razao_social'] = razoes.get(linha['cnpj_basico'])
+            linha['maps_url'] = montar_maps_url(linha)
+
+    return linhas, tem_mais, total
+
+
+def buscar_proximos_filtrado(cur, latitude, longitude, raio_km, limite=248,
+                             situacao=None, matrizes=False,
+                             faixas_cnae=None, cnaes=None, uf=None,
+                             dt_ini_antes_de=None, capital_min=None,
+                             depois=None, contar=True, usar_endereco=False):
+    """
+    Estabelecimentos ate raio_km do ponto, com filtros seletivos.
+
+    Diferente de `buscar_proximos` (que varre todos os CEPs do raio e usa a
+    tabela agregada para o total), aqui o filtro entra antes da distancia:
+
+      1. os CEPs do bbox sao lidos em Python (uma consulta barata em c_ceps);
+      2. `cand_estab` MATERIALIZED filtra c_estabelecimentos por
+         `cep = ANY(ceps)` + filtros (CNAE, UF, situacao, dt_ini);
+      3. se houver capital social, o filtro e' um EXISTS correlacionado por
+         cnpj_basico (se virar JOIN, o planner comeca por c_empresas (71 M)
+         e a consulta chega a 22 s);
+      4. a distancia haversine e o total (`count(*) OVER ()`) saem na mesma
+         consulta.
+
+    Parametros:
+      raio_km         1..100 (clampado); na pratica o filtro limita pelo
+                      numero de CEPs do bbox (MAX_CEPS_FILTRADO, ~10 km em
+                      capital). Acima disso levanta ValueError.
+      limite          1..LIMITE_MAX_FILTRADO (default 248 = "as N mais proximas")
+      situacao        codigo cd_sit_cadastro (2 = ativa) ou None
+      matrizes        True = so matriz; False (default) = matriz + filial.
+                      O chat usa False porque filial de supermercado/padaria
+                      tambem e' lead; a pagina usa True no checkbox.
+      faixas_cnae     lista de (min, max) inteiros, ex.: [(2400000, 2599999)]
+      cnaes           lista de subclasses explicitas, ex.: [8630501, ...]
+      uf              sigla (filtra e.uf)
+      dt_ini_antes_de date: "abertas ha mais de X anos" (dt_ini < data)
+      capital_min     numero: "capital social acima de R$ X" (> capital_min)
+      depois          cursor keyset (km, cnpj_completo) da ultima linha da
+                      pagina anterior (None = primeira pagina); usado pela
+                      pagina e pelo export para paginar sem OFFSET
+      contar          True (default) devolve o total exato via count(*) OVER ();
+                      False nao calcula o total (export em blocos, onde o custo
+                      de contar cada bloco nao compensa) e devolve total=None
+      usar_endereco   True = km/coordenada do ENDERECO (c_estab_geo/CNEFE)
+                      quando existe e a folga do CEP e' <= 1 km; senao do CEP.
+                      Quem chama deve conferir se c_estab_geo e c_ceps_folga
+                      existem (a pagina usa _resolver_ordem).
+
+    Sem pelo menos um de faixas_cnae/cnaes/capital_min/dt_ini_antes_de a
+    funcao levanta ValueError: `uf`/`situacao` sozinhos nao sao seletivos o
+    bastante e o caminho correto e' `buscar_proximos`.
+
+    Devolve (linhas, tem_mais, total):
+      linhas   list[dict] com cnpj_completo, razao_social, municipio_nome,
+               atividade_principal, situacao_descricao, dt_ini, latitude,
+               longitude, km, maps_url etc. (campos de `buscar_proximos` +
+               capital_social)
+      tem_mais True quando total > limite
+      total    total exato da consulta com os mesmos filtros (count(*) OVER ())
+    """
+    faixas = [(int(a), int(b)) for a, b in (faixas_cnae or [])
+              if a is not None and b is not None]
+    lista_cnaes = sorted({int(c) for c in (cnaes or []) if c is not None})
+    if not faixas and not lista_cnaes and capital_min is None and dt_ini_antes_de is None:
+        raise ValueError(
+            'buscar_proximos_filtrado exige filtro de CNAE, data de abertura '
+            'ou capital social; sem filtro seletivo use buscar_proximos.'
+        )
+
+    raio_km = max(RAIO_MIN_KM, min(RAIO_MAX_KM, int(raio_km)))
+    limite = max(1, min(LIMITE_MAX_FILTRADO, int(limite)))
+
+    # No modo endereco o bbox dos CEPs abre FOLGA_MAX_ORDEM_ENDERECO: um
+    # endereco pode estar dentro do raio mesmo com o centroide do CEP um pouco
+    # fora da caixa (a folga e' o desvio maximo endereco x centroide no CEP).
+    raio_caixa = raio_km
+    if usar_endereco:
+        raio_caixa = min(RAIO_MAX_KM, raio_km + FOLGA_MAX_ORDEM_ENDERECO)
+    caixa = caixa_geografica(latitude, longitude, raio_caixa)
+    params = {
+        'lat': latitude,
+        'lon': longitude,
+        'raio': raio_km,
+        'limite_mais': limite + 1,
+    }
+    params.update(caixa)
+    if usar_endereco:
+        params['folga_max'] = FOLGA_MAX_ORDEM_ENDERECO
+
+    # CEPs do bbox lidos antes e passados como array. O `= ANY(array)` usa o
+    # indice de cep sem depender da estimativa do planner (que errava feio na
+    # CTE: 147 x 3.275 CEPs em Curitiba/5 km).
+    cur.execute(SQL_CEPS_CAIXA, caixa)
+    ceps = [linha['cep'] for linha in cur.fetchall()]
+    if not ceps:
+        return [], False, 0
+    if len(ceps) > MAX_CEPS_FILTRADO:
+        raise ValueError(
+            'A área de busca é grande demais para esse filtro: '
+            f'{len(ceps):,} CEPs no raio. '
+            'Reduza o raio para cerca de 10 km ou informe a UF/cidade.'
+        )
+    params['ceps'] = ceps
+
+    filtros = []
+    if matrizes:
+        filtros.append('AND e.cd_matriz_filial = 1')
+    if situacao not in (None, ''):
+        params['situacao'] = int(situacao)
+        filtros.append('AND e.cd_sit_cadastro = %(situacao)s')
+    if uf:
+        params['uf'] = str(uf).strip().upper()[:2]
+        filtros.append('AND e.uf = %(uf)s')
+    if dt_ini_antes_de is not None:
+        params['dt_ini_antes_de'] = dt_ini_antes_de
+        filtros.append('AND e.dt_ini < %(dt_ini_antes_de)s')
+
+    # CNAE: faixas (divisao/secao) e/ou subclasses explicitas, ligadas por OR
+    # dentro do mesmo filtro. Um OR de BETWEEN por divisao nao escala (medido:
+    # 11,6 s com BETWEENs separados x 0,7 s com a faixa unica), por isso a
+    # taxonomia ja entrega divisoes consecutivas num intervalo so.
+    partes_cnae = []
+    for indice, (inicio, fim) in enumerate(faixas):
+        params[f'cnae_min_{indice}'] = inicio
+        params[f'cnae_max_{indice}'] = fim
+        partes_cnae.append(
+            f'e.cnae_principal BETWEEN %(cnae_min_{indice})s '
+            f'AND %(cnae_max_{indice})s'
+        )
+    if lista_cnaes:
+        params['cnaes'] = lista_cnaes
+        partes_cnae.append('e.cnae_principal = ANY(%(cnaes)s)')
+    if partes_cnae:
+        filtros.append('AND (' + ' OR '.join(partes_cnae) + ')')
+
+    # Capital social entra como EXISTS correlacionado: o lookup por
+    # cnpj_basico (PK) roda so nos candidatos. Medido em 25/11/2026
+    # (Curitiba/10 km, transportadoras): 22 s com JOIN/hash contra c_empresas
+    # (71 M) x 8,4 s com EXISTS.
+    if capital_min is not None:
+        params['capital_min'] = float(capital_min)
+        filtros.append(
+            'AND EXISTS (SELECT 1 FROM c_empresas emp '
+            'WHERE emp.cnpj_basico = e.cnpj_basico '
+            'AND emp.capital_social > %(capital_min)s)'
+        )
+
+    filtro_depois = ''
+    if depois:
+        try:
+            depois_km, depois_cnpj = depois
+            depois_km = float(depois_km)
+            if len(str(depois_cnpj)) == 14:
+                filtro_depois = (
+                    'AND (e.km, e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv) > '
+                    '(%(depois_km)s, %(depois_basico)s, %(depois_ordem)s, '
+                    '%(depois_dv)s)'
+                )
+                params.update({
+                    'depois_km': depois_km,
+                    'depois_basico': str(depois_cnpj)[:8],
+                    'depois_ordem': str(depois_cnpj)[8:12],
+                    'depois_dv': str(depois_cnpj)[12:14],
+                })
+        except (TypeError, ValueError):
+            filtro_depois = ''
+
+    if usar_endereco:
+        campos_coordenada = (
+            'CASE WHEN g.latitude IS NOT NULL '
+            'AND coalesce(f.folga_km, 0) <= %(folga_max)s\n'
+            '                    THEN g.latitude ELSE c.latitude END AS latitude,\n'
+            '               CASE WHEN g.latitude IS NOT NULL '
+            'AND coalesce(f.folga_km, 0) <= %(folga_max)s\n'
+            '                    THEN g.longitude ELSE c.longitude END AS longitude,'
+        )
+        haversine_g = (
+            '6371 * acos(least(1.0,\n'
+            '                       cos(radians(%(lat)s)) * cos(radians(g.latitude)) *\n'
+            '                       cos(radians(g.longitude) - radians(%(lon)s)) +\n'
+            '                       sin(radians(%(lat)s)) * sin(radians(g.latitude))\n'
+            '                   ))'
+        )
+        haversine_c = (
+            '6371 * acos(least(1.0,\n'
+            '                       cos(radians(%(lat)s)) * cos(radians(c.latitude)) *\n'
+            '                       cos(radians(c.longitude) - radians(%(lon)s)) +\n'
+            '                       sin(radians(%(lat)s)) * sin(radians(c.latitude))\n'
+            '                   ))'
+        )
+        campos_km = (
+            'CASE WHEN g.latitude IS NOT NULL '
+            'AND coalesce(f.folga_km, 0) <= %(folga_max)s\n'
+            f'                    THEN {haversine_g}\n'
+            f'                    ELSE {haversine_c} END AS km'
+        )
+        campo_precisao_cand = (
+            ",\n               CASE WHEN g.latitude IS NOT NULL "
+            "AND coalesce(f.folga_km, 0) <= %(folga_max)s "
+            "THEN g.precisao ELSE 'cep' END AS geo_precisao"
+        )
+        join_endereco = (
+            'LEFT JOIN c_estab_geo g\n'
+            '                 ON g.cnpj_completo = e.cnpj_basico || e.cnpj_ordem '
+            '|| e.cnpj_dv\n'
+            '          LEFT JOIN c_ceps_folga f ON f.cep = e.cep'
+        )
+        campo_precisao = ',\n           e.geo_precisao'
+    else:
+        campos_coordenada = 'c.latitude,\n               c.longitude,'
+        campos_km = (
+            '6371 * acos(least(1.0,\n'
+            '                   cos(radians(%(lat)s)) * cos(radians(c.latitude)) *\n'
+            '                   cos(radians(c.longitude) - radians(%(lon)s)) +\n'
+            '                   sin(radians(%(lat)s)) * sin(radians(c.latitude))\n'
+            '               )) AS km'
+        )
+        campo_precisao_cand = ''
+        join_endereco = ''
+        campo_precisao = ''
+
+    sql = SQL_PROXIMOS_FILTRADO.format(
+        filtros='\n           '.join(filtros),
+        filtro_depois=filtro_depois,
+        col_total=(', count(*) OVER () AS total_filtrado' if contar else ''),
+        campos_coordenada=campos_coordenada,
+        campos_km=campos_km,
+        campo_precisao_cand=campo_precisao_cand,
+        join_endereco=join_endereco,
+        campo_precisao=campo_precisao,
+    )
+
+    cur.execute(f'SET LOCAL statement_timeout = {TIMEOUT_FILTRADO_MS}')
+    cur.execute(sql, params)
+    linhas = cur.fetchall()
+
+    if contar:
+        total = int(linhas[0]['total_filtrado']) if linhas else 0
+        tem_mais = total > limite
+    else:
+        total = None
+        tem_mais = len(linhas) > limite
+    linhas = list(linhas[:limite])
+
+    if linhas:
+        # Razao social e capital vem de c_empresas so para as linhas da pagina
+        # (o join no candidato inteiro materializaria texto de milhares de
+        # empresas sem necessidade).
+        basicos = sorted({linha['cnpj_basico'] for linha in linhas})
+        cur.execute('SELECT cnpj_basico, razao_social, capital_social '
+                    'FROM c_empresas WHERE cnpj_basico = ANY(%s)', [basicos])
+        dados = {r['cnpj_basico']: r for r in cur.fetchall()}
+        for linha in linhas:
+            empresa = dados.get(linha['cnpj_basico']) or {}
+            linha['razao_social'] = empresa.get('razao_social')
+            linha['capital_social'] = empresa.get('capital_social')
             linha['maps_url'] = montar_maps_url(linha)
 
     return linhas, tem_mais, total

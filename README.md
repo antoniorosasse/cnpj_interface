@@ -681,6 +681,188 @@ O tempo de resposta típico é:
 - Estatísticas: ~5ms (lê da tabela de metadados)
 - Recálculo completo: ~15-30s
 
+## Chat + proximidade — decisões e fases (25/11/2026)
+
+A página `/proximidade/` e o chat de IA vão compartilhar o mesmo motor de
+busca. Decisões fechadas com o dono do produto em 25/11/2026 (Fase 0):
+
+| Tema | Decisão |
+|---|---|
+| "indústrias" | seção C (divisões 10 a 33); a extrativa (seção B, 05 a 09) é categoria separada e só entra quando pedida |
+| "metalúrgicas" | divisões 24 + 25 (Metalurgia + produtos de metal) |
+| "clínicas médicas e odontológicas" | 8630-5/01..05 + 8640-2/02 (laboratórios clínicos inclusos) |
+| "transportadoras" | 4930-2/01..04 (transporte rodoviário de carga) |
+| Endereço ambíguo ("Av. Paulista") | pedir desambiguação (cidade/UF ou CEP); não usar heurística |
+| Contagem | total exato sempre que couber no timeout; "até N" só quando a consulta não fechar, com aviso |
+| Filiais no raio | incluir (filial de supermercado/padaria também é lead); a página mantém o checkbox "somente matrizes" |
+
+Fase 1 (base compartilhada, sem UI):
+
+- `core/cnae_taxonomia.py`: seções e divisões CNAE 2.3 derivadas do código,
+  com o zero à esquerda das divisões 01 a 09 (o campo é `integer`) e faixas
+  inteiras para o filtro SQL.
+- `core/cnae_categorias.py`: KB fixa de categorias de negócio -> CNAE, com
+  sinônimos/plural e a regra "categoria específica vence a genérica"
+  (`indústrias metalúrgicas` -> 24+25, não 10..33).
+- `core/proximidade.py::buscar_proximos_filtrado()`: busca por raio com
+  filtros seletivos (CNAE, UF, situação, `dt_ini`, capital social), filiais
+  por padrão, total exato via `count(*) OVER ()` e `limite` de 1 a 5.000.
+  Os CEPs do bbox são lidos em Python e passados como array
+  (`cep = ANY(%(ceps)s)`); o filtro roda antes da distância. A CTE de CEPs
+  sem array tem estimativa ~20x menor que o real (147 x 3.275 em Curitiba/5 km)
+  e levava a um hash join de 74 M de linhas (timeout). Medido em dev
+  (25/11/2026): 4 a 22 s no primeiro acesso (banco frio, I/O-bound) e 1,8 a
+  3,2 s na segunda execução nos três casos sem capital; o caso com capital
+  social é o pior caso (17 a 22 s no banco local frio). O filtro é limitado a
+  50 mil CEPs no bbox (~10 km em capital); acima disso a função pede para
+  reduzir o raio. Um índice não-parcial em `cnae_principal` foi testado em dev
+  (492 MB, 70 s de build) e **não** mudou o tempo: o gargalo é I/O aleatório
+  no heap ao varrer os estabelecimentos do raio, não a falta de índice. A
+  Fase 2 precisa medir em produção (cache quente) e, se preciso, restringir
+  raio/atividade ou pré-agregar.
+- Exige filtro seletivo (CNAE, data ou capital); sem ele, a página continua
+  usando `buscar_proximos()` (varredura do raio + tabela agregada de total).
+
+## Chat + proximidade — Fase 2 (em dev, sem deploy)
+
+Entregue em 25/11/2026, ainda **sem deploy** (produção precisa rodar
+`migrate chat` por causa da migration `0006_mensagem_plano`):
+
+- **Planner** (`chat/services/planner.py`): decide entre `sql` e
+  `proximidade` e extrai um JSON (origem, raio, atividades, situação, UF,
+  idade mínima, capital mínimo, limite). Roteamento por heurística
+  (`parece_proximidade`) para não pagar uma chamada de LLM em toda pergunta;
+  se o planner disser `sql` (ou falhar), cai no pipeline antigo.
+- **Ferramenta de proximidade** (`chat/services/proximidade_service.py`):
+  resolve a origem com `core.proximidade.resolver_origem`, mapeia a atividade
+  com `core.cnae_categorias.resolver_filtro_cnae`, executa
+  `buscar_proximos_filtrado` (CNAE/data/capital) ou `buscar_proximos` (sem
+  filtro seletivo), com conexão read-only do usuário do app (não a `chat_ia`)
+  e resposta textual determinística (total, raio, origem, filtros, km pelo
+  CEP e link para a página).
+- **Rota `/chat/api/`**: quando o plano é de proximidade, responde
+  `tipo=proximidade` com `rows`/`colunas`, `link_proximidade`, `plano` e
+  resumo; esclarecimentos ("de qual endereço?", "Av. Paulista é ambígua,
+  informe a UF") viram mensagens normais do assistente.
+- **Follow-up "deste endereço"**: o plano (origem resolvida) é gravado no
+  campo `Mensagem.plano` (Postgres e Mongo) e reutilizado no próximo turno.
+- **UI** (`chat/templates/chat/chat.html`): tabela com km, aviso de "mostrando
+  os mais próximos" e botão "Abrir na página de proximidade"; sem rodapé de
+  RAG nas respostas de proximidade (não houve SQL).
+- **Perguntas não geográficas**: o gerador SQL recebe o bloco obrigatório da
+  KB CNAE (`montar_bloco_categorias`) e regras novas para capital social,
+  `dt_ini` e quantidade pedida (`LIMIT N`) em `sql_generator.py` /
+  `schema_context.py`. As condições de filtro já vêm resolvidas em Python, sem
+  depender de ILIKE/vetor para as categorias da KB.
+
+Validação em dev: suíte `chat` **390 testes OK**, `core` **314 OK**; teste
+ponta a ponta com LLM real respondeu as 5 perguntas de referência:
+
+| Pergunta | Resultado |
+|---|---|
+| 248 indústrias ativas num raio de 10 km (sem dizer a empresa) | pede a origem (CNPJ/CEP/endereço/coordenada) |
+| clínicas médicas/odontológicas num raio de 5 km da Av. Paulista (sem cidade/UF) | pede a desambiguação (cidade/UF ou CEP) |
+| clínicas ... 5 km de Avenida Paulista, 1000, São Paulo/SP | 33.181 resultados, 13,8 s (12,5 s de serviço) |
+| metalúrgicas em SC há mais de 3 anos | 100 listadas, 3,9 s (0,5 s de execução) |
+| transportadoras no PR com capital > R$ 500 mil | 100 listadas, 6,6 s (2,0 s de execução) |
+| supermercados/padarias a 5 km "deste endereço" | 1.223 resultados, 5,6 s (reusou a origem anterior) |
+
+A otimização que destravou as consultas não-geográficas foi o **ORDER BY**:
+ordenar por `emp.razao_social` obriga a varrer todos os candidatos antes do
+`LIMIT` (17-30 s); `ORDER BY e.id_estabelecimento` é determinístico e barato
+(0,5-4 s) e foi incorporado ao prompt (regra 9/19). O banco de dev é
+I/O-bound e os tempos de 1ª execução variam; ainda falta benchmark em
+produção (cache quente) antes do deploy.
+
+## Chat + proximidade — Fase 3 (em dev, sem deploy)
+
+Entregue em 25/11/2026:
+
+- **Filtros na `/proximidade/`**: atividade (KB de categorias ou código CNAE
+  de 6/7 dígitos), UF, "aberta há mais de N anos" (`dt_ini`) e capital social
+  mínimo. O modo filtrado usa `buscar_proximos_filtrado` com keyset
+  `(km, cnpj)` e total exato (`count(*) OVER ()`); "Ir para página",
+  ordenação por endereço e densidade do mapa ficam desativados (a densidade
+  agrega por CEP e não conhece CNAE/capital; o mapa mostra os pontos da
+  página). `?exportar`/CSV/JSON da página respeitam os filtros.
+- **Export da consulta de proximidade do chat**: se a última resposta não tem
+  SQL (consulta geo), `exportar_chat` acha o `Mensagem.plano` e reexecuta a
+  consulta com o teto do export, em CSV/JSON e com cabeçalho legível
+  (`ROTULOS`), mantendo login/créditos.
+- **Mini-mapa no chat**: tentativa com SVG esquemático foi **removida em
+  26/11** (não ficou legível na tela); o link "Abrir na página de proximidade"
+  cobre o caso.
+- **API**: `buscar_proximos_filtrado` ganhou `depois` (keyset) e `contar`
+  (export em blocos sem contar cada bloco).
+
+Validação: `chat` **390 testes OK**, `core`+`exportacao` **387 OK**; E2E em
+dev: `/proximidade/?atividade=metalúrgicas&uf=SC&idade=3` → 20 linhas e
+export CSV de 578 KB; chat "metalúrgicas num raio de 10 km de Joinville/SC"
+→ 2.527 resultados e export CSV de 415 KB.
+
+## Chat + proximidade — Fase 3.1: km por endereço no modo filtrado
+
+Entregue em 25/11/2026:
+
+- `buscar_proximos_filtrado(..., usar_endereco=True)` junta `c_estab_geo`
+  (CNEFE) e `c_ceps_folga` e usa a coordenada do **endereço** quando existe e
+  a folga do CEP é de até 1 km; senão continua o centroide do CEP. O bbox dos
+  CEPs é aberto em 1 km para não perder endereço dentro do raio com CEP fora da
+  caixa; o `km`, o keyset e o `count(*) OVER ()` acompanham.
+- `/proximidade/` no modo filtrado volta a ter o botão **distância real x
+  distância do CEP** (padrão: endereço quando `c_estab_geo`/`c_ceps_folga`
+  existem), e o export da página respeita a escolha (`ordem=cep` desliga).
+- Chat e export do chat detectam as tabelas e já respondem com o km do
+  endereço quando disponível; o texto diz qual precisão foi usada. O plano
+  guarda `usar_endereco`.
+
+Medido em dev (Joinville/10 km, metalúrgicas ativas em SC): CEP **1.207** x
+endereço **1.202** (algumas empresas mudam de lado na borda do raio); na
+página filtrada, 2.969 x 2.964.
+
+## Chat + proximidade — ajustes de 26/11 (pós-teste do usuário)
+
+- **Link do chat para a página agora reproduz o recorte**: leva
+  `atividade` (rótulo resolvido), `uf`, `idade`, `capital`, `situacao`, além
+  de `pergunta` e `resposta`. A página abre no modo filtrado com o **mesmo
+  total** do chat (testado: 1.682 indústrias ativas de 10 km de Piçarras).
+- A página mostra um painel **"Consulta feita no chat"** com a pergunta e a
+  resposta que geraram aquele recorte (os parâmetros são preservados na
+  paginação e na troca de ordem).
+- **Data Abertura**: `dt_ini` passa a sair como `dd/mm/aaaa` e com o rótulo
+  "Data Abertura" na tabela do chat (e no CSV).
+- **Barra horizontal da tabela do chat** restaurada com largura mínima de
+  980 px no `.tabela-wrapper` (antes as colunas comprimiam e não havia
+  rolagem lateral).
+- Texto da resposta sem sufixo de gênero ("indústrias ... ativos" virou
+  "indústrias ..."; o filtro "somente ativas" continua na linha de filtros).
+
+### Segunda rodada de ajustes (26/11, após novo teste)
+
+- **F5 não perde mais as tabelas do histórico**: no backend Postgres a
+  mensagem passou a guardar `colunas`, `rows`, `truncado` e `erro` (migration
+  `0007_mensagem_colunas_mensagem_erro_mensagem_rows_and_more`). Antes só o
+  Mongo guardava e, no dev (Postgres), o conteúdo das conversas antigas sumia
+  ao recarregar.
+- **Cabeçalho fixo na tabela do chat**: `thead th` com `position: sticky`,
+  fundo e sombra (`.tabela-wrapper`), então o cabeçalho fica visível ao rolar
+  a tabela.
+- **Origem por endereço mais fiel**: a página/chat passam a usar a média dos
+  **endereços CNEFE** (`c_estab_geo`) do logradouro quando há até 20 CEPs
+  (caso Rua do Príncipe: -26.3051/-48.8364 → **-26.3030/-48.8453**, em cima da
+  rua). Acima de 20 CEPs (Avenida Paulista, 86) mantém a média dos CEPs: o
+  join com 47,9 M de endereços levava 29 s; com o corte caiu para ~0,5 s.
+- **Formulário da proximidade**: campos centralizados; **“Somente ativas”**
+  virou checkbox separado do select de situação (a opção Ativa saiu do
+  select); **UF agora é select** (mesma lista da página de empresas) e a
+  segunda linha (atividade/UF/idade/capital) ficou alinhada.
+
+Validação: `chat` **393 testes OK**, `core`+`exportacao` **390 OK**
+(roda novamente depois destes ajustes).
+
+Pendências: deploy (`migrate chat` + `deploy.sh`) e benchmark em produção (o
+banco de dev é I/O-bound).
+
 ---
 
 # Chat IA
@@ -1088,6 +1270,14 @@ Os testes usam mock do DeepSeek e do `psycopg2.connect`. **`test_mongo_models`
 e `test_integracao` (no modo Mongo) usam o MongoDB real e limpam a collection
 `chat_conversas`** - não rodar com dados reais. Os testes de GeoIP usam cache
 local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
+
+## Documentação de apoio
+
+- [Checklist de testes — integração Chat IA ↔ Proximidade](docs/TESTES_CHAT_PROXIMIDADE.md)
+- [Script de verificação](scripts/verificar_chat_proximidade.sh)
+  (`--rapido`, `--completo`, `--smoke URL`)
+- [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)
+  (rascunho, ainda não aplicado)
 
 # Variáveis de ambiente
 

@@ -11,6 +11,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 
@@ -60,8 +61,20 @@ class Mensagem(models.Model):
     # Campos preenchidos apenas para mensagens do assistente
     sql = models.TextField(blank=True, default='')
     resposta_texto = models.TextField(blank=True, default='')
+    # Resultado da consulta: persistido tambem no Postgres (antes so o Mongo
+    # guardava; com F5 a tabela sumia do historico). `rows` usa DjangoJSONEncoder
+    # para aceitar Decimal/date vindos do executor.
+    colunas = models.JSONField(null=True, blank=True)
+    rows = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
     total_linhas = models.IntegerField(null=True, blank=True)
+    truncado = models.BooleanField(null=True, blank=True)
     tempo_ms = models.IntegerField(null=True, blank=True)
+    erro = models.TextField(blank=True, default='')
+
+    # Plano da consulta de proximidade que gerou a resposta (JSON simples:
+    # origem, raio, filtros). Fica na propria mensagem para o follow-up do
+    # tipo "e deste endereco?" reusar a consulta anterior. Null = sem plano.
+    plano = models.JSONField(null=True, blank=True)
 
     criado_em = models.DateTimeField(auto_now_add=True)
 

@@ -1,11 +1,11 @@
 <!-- /home/neto/cnpj_interface/core/templates/core/proximidade.html -->
 {% extends 'core/base.html' %}
 {% load static num_filters %}
-{% block title %}Proximidade - BusqueCNPJ{% endblock %}
+{% block title %}Proximidade — BusqueCNPJ{% endblock %}
 {% block extra_css %}
 {% if mapa_dados %}<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}">{% endif %}
 {% if mapa_dados %}<link rel="stylesheet" href="{% static 'vendor/maplibre/maplibre-gl.css' %}">{% endif %}
-<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261125o">
+<link rel="stylesheet" href="{% static 'css/portal-consulta.css' %}?v=20261126j">
 {% endblock %}
 
 {% block content %}
@@ -13,11 +13,12 @@
 
     <div class="ui-page-head prox-head">
         <div>
-            <p class="ui-eyebrow">Geolocalização</p>
-            <h1><i class="bi bi-geo-alt" aria-hidden="true"></i> Empresas por proximidade</h1>
+            <p class="ui-eyebrow">Inteligência territorial</p>
+            <h1><i class="bi bi-geo-alt" aria-hidden="true"></i> Encontre empresas por perto</h1>
             <p>
-                Informe um ponto de partida (CNPJ, CEP, cidade ou coordenada) e veja as
-                empresas num raio de até {{ raio_opcoes|last }} km, da mais perto para a mais longe.
+                Parta de um CNPJ, endereço, CEP, cidade ou coordenada e veja as
+                empresas ativas num raio de até {{ raio_opcoes|last }} km, com a
+                distância em km de cada resultado.
             </p>
             {% if pesquisa_usada is not None %}
             <p class="ui-muted mb-0" style="font-size:.85rem">
@@ -40,6 +41,28 @@
         <i class="bi bi-info-circle" aria-hidden="true"></i>
         <div>{{ aviso }}</div>
     </div>
+    {% endif %}
+
+    {% if pergunta_chat or resposta_chat %}
+    <section class="ui-card prox-chat-contexto" aria-labelledby="prox-chat-titulo">
+        <div class="ui-card__head">
+            <h2 class="ui-card__title" id="prox-chat-titulo">
+                <i class="bi bi-chat-dots" aria-hidden="true"></i> Consulta feita no chat
+            </h2>
+        </div>
+        <div class="ui-card__body">
+            {% if pergunta_chat %}
+            <p class="mb-1"><strong>Pergunta:</strong> {{ pergunta_chat }}</p>
+            {% endif %}
+            {% if resposta_chat %}
+            <p class="mb-1"><strong>Resposta:</strong> {{ resposta_chat }}</p>
+            {% endif %}
+            <p class="ui-muted mb-0" style="font-size:.85rem">
+                Os filtros abaixo vieram dessa consulta. Ajuste e clique em Buscar
+                para refazer o recorte.
+            </p>
+        </div>
+    </section>
     {% endif %}
 
     <section class="ui-card prox-filtros" aria-labelledby="prox-filtros-titulo">
@@ -78,7 +101,7 @@
                         <span>{{ raio_max }} km</span>
                     </div>
                 </div>
-                <div class="prox-form__campo">
+                <div class="prox-form__campo prox-form__campo--situacao">
                     <label class="form-label" for="prox-situacao">Situação</label>
                     <select name="situacao" id="prox-situacao" class="form-select">
                         <option value="">Todas</option>
@@ -94,6 +117,35 @@
                         <label class="form-check-label" for="matrizes">
                             Somente matrizes
                         </label>
+                    </div>
+                </div>
+                <div class="prox-form__filtros">
+                    <div class="prox-form__campo prox-form__campo--atividade">
+                        <label class="form-label" for="prox-atividade">Atividade</label>
+                        <input type="text" name="atividade" id="prox-atividade" class="form-control"
+                               placeholder="ex.: metalúrgicas, clínicas, transportadoras"
+                               value="{{ filtros.atividade }}" autocomplete="off">
+                        <div class="form-text">Categoria de atividade (ex.: metalúrgicas, clínicas) ou código CNAE.</div>
+                    </div>
+                    <div class="prox-form__campo prox-form__campo--uf">
+                        <label class="form-label" for="prox-uf">UF</label>
+                        <select name="uf" id="prox-uf" class="form-select">
+                            <option value="">Todas</option>
+                            {% for sigla, nome in lista_ufs %}
+                            <option value="{{ sigla }}" {% if filtros.uf == sigla %}selected{% endif %}>{{ nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="prox-form__campo prox-form__campo--idade">
+                        <label class="form-label" for="prox-idade">Aberta há mais de (anos)</label>
+                        <input type="number" name="idade" id="prox-idade" class="form-control"
+                               min="0" max="100" placeholder="3" value="{{ filtros.idade|default_if_none:'' }}">
+                    </div>
+                    <div class="prox-form__campo prox-form__campo--capital">
+                        <label class="form-label" for="prox-capital">Capital acima de (R$)</label>
+                        <input type="text" name="capital" id="prox-capital" class="form-control"
+                               inputmode="numeric" placeholder="500000"
+                               value="{{ filtros.capital|default_if_none:'' }}">
                     </div>
                 </div>
                 <div class="prox-form__acoes">
@@ -116,6 +168,7 @@
             A partir de <strong>{{ origem.rotulo }}</strong>, raio de {{ raio }} km
             {% if somente_matrizes %}(somente matrizes){% else %}(matrizes e filiais){% endif %}
             {% for codigo, rotulo in situacoes %}{% if situacao == codigo %}(situação: {{ rotulo }}){% endif %}{% endfor %}
+            {% if filtros_rotulo %}<br><i class="bi bi-funnel" aria-hidden="true"></i> Filtros: <strong>{{ filtros_rotulo }}</strong>{% endif %}
         </p>
         <p class="prox-resumo__total">
             <i class="bi bi-building" aria-hidden="true"></i>
@@ -168,10 +221,19 @@
                 </p>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if not filtrado %}
                 <div class="form-check form-check-inline prox-mapa__toggle">
                     <input class="form-check-input" type="checkbox" id="prox-mapa-densidade" checked>
                     <label class="form-check-label" for="prox-mapa-densidade">Densidade do raio</label>
                 </div>
+                {% endif %}
+                {% if filtrado and total and total > resultados|length %}
+                <button type="button" class="btn btn-sm btn-primary" id="prox-mapa-todos"
+                        data-url="{% url 'core:proximidade_mapa_filtrado' %}?{{ request.GET.urlencode }}&amp;limite=5000">
+                    <i class="bi bi-pin-map" aria-hidden="true"></i>
+                    Mostrar todas as {{ total }} no mapa
+                </button>
+                {% endif %}
                 <span class="prox-mapa__modo" id="prox-mapa-modo"></span>
                 <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> {{ raio }} km</span>
             </div>
@@ -179,19 +241,30 @@
         <div class="ui-card__body">
             <div id="prox-mapa" class="prox-mapa" role="img"
                  aria-label="Mapa com o ponto de partida e as empresas próximas agrupadas por CEP"
-                 data-densidade-url="{% url 'core:proximidade_mapa' %}"
+                 data-densidade-url="{% if not filtrado %}{% url 'core:proximidade_mapa' %}{% endif %}"
                  data-matrizes="{% if somente_matrizes %}1{% else %}0{% endif %}"
-                 data-situacao="{{ situacao }}"></div>
+                 data-situacao="{{ situacao }}"
+                 data-filtrado="{% if filtrado %}1{% else %}0{% endif %}"
+                 data-total-filtrado="{{ total|default:0 }}"></div>
             <p class="prox-mapa__status" id="prox-mapa-status" role="status" aria-live="polite"></p>
             <p class="prox-mapa__nota">
                 <i class="bi bi-info-circle" aria-hidden="true"></i>
-                Bolha cheia = endereço (CNEFE); bolha tracejada = centro do CEP; área
-                laranja = densidade do raio (clique para abrir a consulta naquele ponto,
-                em nova aba). Use o alvo da tabela para centralizar uma empresa no mapa.
+                <strong>Pino = ponto de partida</strong>; bolha âmbar com número =
+                empresas desta página (o número é quantas caem no mesmo CEP/ponto);
+                área laranja = densidade do raio (clique para abrir a consulta naquele
+                ponto, em nova aba). Use o alvo da tabela para centralizar uma empresa
+                no mapa.
+                {% if filtrado %}
+                Com filtros de atividade/UF/idade/capital, o mapa mostra as
+                empresas do recorte filtrado (bolhas âmbar). Recortes com mais de
+                2.000 empresas carregam sob demanda pelo botão “Mostrar todas”;
+                a densidade do raio não conhece CNAE nem capital.
+                {% else %}
                 O raio desenhado é o da <strong>última busca</strong>: mudar a régua só
                 vale depois de clicar em Buscar. <strong>Ctrl+roda</strong> dá zoom (a roda
                 sozinha rola a página) e, a partir do <strong>zoom 14</strong>, as áreas
                 laranjas se abrem nos endereços das empresas.
+                {% endif %}
             </p>
         </div>
     </section>
@@ -208,14 +281,6 @@
                     </div>
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <span class="ui-badge ui-badge--neutral"><i class="bi bi-signpost-2" aria-hidden="true"></i> até {{ raio }} km</span>
-                        {% if tem_endereco %}
-                        <a class="btn btn-sm {% if ordem_endereco %}btn-outline-secondary{% else %}btn-primary{% endif %}"
-                           href="{{ link_ordem }}"
-                           title="{% if ordem_endereco %}Voltar a ordenar pela distância do CEP (mais rápido, com Ir para){% else %}Ordenar pela distância real do endereço (CNEFE){% endif %}">
-                            <i class="bi bi-signpost-split" aria-hidden="true"></i>
-                            {{ rotulo_ordem }}
-                        </a>
-                        {% endif %}
                         {% if resultados %}
                         <a class="btn btn-sm btn-outline-primary"
                            href="{% url 'exportacao:exportar_proximidade' %}?{{ request.GET.urlencode }}&formato=csv"
@@ -317,7 +382,7 @@
                 <div class="ui-empty">
                     <span class="ui-empty__icon" aria-hidden="true"><i class="bi bi-search"></i></span>
                     <p class="ui-empty__title">Nenhuma empresa encontrada nesse raio</p>
-                    <p class="ui-empty__text">Tente aumentar o raio, desmarcar "somente matrizes" ou trocar a situação.</p>
+                    <p class="ui-empty__text">Tente aumentar o raio, desmarcar "somente matrizes", trocar a situação{% if filtrado %} ou remover os filtros de atividade/UF/idade/capital{% endif %}.</p>
                 </div>
                 {% endif %}
 
@@ -344,7 +409,7 @@
                             <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right" aria-hidden="true"></i></span></li>
                             {% endif %}
 
-                            {% if total_paginas and total_paginas > 1 and not ordem_endereco %}
+                            {% if total_paginas and total_paginas > 1 and not ordem_endereco and not filtrado %}
                             <li class="page-item consulta-ir-para">
                                 <form method="get" class="d-flex align-items-center gap-1">
                                     <input type="hidden" name="origem" value="{{ origem_txt }}">
@@ -404,6 +469,6 @@
 <script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
 <script src="{% static 'vendor/maplibre/maplibre-gl.js' %}" defer></script>
 <script src="{% static 'vendor/maplibre/leaflet-maplibre-gl.js' %}" defer></script>
-<script src="{% static 'js/prox-mapa.js' %}?v=20261125p" defer></script>
+<script src="{% static 'js/prox-mapa.js' %}?v=20261126h" defer></script>
 {% endif %}
 {% endblock %}

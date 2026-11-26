@@ -306,6 +306,44 @@ descobrir o CNAE mais similar a um termo em portugues.
 
 
 =====================================================================
+CATEGORIAS DE NEGOCIO (KB FIXA) - USE A FAIXA/CODIGO, NAO O ILIKE
+=====================================================================
+
+Alguns termos de negocio nao aparecem no nm_cnae (ou aparecem de forma
+enganosa: "clinica" casa "Clinicas de estetica") e tem um mapeamento
+FIXO em core/cnae_categorias.py. Quando a pergunta citar um deles,
+filtre e.cnae_principal pela faixa/codigo abaixo. NAO use ILIKE nem o
+vetor (embedding) para esses termos.
+
+  industria (industrias de transformacao)   divisoes 10 a 33
+    AND e.cnae_principal BETWEEN 1000000 AND 3399999
+  industria extrativa                       divisoes 05 a 09
+    AND e.cnae_principal BETWEEN 500000 AND 999999
+  metalurgica (siderurgica)                 divisoes 24 e 25
+    AND e.cnae_principal BETWEEN 2400000 AND 2599999
+  clinicas medicas e odontologicas          subclasses
+    8630501, 8630502, 8630503, 8630504, 8630505, 8640202
+    AND e.cnae_principal IN (8630501, 8630502, 8630503, 8630504, 8630505, 8640202)
+  transportadoras de carga                  subclasses
+    4930201, 4930202, 4930203, 4930204
+    AND e.cnae_principal IN (4930201, 4930202, 4930203, 4930204)
+  supermercados                             subclasse 4711302
+    AND e.cnae_principal IN (4711302)
+  padarias (panificadoras)                  subclasses
+    1091102, 4721101, 4721102
+    AND e.cnae_principal IN (1091102, 4721101, 4721102)
+
+- A faixa cobre a divisao inteira: divisao 10 = 1000000..1099999.
+- Quando a pergunta citar mais de uma categoria ("supermercados e
+  padarias"), use a UNIAO dos filtros dentro do mesmo parenteses:
+  AND (filtro1 OR filtro2).
+- Quando o prompt do usuario trouxer o bloco "CATEGORIA CNAE DETECTADA
+  PELA KB", ele e' obrigatorio e ja' vem com o filtro exato pronto.
+- Termos fora desta lista (ex: "energia solar") continuam com o ILIKE +
+  vetor da secao BUSCA SEMANTICA.
+
+
+=====================================================================
 ATIVIDADE + NOME (MARCA) - OS DOIS FILTROS SAO OBRIGATORIOS
 =====================================================================
 
@@ -359,6 +397,13 @@ EXEMPLO COMPLETO para "liste os mercados KOCH":
 Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
 ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas e'
 arbitrario e a empresa procurada pode ficar de fora.
+
+EXCECAO DE PERFORMANCE: listagem com filtro seletivo (categoria da KB,
+capital social ou dt_ini) NAO deve ordenar por emp.razao_social. A
+ordenacao obriga o Postgres a varrer todos os candidatos antes do LIMIT;
+use ORDER BY e.id_estabelecimento (barato e deterministico) ou nenhum
+ORDER BY. Medido em 2026-11: 17-30 s com razao_social x 0,5-4 s com
+id_estabelecimento.
 
 
 c_municipios

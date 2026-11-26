@@ -730,8 +730,9 @@ class MarcaENavegacaoTests(SimpleTestCase):
 
     def test_marca_no_topo_e_no_rodape(self):
         html = self._render()
-        self.assertIn('BusqueCNPJ', html)                           # navbar (marca corporativa)
-        self.assertIn('BusqueCNPJ — Consulta de empresas', html)    # rodape
+        self.assertIn('Busque', html)                               # navbar (marca corporativa)
+        self.assertIn('CNPJ', html)
+        self.assertIn('Inteligência comercial com IA e geolocalização', html)  # rodape
         self.assertNotIn('Sistema CNPJ', html)
 
     def test_logo_aponta_para_a_pagina_inicial_do_produto(self):
@@ -1146,7 +1147,8 @@ class ProximidadeEnderecoTests(SimpleTestCase):
         ])
         origem, erro = resolver_origem(cur, 'Rua Sete de Setembro, Joinville/SC')
         self.assertIsNone(erro)
-        self.assertEqual(cur.executados[-1][1]['termo'], '%SETE DE SETEMBRO%')
+        termos = [p['termo'] for _s, p in cur.executados if isinstance(p, dict) and 'termo' in p]
+        self.assertEqual(termos[-1], '%SETE DE SETEMBRO%')
 
     def test_tipo_nao_e_removido_quando_sobra_uma_palavra(self):
         """"Avenida Brasil" nao vira "%BRASIL%" (casaria Rua Brasil, Assis Brasil...)."""
@@ -1317,22 +1319,17 @@ class ProximidadeTemplateTests(SimpleTestCase):
         self.assertIn('/empresa/02831172000190/', html)
 
     # --------------------------------------------------------- ordem da lista
-    def test_botao_de_ordem_oferece_a_distancia_real(self):
+    def test_botao_de_troca_de_distancia_nao_aparece(self):
+        # Decisao de 26/11: o cliente nao precisa escolher entre distancia
+        # real e distancia do CEP; a pagina usa a melhor disponivel.
         html = self._render(tem_endereco=True, rotulo_ordem='distância real',
                             link_ordem='?origem=Joinville/SC&raio=5&ordem=endereco')
-        self.assertIn('distância real', html)
-        self.assertIn('ordem=endereco', html)
-
-    def test_sem_tabela_de_endereco_o_botao_nao_aparece(self):
-        html = self._render(link_ordem='?origem=Joinville/SC&raio=5&ordem=endereco')
         self.assertNotIn('bi-signpost-split', html)
+        self.assertNotIn('ordem=endereco', html)
 
     def test_ordem_por_endereco_esconde_o_ir_para(self):
         html = self._render(ordem_endereco=True, tem_endereco=True,
-                            rotulo_ordem='distância do CEP',
-                            link_ordem='?origem=Joinville/SC&raio=5&ordem=cep',
                             total=240, total_paginas=12)
-        self.assertIn('distância do CEP', html)
         self.assertNotIn('consulta-ir-para', html)
 
     def test_ordem_por_cep_mostra_o_ir_para(self):

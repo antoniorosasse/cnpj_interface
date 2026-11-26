@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" id="meta-tema" content="#f5f8fb">
+    <meta name="theme-color" id="meta-tema" content="#f4fbf8">
+    <link rel="icon" type="image/svg+xml" href="{% static 'img/favicon.svg' %}">
     <title>{% block title %}BusqueCNPJ{% endblock %}</title>
     <script>
     /* Tema claro/escuro: aplica ANTES do CSS carregar para nao piscar.
@@ -22,7 +23,7 @@
         document.documentElement.setAttribute('data-theme', t);
         document.documentElement.setAttribute('data-bs-theme', t);
         var meta = document.getElementById('meta-tema');
-        if (meta) { meta.setAttribute('content', t === 'dark' ? '#070e18' : '#f5f8fb'); }
+        if (meta) { meta.setAttribute('content', t === 'dark' ? '#051512' : '#f4fbf8'); }
     })();
     </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -30,7 +31,7 @@
     <link rel="stylesheet" href="{% static 'css/sistema.css' %}?v=1">
     {% block extra_css %}{% endblock %}
     {# portal.css carrega por ultimo: e a camada visual nova, sobre Bootstrap e sistema.css #}
-    <link rel="stylesheet" href="{% static 'css/portal.css' %}?v=20261120">
+    <link rel="stylesheet" href="{% static 'css/portal.css' %}?v=20261126b">
 </head>
 <body class="ui-body">
     <a class="ui-skip" href="#conteudo">Ir para o conteúdo</a>
@@ -41,10 +42,10 @@
                 {# Marca e "Inicio" levam a landing comercial do proprio cnpj #}
                 {# (raiz do dominio); a lista de empresas fica no item Empresas. #}
                 <a class="navbar-brand" href="{{ site_home_url|default:'https://busquecnpj.com.br/' }}" title="Página inicial do busquecnpj">
-                    <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+                    {% include 'core/_marca_logo.html' %}
                     <span class="ui-brand-text">
-                        <span class="ui-brand-name">BusqueCNPJ</span>
-                        <span class="ui-brand-tag">Consulta e inteligência de empresas</span>
+                        <span class="ui-brand-name">Busque<span class="ui-brand-name__cnpj">CNPJ</span></span>
+                        <span class="ui-brand-tag">Prospecção B2B inteligente</span>
                     </span>
                 </a>
 
@@ -164,8 +165,8 @@
     <footer class="ui-footer">
         <div class="container ui-footer__inner">
             <div class="ui-footer__brand">
-                <span class="ui-brand-mark" aria-hidden="true"><i class="bi bi-buildings"></i></span>
-                <span>BusqueCNPJ — Consulta de empresas</span>
+                {% include 'core/_marca_logo.html' %}
+                <span>Busque<span class="ui-brand-name__cnpj">CNPJ</span> — Inteligência comercial com IA e geolocalização</span>
             </div>
             <p class="ui-footer__note">
                 Este produto inclui dados do GeoLite2 criados pela MaxMind,
@@ -177,6 +178,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
     {% block extra_js %}{% endblock %}
-    <script src="{% static 'js/interface-corporativa.js' %}?v=20261120" defer></script>
+    <script src="{% static 'js/interface-corporativa.js' %}?v=20261126a" defer></script>
 </body>
 </html>

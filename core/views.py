@@ -37,6 +37,7 @@ from core.proximidade import (
     RAIO_PADRAO_KM,
     buscar_proximos,
     buscar_proximos_endereco,
+    buscar_proximos_filtrado,
     cursor_do_token,
     cursor_para_pagina,
     hist_de_texto,
@@ -50,11 +51,22 @@ from core.telefone import montar_whatsapp
 from core.estatisticas import iniciar_recalculo_background, status_recalculo
 
 import math
+import re
 import time
 import logging
 from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
+
+
+def data_ha_anos(anos):
+    """Data de corte para "abertas ha mais de N anos" (29/02 -> 28/02)."""
+    from datetime import date
+    hoje = date.today()
+    try:
+        return hoje.replace(year=hoje.year - int(anos))
+    except ValueError:
+        return hoje.replace(year=hoje.year - int(anos), day=28)
 
 
 def consultar_com_salto(cur, conn, sql, params, offset, log=None):
@@ -694,10 +706,108 @@ def _params_proximidade(request):
     situacao = request.GET.get('situacao', '').strip().upper()
     if situacao not in SITUACOES:
         situacao = ''
+    # "Ativas" virou um campo separado da situacao (checkbox na tela). Para
+    # nao quebrar links antigos (situacao=ATIVA) e exports, aceita os dois.
+    if request.GET.get('ativas'):
+        situacao = 'ATIVA'
 
     # Primeira visita (sem querystring) ja vem com "somente matrizes" marcado.
     somente_matrizes = ('matrizes' in request.GET) if request.GET else True
     return origem_txt, raio, somente_matrizes, situacao
+
+
+RE_UF_PROXIMIDADE = re.compile(r'^[A-Z]{2}$')
+
+
+def _parse_capital(valor):
+    """'500000' / '500.000' / '500.000,00' -> float; invalido -> None."""
+    if not valor:
+        return None
+    texto = re.sub(r'[^\d,.]', '', str(valor))
+    if not texto:
+        return None
+    # Ponto como separador de milhar; virgula como decimal (pt-BR).
+    if ',' in texto:
+        texto = texto.replace('.', '').replace(',', '.')
+    else:
+        texto = texto.replace('.', '')
+    try:
+        numero = float(texto)
+    except ValueError:
+        return None
+    return numero if numero > 0 else None
+
+
+def filtros_proximidade(request):
+    """
+    Filtros da /proximidade/ alem de origem/raio/situacao/matrizes.
+
+    Atividade aceita a KB de categorias ("metalurgicas", "clinicas medicas e
+    odontologicas", "supermercados e padarias") ou um codigo CNAE de 6/7
+    digitos. Devolve faixas/cnaes prontos para o motor filtrado.
+    """
+    from core.cnae_categorias import resolver_filtro_cnae
+
+    atividade = (request.GET.get('atividade') or '').strip()
+    uf = (request.GET.get('uf') or '').strip().upper()
+    if not RE_UF_PROXIMIDADE.match(uf):
+        uf = ''
+
+    try:
+        idade = int(float(request.GET.get('idade') or 0))
+    except (TypeError, ValueError):
+        idade = 0
+    idade = max(0, min(100, idade)) or None
+
+    capital = _parse_capital(request.GET.get('capital'))
+
+    filtro_cnae = {'categorias': [], 'faixas': [], 'cnaes': [], 'rotulo': ''}
+    erro = ''
+    if atividade:
+        filtro_cnae = resolver_filtro_cnae(atividade)
+        if not filtro_cnae['categorias']:
+            digitos = ''.join(c for c in atividade if c.isdigit())
+            if len(digitos) in (6, 7):
+                filtro_cnae = {
+                    'categorias': [], 'faixas': [], 'cnaes': [int(digitos)],
+                    'rotulo': f'CNAE {digitos}',
+                }
+            else:
+                erro = (
+                    f'Atividade "{atividade}" não reconhecida. Use uma das '
+                    'categorias (metalúrgicas, clínicas médicas e odontológicas, '
+                    'transportadoras, supermercados, padarias, indústrias) ou '
+                    'um código CNAE de 6/7 dígitos.'
+                )
+
+    filtrado = bool(filtro_cnae['faixas'] or filtro_cnae['cnaes']
+                    or uf or idade or capital)
+
+    rotulos = []
+    if filtro_cnae['rotulo']:
+        rotulos.append(filtro_cnae['rotulo'])
+    if uf:
+        rotulos.append(f'UF {uf}')
+    if idade:
+        rotulos.append(f'abertas há mais de {idade} ano(s)')
+    if capital:
+        rotulos.append(
+            'capital acima de R$ '
+            + f'{int(capital):,}'.replace(',', '.'))
+
+    return {
+        'atividade': atividade,
+        'uf': uf,
+        'idade': idade,
+        'capital': capital,
+        'faixas': filtro_cnae['faixas'],
+        'cnaes': filtro_cnae['cnaes'],
+        'categorias': filtro_cnae['categorias'],
+        'rotulo_cnae': filtro_cnae['rotulo'],
+        'erro': erro,
+        'filtrado': filtrado,
+        'rotulo_filtros': ' · '.join(rotulos),
+    }
 
 
 def _endereco_curto(linha):
@@ -815,6 +925,10 @@ def proximidade(request):
     pesquisa_usada, pesquisa_limite = estado['usados'], estado['limite']
 
     origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    filtros = filtros_proximidade(request)
+    filtrado = filtros['filtrado'] and not filtros['erro']
+    pergunta_chat = (request.GET.get('pergunta') or '').strip()[:500]
+    resposta_chat = (request.GET.get('resposta') or '').strip()[:600]
     ordem_pedida = request.GET.get('ordem', '').strip().lower()
     # Padrao = endereco; so decidimos de verdade dentro da conexao, quando da
     # para checar se c_estab_geo/c_ceps_folga existem (sem elas, cep).
@@ -861,14 +975,19 @@ def proximidade(request):
             conn = get_postgres_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 origem, erro = resolver_origem(cur, origem_txt)
+                if filtros['erro']:
+                    erro = filtros['erro']
+                    origem = None
                 if origem:
                     ordem = _resolver_ordem(cur, ordem_pedida)
                     tem_endereco = ordem == 'endereco'
-                    if ordem == 'endereco' and pagina_pedida > 1:
-                        aviso = ('O salto direto de página existe só na ordem por CEP; '
-                                 'use as setas para avançar na ordem por endereço.')
+                    # "Ir para" usa a tabela agregada por CEP, que nao conhece
+                    # filtros de CNAE/data/capital; no modo filtrado so setas.
+                    if pagina_pedida > 1 and (filtrado or ordem == 'endereco'):
+                        aviso = ('O salto direto de página existe só sem filtros e '
+                                 'na ordem por CEP; use as setas para avançar.')
                         pagina_pedida = 0
-                    if pagina_pedida > 1:
+                    if not filtrado and ordem == 'cep' and pagina_pedida > 1:
                         salto = cursor_para_pagina(
                             cur, origem['latitude'], origem['longitude'],
                             raio, somente_matrizes, pagina_pedida,
@@ -889,15 +1008,34 @@ def proximidade(request):
                             elif salto == PAGINA_SEM_TABELA:
                                 aviso = ('Sem a tabela de contagem por CEP não '
                                          'dá para ir direto a uma página.')
-                    busca = (buscar_proximos_endereco if ordem == 'endereco'
-                             else buscar_proximos)
-                    resultados, tem_mais, total = busca(
-                        cur, origem['latitude'], origem['longitude'],
-                        raio, somente_matrizes, depois,
-                        situacao=SITUACOES[situacao] if situacao else None,
-                    )
-                    if ordem != 'endereco':
-                        _aplicar_endereco_geo(cur, resultados)
+                    if filtrado:
+                        resultados, tem_mais, total = buscar_proximos_filtrado(
+                            cur, origem['latitude'], origem['longitude'],
+                            raio,
+                            limite=LIMITE_PAGINA,
+                            situacao=SITUACOES[situacao] if situacao else None,
+                            matrizes=somente_matrizes,
+                            faixas_cnae=filtros['faixas'],
+                            cnaes=filtros['cnaes'],
+                            uf=filtros['uf'],
+                            dt_ini_antes_de=(data_ha_anos(filtros['idade'])
+                                             if filtros['idade'] else None),
+                            capital_min=filtros['capital'],
+                            depois=depois,
+                            usar_endereco=tem_endereco,
+                        )
+                        if not tem_endereco:
+                            _aplicar_endereco_geo(cur, resultados)
+                    else:
+                        busca = (buscar_proximos_endereco if ordem == 'endereco'
+                                 else buscar_proximos)
+                        resultados, tem_mais, total = busca(
+                            cur, origem['latitude'], origem['longitude'],
+                            raio, somente_matrizes, depois,
+                            situacao=SITUACOES[situacao] if situacao else None,
+                        )
+                        if ordem != 'endereco':
+                            _aplicar_endereco_geo(cur, resultados)
                     ufs_mapa = _ufs_do_mapa(cur, origem['latitude'],
                                              origem['longitude'], raio)
         except Exception as e:
@@ -912,12 +1050,29 @@ def proximidade(request):
             TIPO_LISTA_EMPRESAS,
             f'proximidade: {origem_txt} raio={raio}km '
             f'{"matrizes" if somente_matrizes else "todos"}'
-            f'{(" situacao=" + situacao) if situacao else ""}',
+            f'{(" situacao=" + situacao) if situacao else ""}'
+            f'{(" filtros=" + filtros["rotulo_filtros"]) if filtros["rotulo_filtros"] else ""}',
         )
 
     # Paginacao keyset: pagina atual = len(hist) + 1; cada token do hist e o
     # cursor que abriu uma pagina anterior ('-' = comeco). `pbase` e o numero
     # de paginas antes do primeiro item do hist (so existe apos um salto).
+    def _params_filtros(params):
+        if filtros['atividade']:
+            params['atividade'] = filtros['atividade']
+        if filtros['uf']:
+            params['uf'] = filtros['uf']
+        if filtros['idade']:
+            params['idade'] = filtros['idade']
+        if filtros['capital']:
+            params['capital'] = int(filtros['capital'])
+        # Mantem o painel "Consulta feita no chat" ao paginar/trocar a ordem.
+        if pergunta_chat:
+            params['pergunta'] = pergunta_chat
+        if resposta_chat:
+            params['resposta'] = resposta_chat
+        return params
+
     def montar_link(novo_hist, cursor, base=None):
         params = {'origem': origem_txt, 'raio': raio}
         if somente_matrizes:
@@ -926,6 +1081,7 @@ def proximidade(request):
             params['situacao'] = situacao
         if ordem == 'endereco':
             params['ordem'] = 'endereco'
+        _params_filtros(params)
         if novo_hist:
             params['hist'] = hist_para_texto(novo_hist)
         if cursor:
@@ -945,6 +1101,7 @@ def proximidade(request):
             params['situacao'] = situacao
         if ordem == 'endereco':
             params['ordem'] = 'endereco'
+        _params_filtros(params)
         if numero > 1:
             params['page'] = numero
         return '?' + urlencode(params)
@@ -957,6 +1114,7 @@ def proximidade(request):
     if situacao:
         params_ordem['situacao'] = situacao
     params_ordem['ordem'] = 'cep' if ordem == 'endereco' else 'endereco'
+    _params_filtros(params_ordem)
     link_ordem = '?' + urlencode(params_ordem)
     rotulo_ordem = ('distância do CEP' if ordem == 'endereco' else 'distância real')
 
@@ -1018,6 +1176,7 @@ def proximidade(request):
             'raio': raio,
             'pontos': pontos,
             'ufs': ufs_mapa,
+            'filtrado': filtrado,
         }
 
     context = {
@@ -1032,6 +1191,8 @@ def proximidade(request):
         'somente_matrizes': somente_matrizes,
         'situacao': situacao,
         'situacoes': SITUACOES_ROTULOS,
+        'lista_ufs': LISTA_UFS,
+        'ativas': situacao == 'ATIVA',
         'resultados': resultados,
         'tem_mais': tem_mais,
         'total': total,
@@ -1050,6 +1211,11 @@ def proximidade(request):
         'link_primeira': link_primeira,
         'link_anterior': link_anterior,
         'link_proxima': link_proxima,
+        'filtros': filtros,
+        'filtrado': filtrado,
+        'filtros_rotulo': filtros['rotulo_filtros'],
+        'pergunta_chat': pergunta_chat,
+        'resposta_chat': resposta_chat,
     }
     return render(request, 'core/proximidade.html', context)
 
@@ -1068,6 +1234,8 @@ def proximidade_mapa(request):
     from core.proximidade import buscar_densidade
 
     origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    if filtros_proximidade(request)['filtrado']:
+        return JsonResponse({'erro': 'filtrado'})
     if not origem_txt:
         return JsonResponse({'erro': 'origem'}, status=400)
 
@@ -1109,6 +1277,8 @@ def proximidade_mapa_pontos(request):
     from core.proximidade import buscar_proximos_endereco
 
     origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    if filtros_proximidade(request)['filtrado']:
+        return JsonResponse({'erro': 'filtrado'})
     if not origem_txt:
         return JsonResponse({'erro': 'origem'}, status=400)
     try:
@@ -1152,6 +1322,86 @@ def proximidade_mapa_pontos(request):
             'precisao': linha.get('geo_precisao') or 'cep',
         })
     return JsonResponse({'pontos': pontos, 'raio': raio, 'limite': limite})
+
+
+def proximidade_mapa_filtrado(request):
+    """
+    Pontos de TODOS os resultados filtrados da /proximidade/ (mapa).
+
+    A pagina carrega so os 20 da pagina; quando o usuario clica em "mostrar
+    todos no mapa", este endpoint reexecuta a mesma busca filtrada com limite
+    maior e devolve os pontos para as bolhas por CEP. Nao conta consulta nova:
+    e o mesmo recorte que a tela ja abriu e registrou.
+    """
+    origem_txt, raio, somente_matrizes, situacao = _params_proximidade(request)
+    filtros = filtros_proximidade(request)
+    if not filtros['filtrado'] or filtros['erro']:
+        return JsonResponse({'erro': 'sem-filtro'}, status=400)
+    if not origem_txt:
+        return JsonResponse({'erro': 'origem'}, status=400)
+
+    try:
+        limite = int(request.GET.get('limite') or 2000)
+    except (TypeError, ValueError):
+        limite = 2000
+    from core.proximidade import LIMITE_MAX_FILTRADO
+    limite = max(20, min(limite, LIMITE_MAX_FILTRADO))
+
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            origem, erro = resolver_origem(cur, origem_txt)
+            if not origem:
+                return JsonResponse({'erro': erro}, status=400)
+            ordem = _resolver_ordem(cur, request.GET.get('ordem', ''))
+            linhas, _tem_mais, total = buscar_proximos_filtrado(
+                cur, origem['latitude'], origem['longitude'], raio,
+                limite=limite,
+                situacao=SITUACOES[situacao] if situacao else None,
+                matrizes=somente_matrizes,
+                faixas_cnae=filtros['faixas'],
+                cnaes=filtros['cnaes'],
+                uf=filtros['uf'],
+                dt_ini_antes_de=(data_ha_anos(filtros['idade'])
+                                 if filtros['idade'] else None),
+                capital_min=filtros['capital'],
+                usar_endereco=(ordem == 'endereco'),
+            )
+    except ValueError as e:
+        return JsonResponse({'erro': str(e)}, status=400)
+    except Exception as e:
+        logger.exception("Erro no mapa filtrado: %s", e)
+        return JsonResponse(
+            {'erro': 'Não foi possível carregar os pontos agora.'}, status=503)
+    finally:
+        if conn:
+            conn.close()
+
+    pontos = []
+    for linha in linhas:
+        if linha.get('latitude') is None or linha.get('longitude') is None:
+            continue
+        pontos.append({
+            'lat': round(float(linha['latitude']), 5),
+            'lon': round(float(linha['longitude']), 5),
+            'km': round(float(linha['km']), 2),
+            'cnpj': linha['cnpj_completo'],
+            'nome': (linha.get('nm_fantasia') or linha.get('razao_social')
+                     or linha['cnpj_completo'])[:60],
+            'razao': (linha.get('razao_social') or '')[:60],
+            'endereco': _endereco_curto(linha),
+            'precisao': linha.get('geo_precisao') or 'cep',
+            'url': reverse('core:detalhe', args=[linha['cnpj_completo']]),
+        })
+    return JsonResponse({
+        'pontos': pontos,
+        'total': int(total or 0),
+        'exibidas': len(pontos),
+        'limite': limite,
+        'raio': raio,
+        'filtrado': True,
+    })
 
 
 def buscar_empresas_rapido(request):

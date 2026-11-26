@@ -101,7 +101,7 @@ class RotaESecoesTests(_LandingBase):
 
     def test_secoes_e_ancoras_da_landing(self):
         html = self.get().content.decode()
-        for ancora in ('solucoes', 'servicos', 'contato'):
+        for ancora in ('como-funciona', 'solucoes', 'para-quem', 'contato'):
             with self.subTest(ancora=ancora):
                 self.assertIn(f'id="{ancora}"', html)
                 self.assertIn(f'href="#{ancora}"', html)
@@ -119,14 +119,6 @@ class RotaESecoesTests(_LandingBase):
                 self.assertIn(solucao['icone'], html)
                 self.assertIn(f'href="{solucao["url"]}"', html)
 
-    def test_tres_servicos_no_template(self):
-        resp = self.get()
-        self.assertEqual(len(resp.context['servicos']), 3)
-        html = resp.content.decode()
-        for servico in resp.context['servicos']:
-            with self.subTest(servico=servico['titulo']):
-                self.assertIn(servico['titulo'], html)
-                self.assertIn(servico['texto'], html)
 
 
 class UrlsDosAppsTests(_LandingBase):
@@ -137,8 +129,8 @@ class UrlsDosAppsTests(_LandingBase):
         self.assertIn('http://testserver:8002/chat/', html)         # chat (mesmo app)
         self.assertIn('http://testserver:8002/proximidade/', html)
         self.assertIn('http://testserver:8002/estatisticas/', html)
-        self.assertIn('http://testserver:8001/', html)              # as400
-        self.assertIn('http://testserver:8000/menu/', html)         # portfolio
+        self.assertNotIn('http://testserver:8001/', html)           # as400 fora do produto
+        self.assertNotIn('http://testserver:8000/menu/', html)      # portfolio fora do produto
 
     @override_settings(DEBUG=False)
     def test_producao_usa_os_subdominios(self):
@@ -147,8 +139,8 @@ class UrlsDosAppsTests(_LandingBase):
         self.assertIn('https://busquecnpj.com.br/proximidade/', html)
         self.assertIn('https://busquecnpj.com.br/estatisticas/', html)
         self.assertIn('https://chat.busquecnpj.com.br/chat/', html)
-        self.assertIn('https://as400.busquecnpj.com.br/', html)
-        self.assertIn('https://arosasse.tec.br/', html)
+        self.assertNotIn('https://as400.busquecnpj.com.br/', html)
+        self.assertNotIn('https://arosasse.tec.br/', html)
         self.assertNotIn(':8002', html)
         self.assertNotIn(':8001', html)
 
@@ -157,7 +149,7 @@ class UrlsDosAppsTests(_LandingBase):
         """Nada de host fixo: a landing responde no IP/host em que foi aberta."""
         html = self.get(HTTP_HOST='192.168.3.132').content.decode()
         self.assertIn('http://192.168.3.132:8002/', html)
-        self.assertIn('http://192.168.3.132:8000/menu/', html)
+        self.assertNotIn('http://192.168.3.132:8000/menu/', html)
 
     def test_urls_dos_apps_monta_caminhos_e_producao(self):
         request = RequestFactory().get('/', HTTP_HOST='testserver')
@@ -172,9 +164,9 @@ class UrlsDosAppsTests(_LandingBase):
 class SeoELoginTests(_LandingBase):
     def test_meta_title_description_canonical_e_og(self):
         html = self.get().content.decode()
-        self.assertIn('<title>BusqueCNPJ — consulta de empresas, busca por proximidade e chat com IA</title>', html)
+        self.assertIn('<title>BusqueCNPJ — inteligência comercial B2B com IA e geolocalização</title>', html)
         self.assertIn('name="description"', html)
-        self.assertIn('nome, ramo de atividade, cidade', html)  # descricao comercial preservada
+        self.assertIn('Descreva o perfil em português ou parta de um endereço', html)  # posicionamento novo
         self.assertIn('<link rel="canonical" href="https://busquecnpj.com.br/">', html)
         for og in ('og:type', 'og:site_name', 'og:title', 'og:description', 'og:url'):
             with self.subTest(og=og):

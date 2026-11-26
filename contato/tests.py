@@ -40,7 +40,7 @@ class FormularioTests(ContatoBase):
         resp = self.client.get('/')
         self.assertContains(resp, 'action="/contato/"')
         self.assertContains(resp, 'name="mensagem"')
-        self.assertContains(resp, 'Fale sobre o seu projeto')
+        self.assertContains(resp, 'Quer ver com os dados da sua região?')
 
     def test_get_no_endpoint_e_recusado(self):
         self.assertEqual(self.client.get('/contato/').status_code, 405)

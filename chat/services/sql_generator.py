@@ -12,6 +12,8 @@ import os
 import re
 import logging
 
+from core.cnae_categorias import resolver_filtro_cnae
+
 from .llm_client import gerar_resposta, LLMError
 from .schema_context import SCHEMA_CONTEXT
 from .sql_validator import validar_sql, SQLValidationError, ValidationResult
@@ -168,6 +170,13 @@ REGRAS DE OURO:
    - Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
      ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas
      e' arbitrario e a empresa procurada pode nao aparecer.
+   - EXCECAO DE PERFORMANCE: quando a listagem tiver filtro seletivo
+     (categoria da KB, capital social ou dt_ini), NAO ordene por
+     emp.razao_social: a ordenacao obriga o Postgres a varrer TODOS os
+     candidatos antes do LIMIT. Use ORDER BY e.id_estabelecimento
+     (barato e deterministico) ou nenhum ORDER BY.
+     Medido: 17-30 s com ORDER BY razao_social x 0,5-4 s com
+     ORDER BY e.id_estabelecimento (2026-11).
 
 9.1 SEMPRE QUE A SAIDA MOSTRAR CNAE, traga CODIGO e DESCRICAO juntos:
    selecione e.cnae_principal AS cnae_codigo e c.nm_cnae AS cnae_nome
@@ -407,6 +416,81 @@ REGRAS DE OURO:
    - Se a pergunta for uma CONTAGEM PURA (ex: "quantas MEIs"),
      nao precisa do cnpj_completo.     
 
+15. CAPITAL SOCIAL ("capital social acima de R$ X") - CRITICO:
+   - A coluna capital_social fica em c_empresas (nao em
+     c_estabelecimentos): JOIN c_empresas emp
+     ON emp.cnpj_basico = e.cnpj_basico.
+   - O valor vai em REAIS, sem "R$" e sem ponto de milhar:
+     "R$ 500 mil" -> 500000; "1 milhao" -> 1000000;
+     "R$ 50.000" -> 50000.
+   - "capital social acima de R$ 500 mil" -> emp.capital_social > 500000
+   - Use o comparador da frase: "acima de"/"maior que" -> >;
+     "a partir de"/"no minimo" -> >=; "abaixo de"/"menor que" -> <.
+   - Exemplo: "transportadoras com capital social acima de R$ 500 mil
+     no Parana" -> JOIN c_empresas + e.uf = 'PR' +
+     emp.capital_social > 500000.
+
+16. DATA DE ABERTURA ("abertas/aberta ha mais de N anos") - CRITICO:
+   - "abertas/aberta ha mais de 3 anos" ->
+     AND e.dt_ini < CURRENT_DATE - INTERVAL '3 years'
+   - "abertas ha menos de N anos" ->
+     AND e.dt_ini >= CURRENT_DATE - INTERVAL 'N years'
+   - dt_ini e' a data de inicio de atividade do ESTABELECIMENTO. Para
+     falar da data de abertura da EMPRESA, use a matriz:
+     e.cd_matriz_filial = 1 junto com o filtro de dt_ini.
+   - Escreva o intervalo com aspas simples: INTERVAL '3 years'.
+     Troque o N da pergunta pelo numero em anos.
+
+17. QUANTIDADE PEDIDA ("encontre 248 ...", "liste 300 ...") - CRITICO:
+   - Se a pergunta pedir uma QUANTIDADE e for uma LISTAGEM
+     (SELECT sem GROUP BY nem agregacao no SELECT), use LIMIT N:
+     "encontre 248 industrias metalurgicas em SC" -> LIMIT 248.
+   - Respeite o teto de 1000: pediu 5000 -> LIMIT 1000.
+   - NAO fixe LIMIT 100 quando o usuario pediu outro numero.
+   - Continua valendo a regra 8: NAO use LIMIT quando o SELECT tiver
+     GROUP BY ou funcao de agregacao no SELECT.
+
+18. CATEGORIA CNAE DETECTADA PELA KB (OBRIGATORIA) - CRITICO:
+   - Quando o prompt do usuario trouxer o bloco
+     "CATEGORIA CNAE DETECTADA PELA KB", ele e' OBRIGATORIO: use o
+     filtro exato que esta nele (e.cnae_principal BETWEEN ... OR
+     e.cnae_principal IN (...)).
+   - Nesse caso NAO use o ILIKE de CNAE nem o embedding
+     (%s::halfvec(384)) para a atividade: o filtro da KB entra no
+     lugar deles.
+   - Mantenha os outros filtros da pergunta (cidade/UF/situacao)
+     ligados por AND.
+   - Exemplo: "industrias metalurgicas em SC abertas ha mais de 3 anos"
+     -> e.uf = 'SC' AND e.cd_matriz_filial = 1
+        AND (e.cnae_principal BETWEEN 2400000 AND 2599999)
+        AND e.dt_ini < CURRENT_DATE - INTERVAL '3 years'
+
+19. CAPITAL SOCIAL + LISTAGEM - PERFORMANCE:
+   - Quando a pergunta filtrar por capital social, selecione apenas as
+     colunas necessarias para a resposta.
+   - NAO inclua a subquery (SELECT COUNT(*) FROM c_estabelecimentos x
+     WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos:
+     ela custa uma consulta por linha e nao e' necessaria quando o
+     filtro e' capital.
+   - Se precisar de ordem deterministica, use ORDER BY
+     e.id_estabelecimento (barato); NUNCA ORDER BY emp.razao_social
+     (ver a excecao de performance da regra 9).
+   - Mantenha o JOIN com c_empresas (obrigatorio para o capital).
+
+20. CAMPOS DA RESPOSTA RELACIONADOS A PERGUNTA (OBRIGATORIO):
+   - Todo campo mencionado na pergunta como criterio deve aparecer tambem
+     no SELECT, mesmo que ja esteja no WHERE. A lista precisa mostrar o
+     dado que explica a resposta:
+     * "abertas ha mais de N anos" / idade -> e.dt_ini
+     * capital social -> emp.capital_social
+     * UF -> e.uf; cidade -> e.municipio
+     * situacao -> e.cd_sit_cadastro
+     * atividade / CNAE -> e.cnae_principal
+   - Exemplo: "industrias metalurgicas em SC abertas ha mais de 3 anos"
+     -> SELECT ... e.municipio, e.uf, e.dt_ini, e.cnae_principal ...
+   - Nunca omita dt_ini ou capital_social quando a pergunta usar esse
+     criterio: a resposta ficaria sem o dado que o usuario pediu.
+
 FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
 - Quando a pergunta tiver CNAE (ou busca semantica) E cidade/UF,
   comece pelo filtro MAIS SELETIVO. Cidade/UF quase sempre e' mais
@@ -587,6 +671,55 @@ def _usa_fallback_vetor(sql: str) -> bool:
     return bool(REGEX_FALLBACK_VETOR.search(sql or ''))
 
 
+def montar_bloco_categorias(pergunta: str) -> str:
+    """
+    Bloco de prompt com o filtro CNAE da KB de categorias de negocio.
+
+    Quando a pergunta cita uma categoria conhecida ("industrias
+    metalurgicas", "clinicas medicas", "transportadoras",
+    "supermercados", "padarias", ...), a KB fixa
+    (core/cnae_categorias.py) ja' sabe quais CNAEs valem. Devolvemos o
+    filtro SQL EXATO para o LLM copiar, no lugar do ILIKE/vetor, que
+    erram nesses termos ("clinica" casa "clinicas de estetica" e o
+    vetor so' traz 2 vizinhos).
+
+    Devolve '' quando a pergunta nao cita nenhuma categoria da KB.
+    """
+    if not pergunta:
+        return ''
+
+    filtro = resolver_filtro_cnae(pergunta) or {}
+    categorias = filtro.get('categorias') or []
+    faixas = filtro.get('faixas') or []
+    cnaes = filtro.get('cnaes') or []
+    if not categorias or (not faixas and not cnaes):
+        return ''
+
+    condicoes = [
+        f'e.cnae_principal BETWEEN {inicio} AND {fim}'
+        for inicio, fim in faixas
+    ]
+    if cnaes:
+        codigos = ', '.join(str(codigo) for codigo in cnaes)
+        condicoes.append(f'e.cnae_principal IN ({codigos})')
+    filtro_sql = 'AND (' + ' OR '.join(condicoes) + ')'
+
+    rotulo = filtro.get('rotulo') or ', '.join(categorias)
+
+    linhas = [
+        'CATEGORIA CNAE DETECTADA PELA KB (OBRIGATORIA):',
+        f'- Categoria de negocio: {rotulo}',
+        '- Use EXATAMENTE este filtro de atividade (copie literal), no lugar '
+        'do ILIKE e do vetor:',
+        f'  {filtro_sql}',
+        '- NAO use embedding nem %s::halfvec(384) para a atividade quando '
+        'este bloco estiver presente.',
+        '- Mantenha os outros filtros da pergunta (cidade/UF/situacao) '
+        'ligados por AND.',
+    ]
+    return '\n'.join(linhas)
+
+
 def _montar_user_prompt(pergunta: str, historico=None) -> str:
     """Monta o prompt do usuario combinando historico + pergunta atual."""
     partes = []
@@ -644,6 +777,13 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
 
     system_prompt = SYSTEM_PROMPT.format(schema=SCHEMA_CONTEXT)
     user_prompt = _montar_user_prompt(pergunta, historico)
+
+    # Categoria de negocio da KB fixa: manda o filtro CNAE exato no
+    # prompt do usuario (o LLM e' instruido a nao usar ILIKE/vetor
+    # quando este bloco estiver presente).
+    bloco_categorias = montar_bloco_categorias(pergunta)
+    if bloco_categorias:
+        user_prompt = f'{user_prompt}\n\n{bloco_categorias}'
 
     ultimo_erro = None
     ultima_bruta = ''

@@ -2,7 +2,7 @@
 """
 Conteudo e view da landing comercial (site do produto).
 
-A landing apresenta as quatro solucoes do sistema e os servicos. Ela mora
+A landing apresenta o BusqueCNPJ (ferramentas e casos de uso). Ela mora
 no cnpj_interface (/site/) e nao depende do menu_interface: as URLs dos apps
 sao montadas aqui pelo ambiente do request (dev: portas 8000/8001/8002;
 producao: subdominios e arosasse.tec.br).
@@ -42,9 +42,6 @@ URL_CNPJ_PROD = 'https://busquecnpj.com.br'
 URL_CHAT_PROD = 'https://chat.busquecnpj.com.br'
 URL_AS400_PROD = 'https://as400.busquecnpj.com.br'
 URL_PORTFOLIO_PROD = 'https://arosasse.tec.br/'
-
-URL_GITHUB = 'https://github.com/antoniorosasse'
-
 
 def _host(request):
     """Host do request sem porta (o dev troca de porta por servico)."""
@@ -95,8 +92,9 @@ SOLUCOES = (
         'id': 'cnpj',
         'nome': 'Consulta Empresas · Receita Federal',
         'descricao': (
-            'Consulte qualquer uma das 74,4 milhões de empresas da Receita '
-            'Federal por nome, ramo de atividade, cidade ou situação cadastral, '
+            'Consulte qualquer um dos 74,4 milhões de estabelecimentos da '
+            'Receita Federal por nome, ramo de atividade, cidade ou situação '
+            'cadastral, '
             'com endereço e sócios de cada uma.'
         ),
         'icone': 'bi bi-building',
@@ -138,36 +136,6 @@ SOLUCOES = (
         ),
         'icone': 'bi bi-bar-chart-line',
         'chave_url': 'estatisticas',
-    },
-)
-
-
-# Tres cards de servico (os mesmos da landing antiga).
-SERVICOS = (
-    {
-        'icone': 'bi bi-database-gear',
-        'titulo': 'Dados públicos sob medida',
-        'texto': (
-            'Carga, tratamento e cruzamento de bases abertas (Receita '
-            'Federal, Correios, IBGE) com pipeline reproduzível e '
-            'qualidade medida.'
-        ),
-    },
-    {
-        'icone': 'bi bi-code-slash',
-        'titulo': 'Desenvolvimento web (Django)',
-        'texto': (
-            'Aplicações em Django com Postgres, busca paginada em bases '
-            'grandes, autenticação e deploy em VPS com HTTPS e backup.'
-        ),
-    },
-    {
-        'icone': 'bi bi-hdd-network',
-        'titulo': 'Integração com IBM i / DB2',
-        'texto': (
-            'Acesso a bases legadas em AS/400 via JDBC, APIs e telas '
-            'modernas sobre o que já existe — sem reescrever o sistema.'
-        ),
     },
 )
 
@@ -304,7 +272,7 @@ def render_landing(request, form=None, erro=None, status=200):
 
     Usada pelo GET (landing_comercial) e pelo POST do formulario de contato
     (contato.views.enviar), que precisa devolver os erros e os dados digitados
-    na mesma pagina. As quatro solucoes e os tres servicos vem das constantes
+    na mesma pagina. As ferramentas vem da constante SOLUCOES
     deste modulo; as URLs absolutas dos apps sao resolvidas pelo ambiente do
     request. O health check alimenta o selo do hero.
     """
@@ -316,20 +284,9 @@ def render_landing(request, form=None, erro=None, status=200):
     for solucao in SOLUCOES:
         solucoes.append({**solucao, 'url': urls[solucao['chave_url']]})
 
-    apps_nav = (
-        {'nome': 'Empresas', 'icone': 'bi bi-list-ul', 'url': urls['empresas']},
-        {'nome': 'Proximidade', 'icone': 'bi bi-geo-alt', 'url': urls['proximidade']},
-        {'nome': 'Estatísticas', 'icone': 'bi bi-bar-chart', 'url': urls['estatisticas']},
-        {'nome': 'Chat IA', 'icone': 'bi bi-chat-dots', 'url': urls['chat_ia']},
-    )
-
     contexto = {
         'solucoes': solucoes,
-        'servicos': SERVICOS,
         'sistemas': urls,          # links do footer (portfolio, as400...)
-        'apps_nav': apps_nav,
-        'url_github': URL_GITHUB,
-        'url_portfolio': urls['portfolio'],
         'status': status_dos_sistemas(request),
         'ambiente': ambiente_do_site(),
         'versao_django': django.get_version(),

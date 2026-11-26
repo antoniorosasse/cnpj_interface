@@ -235,8 +235,8 @@
 .ui-detail-page .detail-hero {
     padding: 0;
     overflow: hidden;
-    border: 1px solid #12344a;
-    background: linear-gradient(135deg, #0b1c2b 0%, #0d2c42 55%, #0b3a56 100%);
+    border: 1px solid #0d3b36;
+    background: linear-gradient(135deg, #041c18 0%, #0a3a32 55%, #0f5248 100%);
     color: #f3f8fc;
     box-shadow: var(--p-shadow-2);
 }
@@ -257,10 +257,10 @@
     place-items: center;
     width: 46px;
     height: 46px;
-    border: 1px solid rgba(125, 211, 252, .35);
+    border: 1px solid rgba(94, 234, 212, .35);
     border-radius: 14px;
-    background: rgba(125, 211, 252, .14);
-    color: #7dd3fc;
+    background: rgba(94, 234, 212, .14);
+    color: #5eead4;
     font-size: 1.25rem;
 }
 .detail-hero__titles { min-width: 0; }
@@ -286,14 +286,14 @@
 }
 .detail-hero__cnpj code {
     padding: .18rem .5rem;
-    border: 1px solid rgba(125, 211, 252, .28);
+    border: 1px solid rgba(94, 234, 212, .28);
     border-radius: var(--p-r-xs);
     background: rgba(7, 30, 47, .55);
-    color: #bae6fd;
+    color: #ccfbf1;
     font-size: .8125rem;
 }
 .ui-detail-page .detail-hero .ui-copy { color: rgba(226, 240, 250, .72); }
-.ui-detail-page .detail-hero .ui-copy:hover { background: rgba(125, 211, 252, .16); color: #ffffff; }
+.ui-detail-page .detail-hero .ui-copy:hover { background: rgba(94, 234, 212, .16); color: #ffffff; }
 
 .detail-hero__badges { justify-content: flex-end; max-width: 46%; }
 .detail-hero__badges .ui-badge { border-color: rgba(255, 255, 255, .16); }
@@ -303,7 +303,7 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: .75rem 1.25rem;
     padding: .95rem clamp(1rem, 2.2vw, 1.5rem);
-    border-top: 1px solid rgba(125, 211, 252, .16);
+    border-top: 1px solid rgba(94, 234, 212, .16);
     background: rgba(5, 22, 35, .35);
 }
 .detail-fact { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
@@ -321,7 +321,7 @@
     flex-wrap: wrap;
     gap: .5rem;
     padding: .95rem clamp(1rem, 2.2vw, 1.5rem);
-    border-top: 1px solid rgba(125, 211, 252, .16);
+    border-top: 1px solid rgba(94, 234, 212, .16);
 }
 
 /* cards da ficha */
@@ -424,25 +424,47 @@
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 1rem;
-    align-items: end;
+    /* Topo alinhado: os rotulos ficam na mesma linha e os campos logo abaixo,
+       mesmo quando um deles tem texto de ajuda (origem/raio/atividade). */
+    align-items: start;
     margin: 0;
 }
-.prox-form__origem { grid-column: span 4; min-width: 0; }
+.prox-form__origem { grid-column: span 5; min-width: 0; }
 .prox-form__campo { grid-column: span 2; min-width: 0; }
-.prox-form__matrizes { grid-column: span 2; padding-bottom: .5rem; }
 .prox-form__acoes {
-    grid-column: span 2;
+    grid-column: span 12;
     display: flex;
     align-items: flex-end;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: .5rem;
+    padding-top: .25rem;
 }
 .prox-form__origem .form-text { margin-top: .35rem; }
+
+/* Filtros de atividade/UF/idade/capital: uma linha extra do formulario. */
+.prox-form__filtros {
+    grid-column: span 12;
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+    padding-top: .75rem;
+    border-top: 1px dashed var(--bs-border-color);
+}
+.prox-form__campo--atividade { grid-column: span 4; }
+.prox-form__campo--uf { grid-column: span 2; }
+.prox-form__campo--idade { grid-column: span 3; }
+.prox-form__campo--capital { grid-column: span 3; }
 
 /* Raio: slider continuo (1..100 km) no lugar do select de opcoes fixas.
    Ocupa 3 colunas e a coluna do checkbox passa a 1 para caber na mesma linha. */
 .prox-form__campo--raio { grid-column: span 3; }
-.prox-form__matrizes { grid-column: span 1; }
+.prox-form__campo--situacao { grid-column: span 2; }
+.prox-form__matrizes {
+    grid-column: span 2;
+    padding-top: 1.85rem;
+    justify-self: end;
+}
 .prox-raio {
     width: 100%;
     height: 1.5rem;
@@ -684,6 +706,21 @@
 }
 
 /* Pino do ponto de partida (divIcon do Leaflet com Bootstrap Icons). */
+/* Bolha de resultado (DOM, nao canvas): fica acima do pino de origem mesmo
+   quando todo o CEP cai no mesmo ponto do centro. */
+.prox-mapa__resultado {
+    display: grid;
+    place-items: center;
+    border: 2px solid #B45309;
+    border-radius: 50%;
+    background: #F59E0B;
+    color: #3B2500;
+    font-size: .7rem;
+    font-weight: 800;
+    box-shadow: 0 2px 8px -2px rgba(11, 31, 28, .45);
+}
+.prox-mapa__resultado span { line-height: 1; }
+
 .prox-mapa__pin {
     color: var(--p-accent);
     font-size: 1.7rem;
@@ -738,7 +775,7 @@
     .prox-form__origem { grid-column: span 12; }
     .prox-form__campo { grid-column: span 3; }
     .prox-form__matrizes { grid-column: span 3; }
-    .prox-form__acoes { grid-column: span 3; }
+    .prox-form__acoes { grid-column: span 12; }
 }
 
 @media (max-width: 991.98px) {
@@ -747,7 +784,7 @@
     .detail-hero__badges { justify-content: flex-start; max-width: none; }
     .prox-form__campo { grid-column: span 4; }
     .prox-form__matrizes { grid-column: span 4; }
-    .prox-form__acoes { grid-column: span 4; }
+    .prox-form__acoes { grid-column: span 12; }
 }
 
 @media (max-width: 767.98px) {

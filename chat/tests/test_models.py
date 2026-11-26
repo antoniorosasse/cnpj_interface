@@ -9,6 +9,7 @@ Roda com:
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from chat import repo_postgres
 from chat.models import Conversa, Mensagem
 
 
@@ -82,6 +83,43 @@ class MensagemTests(TestCase):
         self.assertEqual(m.total_linhas, 1)
         self.assertEqual(m.tempo_ms, 1234)
 
+    def test_criar_mensagem_com_plano(self):
+        """plano (JSON) da consulta de proximidade e' gravado e lido de volta."""
+        plano = {
+            'origem': {
+                'logradouro': 'Rua Blumenau',
+                'numero': '3011',
+                'municipio': 'Joinville',
+                'uf': 'SC',
+            },
+            'raio_km': 5.0,
+            'filtros': {'uf': 'SC', 'situacao': 2},
+            'ordem': 'endereco',
+        }
+        m = Mensagem.objects.create(
+            conversa=self.conversa,
+            papel=Mensagem.PAPEL_ASSISTANT,
+            conteudo='Encontrei 12 empresas num raio de 5 km.',
+            plano=plano,
+        )
+        lida = Mensagem.objects.get(pk=m.pk)
+        self.assertEqual(lida.plano, plano)
+        # JSON ida e volta: os tipos continuam os mesmos (float, int, str)
+        self.assertEqual(lida.plano['raio_km'], 5.0)
+        self.assertEqual(lida.plano['filtros']['situacao'], 2)
+        self.assertEqual(lida.plano['origem']['uf'], 'SC')
+
+    def test_mensagem_sem_plano_continua_funcionando(self):
+        """Mensagem sem plano (consultas que nao sao de proximidade) e' nula."""
+        m = Mensagem.objects.create(
+            conversa=self.conversa,
+            papel=Mensagem.PAPEL_USER,
+            conteudo='oi',
+        )
+        lida = Mensagem.objects.get(pk=m.pk)
+        self.assertIsNone(lida.plano)
+        self.assertEqual(lida.conteudo, 'oi')
+
     def test_cascade_delete(self):
         Mensagem.objects.create(
             conversa=self.conversa,
@@ -102,4 +140,52 @@ class MensagemTests(TestCase):
         lista = list(self.conversa.mensagens.all())   # type: ignore[attr-defined]
         self.assertEqual(lista[0].pk, m1.pk)
         self.assertEqual(lista[1].pk, m2.pk)
+
+
+class RepoPostgresPlanoTests(TestCase):
+    """repo_postgres.adicionar_mensagem repassa o plano para o JSONField."""
+
+    PLANO = {
+        'origem': {'municipio': 'Joinville', 'uf': 'SC'},
+        'raio_km': 10.0,
+        'filtros': {'situacao': 2, 'cnae': ['4744-0/99']},
+    }
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='teste3', password='test-only'
+        )
+        self.conversa = Conversa.objects.create(usuario=self.user)
+
+    def test_adicionar_mensagem_com_plano(self):
+        ok = repo_postgres.adicionar_mensagem(
+            self.conversa.pk,
+            'assistant',
+            'Achei 42 empresas.',
+            sql='SELECT cnpj FROM ...',
+            total_linhas=42,
+            tempo_ms=120,
+            plano=self.PLANO,
+        )
+        self.assertTrue(ok)
+        msg = Mensagem.objects.get(conversa=self.conversa)
+        self.assertEqual(msg.papel, 'assistant')
+        self.assertEqual(msg.sql, 'SELECT cnpj FROM ...')
+        self.assertEqual(msg.plano, self.PLANO)
+
+    def test_adicionar_mensagem_sem_plano_fica_nulo(self):
+        ok = repo_postgres.adicionar_mensagem(
+            self.conversa.pk, 'user', 'Quantas empresas?',
+        )
+        self.assertTrue(ok)
+        msg = Mensagem.objects.get(conversa=self.conversa)
+        self.assertIsNone(msg.plano)
+        self.assertEqual(msg.conteudo, 'Quantas empresas?')
+
+    def test_plano_none_nao_quebra(self):
+        ok = repo_postgres.adicionar_mensagem(
+            self.conversa.pk, 'assistant', 'ok', plano=None,
+        )
+        self.assertTrue(ok)
+        self.assertIsNone(Mensagem.objects.get(conversa=self.conversa).plano)
 

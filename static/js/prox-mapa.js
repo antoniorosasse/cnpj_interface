@@ -235,11 +235,11 @@
     var raioKm = Number(dados.raio) || 1;
     var circulo = L.circle(origem, {
         radius: raioKm * 1000,
-        color: '#0d6efd',
+        color: '#0F766E',
         weight: 1.5,
         opacity: 0.7,
         dashArray: '6 6',
-        fillColor: '#0d6efd',
+        fillColor: '#0F766E',
         fillOpacity: 0.04,
         interactive: false
     }).addTo(mapa);
@@ -261,67 +261,131 @@
         { direction: 'top', offset: [0, -22] }
     );
 
-    // ---------------------------------------------------------- pagina atual
-    var grupos = {};
-    (dados.pontos || []).forEach(function (ponto) {
-        var lat = Number(ponto.lat);
-        var lon = Number(ponto.lon);
-        if (!isFinite(lat) || !isFinite(lon)) return;
-        var chave = lat.toFixed(5) + ',' + lon.toFixed(5);
-        if (!grupos[chave]) {
-            grupos[chave] = { lat: lat, lon: lon, km: Number(ponto.km) || 0, itens: [] };
-        }
-        grupos[chave].itens.push(ponto);
-        grupos[chave].km = Math.min(grupos[chave].km, Number(ponto.km) || 0);
-    });
+    // ---------------------------------------------------------- pontos
+    // Funcao reutilizada pela pagina (20 resultados) e pelo botao "mostrar
+    // todos" (recorte filtrado completo, sob demanda).
+    var camadaPagina = L.featureGroup();
 
-    var camadaPagina = L.layerGroup();
-    Object.keys(grupos).forEach(function (chave) {
-        var grupo = grupos[chave];
-        var n = grupo.itens.length;
-        var raioBolha = Math.min(24, 7 + Math.log(n + 1) / Math.LN2 * 3);
-        var titulo = grupo.itens[0].endereco || 'CEP sem logradouro';
-
-        // Precisao do ponto: endereco (CNEFE), rua (media da rua no CEP) ou
-        // centro do CEP. Muda o estilo da bolha e o texto do balao.
-        var precisao = 'cep';
-        grupo.itens.forEach(function (ponto) {
-            if (ponto.precisao === 'exato') precisao = 'exato';
-            else if (ponto.precisao === 'rua' && precisao !== 'exato') precisao = 'rua';
+    function desenharPontos(pontos) {
+        camadaPagina.clearLayers();
+        var grupos = {};
+        (pontos || []).forEach(function (ponto) {
+            var lat = Number(ponto.lat);
+            var lon = Number(ponto.lon);
+            if (!isFinite(lat) || !isFinite(lon)) return;
+            var chave = lat.toFixed(5) + ',' + lon.toFixed(5);
+            if (!grupos[chave]) {
+                grupos[chave] = { lat: lat, lon: lon, km: Number(ponto.km) || 0, itens: [] };
+            }
+            grupos[chave].itens.push(ponto);
+            grupos[chave].km = Math.min(grupos[chave].km, Number(ponto.km) || 0);
         });
-        var rotuloPrecisao = precisao === 'exato' ? 'endereço'
-            : (precisao === 'rua' ? 'rua' : 'centro do CEP');
 
-        var itens = grupo.itens.slice(0, 8).map(function (ponto) {
-            return '<li><a href="' + esc(ponto.url) + '" target="_blank" rel="noopener">' +
-                esc(ponto.nome || ponto.razao || cnpj(ponto.cnpj)) + '</a>' +
-                '<span class="prox-mapa__popup-meta">' + esc(cnpj(ponto.cnpj)) +
-                ' · ' + km(ponto.km) + '</span></li>';
-        }).join('');
-        if (n > 8) itens += '<li class="prox-mapa__popup-mais">e mais ' + (n - 8) + '</li>';
+        Object.keys(grupos).forEach(function (chave) {
+            var grupo = grupos[chave];
+            var n = grupo.itens.length;
+            var titulo = grupo.itens[0].endereco || 'CEP sem logradouro';
 
-        var conteudo = '<div class="prox-mapa__popup"><strong>' + esc(titulo) + '</strong>' +
-            '<p>' + fmt(n) + (n > 1 ? ' empresas' : ' empresa') + ' · ' + km(grupo.km) +
-            ' · ' + rotuloPrecisao + '</p><ul>' + itens + '</ul></div>';
+            // Precisao do ponto: endereco (CNEFE), rua (media da rua no CEP) ou
+            // centro do CEP. Muda o texto do balao.
+            var precisao = 'cep';
+            grupo.itens.forEach(function (ponto) {
+                if (ponto.precisao === 'exato') precisao = 'exato';
+                else if (ponto.precisao === 'rua' && precisao !== 'exato') precisao = 'rua';
+            });
+            var rotuloPrecisao = precisao === 'exato' ? 'endereço'
+                : (precisao === 'rua' ? 'rua' : 'centro do CEP');
 
-        camadaPagina.addLayer(L.circleMarker([grupo.lat, grupo.lon], {
-            radius: raioBolha,
-            color: '#0d6efd',
-            weight: 2,
-            dashArray: precisao === 'cep' ? '4 3' : null,
-            fillColor: '#0d6efd',
-            fillOpacity: precisao === 'exato' ? 0.5 : (precisao === 'rua' ? 0.35 : 0.22)
-        }).bindTooltip(
-            fmt(n) + (n > 1 ? ' empresas' : ' empresa') + ' · ' + km(grupo.km) +
-            ' · ' + rotuloPrecisao,
-            { direction: 'top', offset: [0, -raioBolha] }
-        ).bindPopup(conteudo));
-    });
-    camadaPagina.addTo(mapa);
+            var itens = grupo.itens.slice(0, 8).map(function (ponto) {
+                return '<li><a href="' + esc(ponto.url) + '" target="_blank" rel="noopener">' +
+                    esc(ponto.nome || ponto.razao || cnpj(ponto.cnpj)) + '</a>' +
+                    '<span class="prox-mapa__popup-meta">' + esc(cnpj(ponto.cnpj)) +
+                    ' · ' + km(ponto.km) + '</span></li>';
+            }).join('');
+            if (n > 8) itens += '<li class="prox-mapa__popup-mais">e mais ' + (n - 8) + '</li>';
+
+            var conteudo = '<div class="prox-mapa__popup"><strong>' + esc(titulo) + '</strong>' +
+                '<p>' + fmt(n) + (n > 1 ? ' empresas' : ' empresa') + ' · ' + km(grupo.km) +
+                ' · ' + rotuloPrecisao + '</p><ul>' + itens + '</ul>' +
+                '<a class="prox-mapa__popup-link" href="#prox-resultados-titulo">' +
+                '<i class="bi bi-list-ul" aria-hidden="true"></i> Ver lista de empresas</a></div>';
+
+            var tamanho = Math.round(Math.min(38, 24 + Math.log(n + 1) / Math.LN2 * 3));
+            var iconeResultado = L.divIcon({
+                className: 'prox-mapa__resultado',
+                html: '<span>' + fmt(n) + '</span>',
+                iconSize: [tamanho, tamanho],
+                iconAnchor: [tamanho / 2, tamanho]
+            });
+            camadaPagina.addLayer(L.marker([grupo.lat, grupo.lon], {
+                icon: iconeResultado,
+                zIndexOffset: 1000,
+                title: fmt(n) + (n > 1 ? ' empresas' : ' empresa') + ' · ' + km(grupo.km)
+            }).bindTooltip(
+                fmt(n) + (n > 1 ? ' empresas' : ' empresa') + ' · ' + km(grupo.km) +
+                ' · ' + rotuloPrecisao,
+                { direction: 'top', offset: [0, -tamanho] }
+            ).bindPopup(conteudo));
+        });
+        camadaPagina.addTo(mapa);
+    }
+
+    desenharPontos(dados.pontos || []);
+
+    // Botao "mostrar todas no mapa": busca o recorte filtrado completo.
+    var botaoTodos = document.getElementById('prox-mapa-todos');
+    if (botaoTodos) {
+        botaoTodos.addEventListener('click', function () {
+            if (!window.fetch || todosPedidos) return;
+            todosPedidos = true;
+            botaoTodos.disabled = true;
+            aviso('Carregando todas as empresas do recorte...');
+            fetch(botaoTodos.getAttribute('data-url'), {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            }).then(function (resposta) {
+                return resposta.json();
+            }).then(function (payload) {
+                if (!payload || payload.erro) {
+                    aviso(payload && payload.erro === 'sem-filtro'
+                        ? 'Este botão só vale com filtros de atividade/UF/idade/capital.'
+                        : 'Não foi possível carregar todos os pontos agora.');
+                    botaoTodos.disabled = false;
+                    todosPedidos = false;
+                    return;
+                }
+                desenharPontos(payload.pontos || []);
+                if (camadaPagina.getLayers().length) {
+                    mapa.fitBounds(circulo.getBounds().extend(camadaPagina.getBounds()),
+                                   { padding: [16, 16] });
+                }
+                var texto = fmt(payload.exibidas) + ' empresa(s) no mapa';
+                if (payload.total > payload.exibidas) {
+                    texto += ' (limite de ' + fmt(payload.exibidas) + ' pontos)';
+                }
+                aviso(texto);
+                botaoTodos.innerHTML = '<i class="bi bi-check2-circle"></i> Todas no mapa';
+            }).catch(function () {
+                aviso('Não foi possível carregar todos os pontos agora.');
+                botaoTodos.disabled = false;
+                todosPedidos = false;
+            });
+        });
+
+        // Para recortes pequenos, carrega todas as bolhas sozinho: o mapa
+        // deixa de mostrar só os 20 da página sem exigir um clique.
+        var totalFiltrado = Number(el.getAttribute('data-total-filtrado')) || 0;
+        if (totalFiltrado > 0 && totalFiltrado <= 2000) {
+            window.setTimeout(function () {
+                if (botaoTodos && !todosPedidos) botaoTodos.click();
+            }, 700);
+        }
+    }
 
     // -------------------------------------------------- densidade do raio
     var camadaDensidade = null;
     var densidadePedida = false;
+    var todosPedidos = false;
 
     function desenharDensidade(payload) {
         var celulas = (payload && payload.celulas) || [];
@@ -343,10 +407,10 @@
             var marca = L.circleMarker([celula[0], celula[1]], {
                 radius: 4 + forca * 20,
                 stroke: true,
-                color: '#ea580c',
+                color: '#B45309',
                 weight: 1,
                 opacity: 0.4,
-                fillColor: '#f97316',
+                fillColor: '#F59E0B',
                 fillOpacity: 0.16 + forca * 0.5
             });
             marca.bindTooltip(fmt(n) + (n > 1 ? ' empresas' : ' empresa') +
@@ -386,6 +450,9 @@
     }
 
     function carregarDensidade() {
+        // Com filtro de atividade/UF/idade/capital a densidade (agregada por
+        // CEP) nao conhece esses filtros; o mapa fica so com os pontos da pagina.
+        if (el.getAttribute('data-filtrado') === '1') return;
         if (camadaDensidade) {
             if (!toggle || toggle.checked) camadaDensidade.addTo(mapa);
             return;
@@ -494,6 +561,10 @@
             return;
         }
         if (!window.fetch || pontosPedidos) return;
+        // Com filtro de atividade/UF/idade/capital o endpoint de pontos nao
+        // aplica o filtro (ele agrega so por CEP); melhor nao trocar os pontos
+        // filtrados da pagina pelos pontos sem filtro.
+        if (el.getAttribute('data-filtrado') === '1') return;
         var consulta = consultaPontos();
         if (consulta.chave === ultimaChavePontos && camadaPontos.getLayers().length) {
             return;
@@ -574,9 +645,9 @@
 
                 var marca = L.circleMarker([grupo.lat, grupo.lon], {
                     radius: raio,
-                    color: temExato ? '#1d4ed8' : '#64748b',
+                    color: temExato ? '#0F766E' : '#64748b',
                     weight: 1.2,
-                    fillColor: temExato ? '#3b82f6' : '#94a3b8',
+                    fillColor: temExato ? '#14B8A6' : '#94a3b8',
                     fillOpacity: temExato ? 0.9 : 0.6
                 });
                 marca.bindTooltip(n > 1 ? fmt(n) + ' empresas'
@@ -684,7 +755,11 @@
             // Reenquadra UMA vez quando o card tem altura de verdade.
             if (!jaEnquadrou && mapa.getSize().y > 200) {
                 jaEnquadrou = true;
-                mapa.fitBounds(circulo.getBounds(), { padding: [16, 16] });
+                var limites = circulo.getBounds();
+                if (camadaPagina && camadaPagina.getLayers().length) {
+                    limites = limites.extend(camadaPagina.getBounds());
+                }
+                mapa.fitBounds(limites, { padding: [16, 16] });
             }
             reajustando = false;
         });

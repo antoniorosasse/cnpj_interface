@@ -47,7 +47,9 @@ def iterar_linhas(filtros: dict, limite: int, lote: int = 1000):
 
 
 def iterar_proximidade(latitude, longitude, raio_km, somente_matrizes,
-                       situacao_codigo, limite, lote=2000):
+                       situacao_codigo, limite, lote=2000,
+                       faixas_cnae=None, cnaes=None, uf=None,
+                       idade_anos=None, capital_min=None, usar_endereco=True):
     """
     Exporta a busca por proximidade em BLOCOS usando o keyset da tela.
 
@@ -59,20 +61,52 @@ def iterar_proximidade(latitude, longitude, raio_km, somente_matrizes,
     A razao social entra numa segunda query por bloco (ANY(%s) em c_empresas),
     sem mexer no SQL da tela.
     """
-    from core.proximidade import buscar_proximos
+    from core.proximidade import (
+        buscar_proximos,
+        buscar_proximos_endereco,
+        buscar_proximos_filtrado,
+        tem_tabela_total,
+    )
+
+    filtrado = bool(faixas_cnae or cnaes or uf or idade_anos or capital_min)
+    if filtrado:
+        from core.views import data_ha_anos
+        dt_ini_antes_de = data_ha_anos(idade_anos) if idade_anos else None
+    else:
+        dt_ini_antes_de = None
 
     conn = get_postgres_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SET statement_timeout = '20s'")
+            cur.execute("SET statement_timeout = '25s'")
+            try:
+                usar_endereco = bool(usar_endereco
+                                     and tem_tabela_total(cur, 'c_estab_geo')
+                                     and tem_tabela_total(cur, 'c_ceps_folga'))
+            except Exception:
+                usar_endereco = False
             restante = limite
             depois = None
             while restante > 0:
                 pedido = min(lote, restante)
-                linhas, tem_mais, _total = buscar_proximos(
-                    cur, latitude, longitude, raio_km, somente_matrizes,
-                    depois=depois, limite=pedido, situacao=situacao_codigo,
-                )
+                if filtrado:
+                    linhas, tem_mais, _total = buscar_proximos_filtrado(
+                        cur, latitude, longitude, raio_km, limite=pedido,
+                        situacao=situacao_codigo,
+                        matrizes=somente_matrizes,
+                        faixas_cnae=faixas_cnae, cnaes=cnaes, uf=uf,
+                        dt_ini_antes_de=dt_ini_antes_de,
+                        capital_min=capital_min,
+                        depois=depois, contar=False,
+                        usar_endereco=usar_endereco,
+                    )
+                else:
+                    busca = (buscar_proximos_endereco if usar_endereco
+                             else buscar_proximos)
+                    linhas, tem_mais, _total = busca(
+                        cur, latitude, longitude, raio_km, somente_matrizes,
+                        depois=depois, limite=pedido, situacao=situacao_codigo,
+                    )
                 if not linhas:
                     break
                 linhas = [dict(linha) for linha in linhas[:pedido]]

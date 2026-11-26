@@ -4,7 +4,7 @@
 {% block title %}Estatísticas — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261121">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261126i">
 {% endblock %}
 
 {% block content %}
@@ -200,7 +200,7 @@
                         <ul class="ui-legend intel-donut-legend">
                             {% for p in portes %}
                             <li data-porte-total="{{ p.total }}">
-                                <span class="ui-legend__dot" aria-hidden="true" style="background:{% cycle 'var(--p-accent)' '#7dd3fc' '#a5b4fc' '#38bdf8' %}"></span>
+                                <span class="ui-legend__dot" aria-hidden="true" style="background:{% cycle 'var(--viz-1)' 'var(--viz-3)' 'var(--viz-4)' 'var(--viz-2)' %}"></span>
                                 <span class="intel-donut-legend__label">{{ p.porte|default:"NÃO INFORMADO" }}</span>
                                 <span class="intel-donut-legend__value">
                                     {{ p.total|format_number }}<span class="intel-donut-legend__pct" data-pct></span>

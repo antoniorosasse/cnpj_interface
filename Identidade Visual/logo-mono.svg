@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 160" role="img" aria-label="BusqueCNPJ">
+  <g transform="translate(8 18) scale(1.7)" fill="none" stroke="#1C2321" stroke-width="3.2">
+    <ellipse cx="32" cy="30" rx="27" ry="11" transform="rotate(-24 32 30)"/>
+    <path d="M32 60C32 60 9 38 9 24a23 23 0 1 1 46 0c0 14-23 36-23 36Z"/>
+    <path d="M24 44V27h6v17M32 44V21h8v23M42 44V30h5v14" stroke-width="2.4" stroke-linejoin="round"/>
+    <circle cx="57" cy="17" r="3.6" fill="#1C2321" stroke="none"/>
+  </g>
+  <text x="145" y="94" font-family="Segoe UI, Arial, Liberation Sans, sans-serif" font-size="72" font-weight="800" letter-spacing="-3" fill="#1C2321">BusqueCNPJ</text>
+  <text x="148" y="128" font-family="Segoe UI, Arial, Liberation Sans, sans-serif" font-size="17" font-weight="600" letter-spacing="2" fill="#1C2321">PROSPECÇÃO B2B INTELIGENTE</text>
+</svg>

@@ -240,6 +240,40 @@ class AdicionarMensagemTests(MongoModelsBaseTests):
         self.assertFalse(msg['truncado'])
         self.assertEqual(msg['tempo_ms'], 1234)
 
+    def test_adiciona_mensagem_com_plano(self):
+        """plano (JSON simples) da consulta de proximidade vai pro documento."""
+        plano = {
+            'origem': {
+                'logradouro': 'Rua Blumenau',
+                'numero': '3011',
+                'municipio': 'Joinville',
+                'uf': 'SC',
+            },
+            'raio_km': 5.0,
+            'filtros': {'uf': 'SC', 'situacao': 2},
+            'ordem': 'endereco',
+        }
+        cid = mm.criar_conversa(usuario_id=1)
+        ok = mm.adicionar_mensagem(
+            cid, 'assistant', 'Encontrei 12 empresas.', plano=plano,
+        )
+        self.assertTrue(ok)
+
+        doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
+        self.assertEqual(doc['mensagens'][0]['plano'], plano)
+
+    def test_plano_none_nao_e_gravado(self):
+        """Sem plano o campo fica ausente, como os outros extras nulos."""
+        cid = mm.criar_conversa(usuario_id=1)
+        mm.adicionar_mensagem(cid, 'user', 'oi', plano=None)
+
+        doc = mm.buscar_conversa(cid, usuario_id=1)
+        self.assertIsNotNone(doc)
+        assert doc is not None
+        self.assertNotIn('plano', doc['mensagens'][0])
+
     def test_extras_none_nao_sao_gravados(self):
         cid = mm.criar_conversa(usuario_id=1)
         mm.adicionar_mensagem(cid, 'assistant', 'ok', erro=None)

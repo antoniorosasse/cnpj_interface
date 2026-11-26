@@ -66,7 +66,10 @@ def adicionar_mensagem(conversa_id, papel, conteudo, **extras):
         return False
 
     campos = {'conversa': conversa, 'papel': papel, 'conteudo': conteudo or ''}
-    for chave in ('sql', 'resposta_texto', 'total_linhas', 'tempo_ms'):
+    # 'plano' e' JSONField: aceita dict (JSON simples) ou None; None e'
+    # ignorado aqui e o campo fica nulo.
+    for chave in ('sql', 'resposta_texto', 'colunas', 'rows',
+                  'total_linhas', 'truncado', 'tempo_ms', 'erro', 'plano'):
         if chave in extras and extras[chave] is not None:
             campos[chave] = extras[chave]
 

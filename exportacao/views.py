@@ -32,7 +32,8 @@ from .servicos import (SaldoInsuficiente, aplicar_cookie_visitante,
                        registrar_uso, visitante_id)
 
 from core.proximidade import RAIO_MAX_KM, RAIO_MIN_KM, RAIO_PADRAO_KM, resolver_origem
-from core.views import SITUACOES, get_postgres_connection
+from core.views import (SITUACOES, filtros_proximidade,
+                        get_postgres_connection)
 from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger(__name__)
@@ -446,7 +447,15 @@ def exportar_proximidade(request):
     situacao = request.GET.get('situacao', '').strip().upper()
     if situacao not in SITUACOES:
         situacao = ''
+    if request.GET.get('ativas'):
+        situacao = 'ATIVA'
     somente_matrizes = ('matrizes' in request.GET) if request.GET else True
+    filtros_extra = filtros_proximidade(request)
+    if filtros_extra['erro']:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'filtro',
+            'mensagem': filtros_extra['erro'],
+        }, status=400)
 
     user = getattr(request, 'user', None)
     cliente = cliente_do_usuario(user)
@@ -521,7 +530,14 @@ def exportar_proximidade(request):
     try:
         linhas = list(iterar_proximidade(
             origem['latitude'], origem['longitude'], raio, somente_matrizes,
-            SITUACOES[situacao] if situacao else None, limite))
+            SITUACOES[situacao] if situacao else None, limite,
+            faixas_cnae=filtros_extra['faixas'],
+            cnaes=filtros_extra['cnaes'],
+            uf=filtros_extra['uf'],
+            idade_anos=filtros_extra['idade'],
+            capital_min=filtros_extra['capital'],
+            usar_endereco=(request.GET.get('ordem') != 'cep'),
+        ))
     except Exception:
         logger.exception('Falha ao preparar exportacao de proximidade')
         return render(request, 'exportacao/bloqueado.html', {
@@ -536,7 +552,11 @@ def exportar_proximidade(request):
         usuario=user if (user is not None and user.is_authenticated) else None,
         visitante=visitante, origem='proximidade', formato=formato,
         filtros={'origem': origem_txt, 'raio': raio, 'matrizes': somente_matrizes,
-                 'situacao': situacao},
+                 'situacao': situacao,
+                 'atividade': filtros_extra['atividade'],
+                 'uf': filtros_extra['uf'],
+                 'idade': filtros_extra['idade'],
+                 'capital': filtros_extra['capital']},
         n_linhas=len(linhas), amostra=amostra, ip=ip_do_request(request),
         expira_em=timezone.now() + TTL_EXPORTACAO,
     )
@@ -587,6 +607,119 @@ def _ler(msg, nome, default=''):
     return getattr(msg, nome, default)
 
 
+def _exportar_chat_proximidade(request, alvo, formato, maximo):
+    """
+    Exporta a ultima consulta de PROXIMIDADE do chat.
+
+    O plano (origem/raio/atividades/filtros) fica gravado em Mensagem.plano;
+    aqui ele e' reexecutado com o teto do export (sem depender de SQL, que a
+    consulta de proximidade nao tem).
+    """
+    from chat.services.proximidade_service import (
+        COLUNAS as PROX_COLUNAS_CHAT,
+        ROTULOS as PROX_ROTULOS_CHAT,
+        consultar_proximidade,
+    )
+
+    plano_salvo = _ler(alvo, 'plano') or {}
+    if not isinstance(plano_salvo, dict):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sem_lista',
+            'mensagem': 'A consulta de proximidade nao tem plano para reexecutar.',
+        }, status=404)
+
+    origem = plano_salvo.get('origem') or {}
+    origem_texto = origem.get('texto') if isinstance(origem, dict) else None
+    if not origem_texto:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'origem',
+            'mensagem': 'A consulta de proximidade nao guardou a origem.',
+        }, status=400)
+
+    plano = {
+        'origem': origem_texto,
+        'usar_contexto': False,
+        'raio_km': plano_salvo.get('raio_km') or 10,
+        'atividades': plano_salvo.get('atividades') or [],
+        'situacao': plano_salvo.get('situacao') or 'todas',
+        'uf': plano_salvo.get('uf'),
+        'idade_min_anos': plano_salvo.get('idade_min_anos'),
+        'capital_min': plano_salvo.get('capital_min'),
+        'limite': maximo,
+    }
+    resultado = consultar_proximidade(plano, limite_max=maximo)
+    if not resultado.get('ok'):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'consulta',
+            'mensagem': resultado.get('erro') or 'Nao foi possivel reexecutar a consulta.',
+        }, status=503)
+
+    linhas = list(resultado.get('rows') or [])[:maximo]
+    colunas = list(PROX_COLUNAS_CHAT)
+    user = getattr(request, 'user', None)
+    staff = bool(user is not None and user.is_authenticated
+                 and (user.is_staff or user.is_superuser))
+    cliente = cliente_do_usuario(user)
+    if not staff:
+        if cliente is None:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': 'Sua conta ainda nao tem creditos. '
+                            'Compre um pacote para baixar a lista do chat.',
+            }, status=402)
+        if cliente.saldo_creditos < len(linhas):
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta lista tem {len(linhas)} linhas e sua conta tem '
+                             f'{cliente.saldo_creditos} creditos. Compre mais para baixar.'),
+            }, status=402)
+
+    try:
+        if formato == 'json':
+            conteudo = json.dumps(linhas, ensure_ascii=False, default=str)
+            tipo = 'application/json'
+        else:
+            buffer = io.StringIO()
+            buffer.write('\ufeff')
+            escritor = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+            escritor.writerow([PROX_ROTULOS_CHAT.get(c, c) for c in colunas])
+            for linha in linhas:
+                escritor.writerow([_valor(linha, c) for c in colunas])
+            conteudo = buffer.getvalue()
+            tipo = 'text/csv'
+    except Exception:
+        logger.exception('Falha ao serializar exportacao de proximidade do chat')
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'erro', 'mensagem': 'Nao foi possivel montar o arquivo agora.',
+        }, status=500)
+
+    exportacao = Exportacao.objects.create(
+        cliente=cliente, usuario=user, visitante='', origem='chat', formato=formato,
+        sql='', filtros={'plano': plano_salvo}, n_linhas=len(linhas), amostra=False,
+        ip=ip_do_request(request), expira_em=timezone.now() + TTL_EXPORTACAO,
+    )
+    creditos = 0
+    if not staff:
+        try:
+            creditos = debitar(cliente, len(linhas), f'exportacao:{exportacao.pk}')
+        except SaldoInsuficiente as exc:
+            Exportacao.objects.filter(pk=exportacao.pk).update(status='falhou')
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta lista custa {exc.necessarios} creditos e sua conta '
+                             f'tem {exc.disponiveis}. Compre mais para baixar.'),
+            }, status=402)
+
+    Exportacao.objects.filter(pk=exportacao.pk).update(
+        status='baixada', baixada_em=timezone.now(), creditos=creditos)
+
+    resposta = HttpResponse(conteudo, content_type=f'{tipo}; charset=utf-8')
+    resposta['Content-Disposition'] = (
+        f'attachment; filename="chat-proximidade-'
+        f'{timezone.localdate().isoformat()}.{formato}"')
+    return resposta
+
+
 def exportar_chat(request):
     """
     Baixa a lista da ULTIMA resposta com tabela na conversa aberta.
@@ -623,20 +756,33 @@ def exportar_chat(request):
     conversa_id = conversa.pk if not isinstance(conversa, dict) else (
         conversa.get('pk') or conversa.get('id') or conversa.get('_id'))
     mensagens = repo.mensagens_da_conversa(conversa_id)
+    maximo = (getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000) if staff
+              else getattr(settings, 'EXPORTACAO_CHAT_MAX_LINHAS', 5000))
+
+    # A ultima resposta EXPORTAVEL da conversa: pode ser uma lista SQL ou uma
+    # consulta de proximidade (plano). A mais recente vence, independente do
+    # tipo - senao um SQL antigo seria exportado no lugar do recorte geo novo.
     alvo = None
+    alvo_plano = None
     for msg in reversed(list(mensagens)):
-        if (_ler(msg, 'papel') == 'assistant' and str(_ler(msg, 'sql') or '').strip()):
+        if _ler(msg, 'papel') != 'assistant':
+            continue
+        if str(_ler(msg, 'sql') or '').strip():
             alvo = msg
             break
+        if _ler(msg, 'plano'):
+            alvo_plano = msg
+            break
+
     if alvo is None:
+        if alvo_plano is not None:
+            return _exportar_chat_proximidade(request, alvo_plano, formato, maximo)
         return render(request, 'exportacao/bloqueado.html', {
             'motivo': 'sem_lista',
             'mensagem': 'A última resposta do chat não tem lista para baixar.',
         }, status=404)
 
     sql = str(_ler(alvo, 'sql')).strip()
-    maximo = (getattr(settings, 'EXPORTACAO_MAX_LINHAS', 50000) if staff
-              else getattr(settings, 'EXPORTACAO_CHAT_MAX_LINHAS', 5000))
     try:
         validation = validar_sql(sql, max_rows=maximo)
     except SQLValidationError as exc:
