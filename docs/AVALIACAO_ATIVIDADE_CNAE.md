@@ -18,7 +18,8 @@
 |---|---:|---:|---:|
 | Lexical (`SequenceMatcher` + bônus de frase) | **26,7%** | 38,4% | 0,348 |
 | Braza atual (384d) | **23,3%** | 41,9% | 0,352 |
-| **BrazEmbed-PT-BR (768d)** | **53,5%** | **73,3%** | **0,649** |
+| BrazEmbed-PT-BR — `nome+código` | 53,5% | 73,3% | 0,649 |
+| **BrazEmbed-PT-BR — só `nm_cnae`** | **54,7%** | **74,4%** | **0,664** |
 | BGE-M3 (1024d) | 52,3% | 65,1% | 0,622 |
 
 ### BrazEmbed por grupo
@@ -75,7 +76,7 @@ O cache de embeddings fica em `/tmp/avaliacao_cnae` (não versionado).
 
 ## Limitações
 
-- **Formato do documento:** o benchmark usa `nome (cnae)`; o embedding atual do banco usa só `nm_cnae`. Antes de migrar, rebenchmarkar os dois formatos (ver `PLANO_MIGRACAO_BRAZEMBED.md`).
+- **Formato do documento:** comparados os dois formatos no mesmo modelo. `nm_cnae` puro foi melhor (54,7% top-1) e é o formato atual do banco; decisão: usar `nm_cnae` puro. Ver `PLANO_MIGRACAO_BRAZEMBED.md`.
 
 - Gold set inicial de 86 atividades, não 200–300; ainda precisa de ampliação com
   perguntas reais.

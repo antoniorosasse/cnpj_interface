@@ -100,20 +100,29 @@ def ranking_lexical(termo, catalogo):
     return [c for _, c in pontuados]
 
 
-def carregar_embeddings_modelo(nome, catalogo, cache_dir):
+def _doc_cnae(cnae, nome, formato):
+    if formato == 'nome':
+        return str(nome)
+    if formato == 'nome-codigo':
+        return f'{nome} ({cnae})'
+    raise ValueError(f'formato desconhecido: {formato}')
+
+
+def carregar_embeddings_modelo(nome, catalogo, cache_dir, formato='nome-codigo'):
     from sentence_transformers import SentenceTransformer
     modelo_id = MODELOS.get(nome, nome)
     cache = Path(cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r'[^a-zA-Z0-9_.-]+', '_', nome)
-    arquivo = cache / f'{slug}.npy'
+    sufixo = '' if formato == 'nome-codigo' else f'_{formato}'
+    arquivo = cache / f'{slug}{sufixo}.npy'
     if arquivo.exists():
         matriz = np.load(arquivo)
         if matriz.shape[0] == len(catalogo):
             return None, matriz
     print(f'Carregando modelo {nome} -> {modelo_id}...', file=sys.stderr)
     modelo = SentenceTransformer(modelo_id, trust_remote_code=True)
-    docs = [f'{nome} ({cnae})' for cnae, nome in catalogo]
+    docs = [_doc_cnae(cnae, nome, formato) for cnae, nome in catalogo]
     inicio = time.monotonic()
     matriz = modelo.encode(
         docs, batch_size=64, normalize_embeddings=True,
@@ -193,6 +202,9 @@ def main():
                     help='lista separada por virgula; nomes em MODELOS ou path HF')
     ap.add_argument('--cache-dir', default='/tmp/avaliacao_cnae')
     ap.add_argument('--topk', type=int, default=3)
+    ap.add_argument('--formato-doc', choices=('nome', 'nome-codigo'),
+                    default='nome-codigo',
+                    help='texto do CNAE enviado ao modelo (default: nome-codigo)')
     ap.add_argument('--json-out', default='')
     args = ap.parse_args()
 
@@ -207,10 +219,13 @@ def main():
         if nome == 'lexical':
             fn = lambda termo: ranking_lexical(termo, catalogo)
             resumo, grupos, detalhes = metricas(itens, catalogo, fn, args.topk)
-            resultados[nome] = {'resumo': resumo, 'grupos': grupos, 'detalhes': detalhes}
+            resultados[nome] = {'formato_doc': args.formato_doc,
+                            'resumo': resumo, 'grupos': grupos,
+                            'detalhes': detalhes}
             imprimir('lexical', resumo, grupos, detalhes)
             continue
-        modelo, matriz = carregar_embeddings_modelo(nome, catalogo, args.cache_dir)
+        modelo, matriz = carregar_embeddings_modelo(
+            nome, catalogo, args.cache_dir, formato=args.formato_doc)
         if modelo is None:
             # cache carregado; para consulta tambem precisamos do modelo
             from sentence_transformers import SentenceTransformer
@@ -219,7 +234,9 @@ def main():
         fn = lambda termo, m=modelo, mat=matriz, pref=prefixo: ranking_embedding(
             termo, m, mat, catalogo, com_prefixo_e5=pref)
         resumo, grupos, detalhes = metricas(itens, catalogo, fn, args.topk)
-        resultados[nome] = {'resumo': resumo, 'grupos': grupos, 'detalhes': detalhes}
+        resultados[nome] = {'formato_doc': args.formato_doc,
+                            'resumo': resumo, 'grupos': grupos,
+                            'detalhes': detalhes}
         imprimir(nome, resumo, grupos, detalhes)
 
     if args.json_out:

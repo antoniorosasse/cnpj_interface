@@ -1,6 +1,6 @@
 # Migração Braza 384d → BrazEmbed-PT-BR 768d
 
-**Criado em:** 27/11/2026 · **Status:** plano; nenhuma DDL/DML executada
+**Criado em:** 27/11/2026 · **Status:** plano; formato decidido; nenhuma DDL/DML executada
 
 ## Decisão
 
@@ -10,14 +10,18 @@ do benchmark inicial: top-1 53,5%, top-3 73,3%). Ele substitui o Braza 384d como
 
 continuam necessários.
 
-## Antes de migrar: corrigir a medição
+## Formato do documento: decidido
 
-O benchmark codificou `nome (cnae)`; o banco atual tem somente `nm_cnae` no
-embedding. São textos diferentes. Antes da DDL:
+Comparação no mesmo gold set/modelo:
 
-1. decidir o formato do documento (`nm_cnae` ou `nm_cnae (cnae)`);
-2. rebenchmarkar os dois formatos;
-3. só então escolher e reembedar.
+| Formato | top-1 | top-3 | MRR |
+|---|---:|---:|---:|
+| `nome + código` | 53,5% | 73,3% | 0,649 |
+| **só `nm_cnae`** | **54,7%** | **74,4%** | **0,664** |
+
+Decisão: usar **`nm_cnae` puro**, que é o formato atual do banco e deu o
+melhor resultado. Não é necessário mudar o texto das descrições; só o modelo
+e a dimensão 384 → 768.
 
 ## Banco (local primeiro, depois produção)
 
