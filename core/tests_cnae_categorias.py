@@ -112,6 +112,14 @@ class CategoriasCnaeTests(SimpleTestCase):
             self.assertEqual(filtro['cnaes'], [4731800], termo)
             self.assertEqual(filtro['rotulo'], 'postos de combustíveis', termo)
 
+    def test_academias_e_pizzarias(self):
+        f = cnae_categorias.resolver_filtro_cnae('academias')
+        self.assertEqual(f['cnaes'], [9313100])
+        f = cnae_categorias.resolver_filtro_cnae('pizzarias')
+        self.assertEqual(set(f['cnaes']), {5611201, 5620104})
+        f = cnae_categorias.resolver_filtro_cnae('oficina mecânica')
+        self.assertEqual(set(f['cnaes']), {4520001, 4520003, 4520004})
+
     def test_transportadoras_de_carga(self):
         filtro = cnae_categorias.resolver_filtro_cnae('transportadoras')
         self.assertEqual(filtro['categorias'], ['transportadoras'])

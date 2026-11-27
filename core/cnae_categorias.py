@@ -84,6 +84,33 @@ CATEGORIAS = {
             'odontologia', 'dentista', 'dentistas',
         ),
     },
+    'academias': {
+        'rotulo': 'academias',
+        'divisoes': (),
+        'cnaes': (9313100,),
+        'generica': False,
+        'aliases': (
+            'academia', 'academias', 'crossfit', 'pilates', 'ginastica',
+            'musculacao', 'condicionamento fisico',
+        ),
+    },
+    'pizzarias': {
+        'rotulo': 'pizzarias',
+        'divisoes': (),
+        'cnaes': (5611201, 5620104),
+        'generica': False,
+        'aliases': ('pizzaria', 'pizzarias', 'pizza', 'pizzaiolo'),
+    },
+    'oficinas_mecanicas': {
+        'rotulo': 'oficinas mecânicas',
+        'divisoes': (),
+        'cnaes': (4520001, 4520003, 4520004),
+        'generica': False,
+        'aliases': (
+            'oficina mecanica', 'oficinas mecanicas', 'mecanica de veiculos',
+            'auto eletrica', 'auto center', 'auto servico',
+        ),
+    },
     'postos': {
         'rotulo': 'postos de combustíveis',
         'divisoes': (),
