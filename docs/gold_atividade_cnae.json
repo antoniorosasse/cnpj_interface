@@ -1,0 +1,1149 @@
+[
+  {
+    "id": "001",
+    "termo": "padarias",
+    "aceitos": [
+      1091102,
+      4721101,
+      4721102
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "002",
+    "termo": "padoca",
+    "aceitos": [
+      1091102,
+      4721101,
+      4721102
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": "coloquial"
+  },
+  {
+    "id": "003",
+    "termo": "confeitarias",
+    "aceitos": [
+      1091102,
+      4721101,
+      4721102
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "004",
+    "termo": "supermercados",
+    "aceitos": [
+      4711302
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "005",
+    "termo": "mercados",
+    "aceitos": [
+      4711302,
+      4712100
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "006",
+    "termo": "minimercados e mercearias",
+    "aceitos": [
+      4712100
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "007",
+    "termo": "hipermercados",
+    "aceitos": [
+      4711301
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "008",
+    "termo": "restaurantes",
+    "aceitos": [
+      5611201
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "009",
+    "termo": "lanchonetes",
+    "aceitos": [
+      5611203
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "010",
+    "termo": "bares",
+    "aceitos": [
+      5611202,
+      5611204,
+      5611205
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "011",
+    "termo": "cafeterias",
+    "aceitos": [
+      5611203
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "012",
+    "termo": "pizzarias",
+    "aceitos": [
+      5611201,
+      5620104
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": "nao esta na KB; vetor deve trazer comida"
+  },
+  {
+    "id": "013",
+    "termo": "pizzaria delivery",
+    "aceitos": [
+      5620104
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "014",
+    "termo": "acougues",
+    "aceitos": [
+      4722901
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "015",
+    "termo": "peixarias",
+    "aceitos": [
+      4722902
+    ],
+    "faixas": [],
+    "grupo": "alimentacao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "016",
+    "termo": "postos de gasolina",
+    "aceitos": [
+      4731800
+    ],
+    "faixas": [],
+    "grupo": "combustivel",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "017",
+    "termo": "postos de combustivel",
+    "aceitos": [
+      4731800
+    ],
+    "faixas": [],
+    "grupo": "combustivel",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "018",
+    "termo": "posto",
+    "aceitos": [
+      4731800
+    ],
+    "faixas": [],
+    "grupo": "combustivel",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "019",
+    "termo": "clinicas medicas",
+    "aceitos": [
+      8630501,
+      8630502,
+      8630503
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "020",
+    "termo": "consultorios medicos",
+    "aceitos": [
+      8630503
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "021",
+    "termo": "dentistas",
+    "aceitos": [
+      8630504,
+      8630505
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "022",
+    "termo": "clinicas odontologicas",
+    "aceitos": [
+      8630504,
+      8630505
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "023",
+    "termo": "clinicas",
+    "aceitos": [
+      8630501,
+      8630502,
+      8630503,
+      8630504,
+      8630505,
+      9609201
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": "ambiguo"
+  },
+  {
+    "id": "024",
+    "termo": "laboratorios clinicos",
+    "aceitos": [
+      8640202,
+      8640201
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "025",
+    "termo": "hospitais",
+    "aceitos": [
+      8610101,
+      8610102
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "026",
+    "termo": "farmacias",
+    "aceitos": [
+      4771701,
+      4771702,
+      4771703
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "027",
+    "termo": "drogaria",
+    "aceitos": [
+      4771701
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "028",
+    "termo": "fisioterapia",
+    "aceitos": [
+      8650004
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "029",
+    "termo": "nutricao",
+    "aceitos": [
+      8650002
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "030",
+    "termo": "psicologia",
+    "aceitos": [
+      8650003
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "031",
+    "termo": "veterinarias",
+    "aceitos": [
+      7500100
+    ],
+    "faixas": [],
+    "grupo": "saude",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "032",
+    "termo": "clinica de estetica",
+    "aceitos": [
+      9602502,
+      9609201
+    ],
+    "faixas": [],
+    "grupo": "beleza",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "033",
+    "termo": "salao de beleza",
+    "aceitos": [
+      9602501,
+      9602502
+    ],
+    "faixas": [],
+    "grupo": "beleza",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "034",
+    "termo": "cabeleireiros",
+    "aceitos": [
+      9602501
+    ],
+    "faixas": [],
+    "grupo": "beleza",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "035",
+    "termo": "manicure",
+    "aceitos": [
+      9602501
+    ],
+    "faixas": [],
+    "grupo": "beleza",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "036",
+    "termo": "barbearias",
+    "aceitos": [
+      9602501
+    ],
+    "faixas": [],
+    "grupo": "beleza",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "037",
+    "termo": "oficinas mecanicas",
+    "aceitos": [
+      4520001,
+      4520003,
+      4520004
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "038",
+    "termo": "auto eletrica",
+    "aceitos": [
+      4520003
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "039",
+    "termo": "borracharias",
+    "aceitos": [
+      4520006
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "040",
+    "termo": "lava rapido",
+    "aceitos": [
+      4520005
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "041",
+    "termo": "lava jato",
+    "aceitos": [
+      4520005
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "042",
+    "termo": "concessionarias",
+    "aceitos": [
+      4511101,
+      4511102
+    ],
+    "faixas": [],
+    "grupo": "automotivo",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "043",
+    "termo": "estacionamentos",
+    "aceitos": [
+      5223100
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "044",
+    "termo": "construtoras",
+    "aceitos": [
+      4120400,
+      4399103,
+      4110700
+    ],
+    "faixas": [],
+    "grupo": "construcao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "045",
+    "termo": "imobiliarias",
+    "aceitos": [
+      6821801,
+      6821802,
+      6822600
+    ],
+    "faixas": [],
+    "grupo": "imobiliario",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "046",
+    "termo": "corretores de imoveis",
+    "aceitos": [
+      6821801,
+      6821802
+    ],
+    "faixas": [],
+    "grupo": "imobiliario",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "047",
+    "termo": "arquitetura",
+    "aceitos": [
+      7111100
+    ],
+    "faixas": [],
+    "grupo": "construcao",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "048",
+    "termo": "engenharia",
+    "aceitos": [
+      7112000,
+      4299599
+    ],
+    "faixas": [],
+    "grupo": "construcao",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "049",
+    "termo": "carpintaria",
+    "aceitos": [
+      1622699
+    ],
+    "faixas": [],
+    "grupo": "construcao",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "050",
+    "termo": "marcenaria",
+    "aceitos": [
+      1622699,
+      1622602
+    ],
+    "faixas": [],
+    "grupo": "construcao",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "051",
+    "termo": "material de construcao",
+    "aceitos": [
+      4744005,
+      4744099
+    ],
+    "faixas": [],
+    "grupo": "comercio",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "052",
+    "termo": "contabilidade",
+    "aceitos": [
+      6920601,
+      6920602
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "053",
+    "termo": "contadores",
+    "aceitos": [
+      6920601,
+      6920602
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "054",
+    "termo": "advocacia",
+    "aceitos": [
+      6911701
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "055",
+    "termo": "advogados",
+    "aceitos": [
+      6911701
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "056",
+    "termo": "consultoria",
+    "aceitos": [
+      7020400,
+      6204000,
+      6920602
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "057",
+    "termo": "publicidade",
+    "aceitos": [
+      7311400,
+      7312200,
+      7319004,
+      7319099
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "058",
+    "termo": "agencias de publicidade",
+    "aceitos": [
+      7311400
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "059",
+    "termo": "seguros",
+    "aceitos": [
+      6511101,
+      6512000,
+      6520100,
+      6622300
+    ],
+    "faixas": [],
+    "grupo": "financeiro",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "060",
+    "termo": "banco",
+    "aceitos": [
+      6421200,
+      6422100,
+      6431000
+    ],
+    "faixas": [],
+    "grupo": "financeiro",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "061",
+    "termo": "financeira",
+    "aceitos": [
+      6436100,
+      6612605,
+      6619302
+    ],
+    "faixas": [],
+    "grupo": "financeiro",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "062",
+    "termo": "corretora",
+    "aceitos": [
+      6612601,
+      6612603,
+      6612604
+    ],
+    "faixas": [],
+    "grupo": "financeiro",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "063",
+    "termo": "representante comercial",
+    "aceitos": [
+      4619200
+    ],
+    "faixas": [],
+    "grupo": "servicos",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": "muitos CNAEs possiveis"
+  },
+  {
+    "id": "064",
+    "termo": "floricultura",
+    "aceitos": [
+      4789002
+    ],
+    "faixas": [],
+    "grupo": "comercio",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "065",
+    "termo": "livraria",
+    "aceitos": [
+      4761001
+    ],
+    "faixas": [],
+    "grupo": "comercio",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "066",
+    "termo": "papelaria",
+    "aceitos": [
+      4761003
+    ],
+    "faixas": [],
+    "grupo": "comercio",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "067",
+    "termo": "software",
+    "aceitos": [
+      6201500,
+      6201501,
+      6201502
+    ],
+    "faixas": [],
+    "grupo": "tecnologia",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "068",
+    "termo": "desenvolvimento de software",
+    "aceitos": [
+      6201500,
+      6201501,
+      6201502
+    ],
+    "faixas": [],
+    "grupo": "tecnologia",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "069",
+    "termo": "ti",
+    "aceitos": [
+      6201500,
+      6201501,
+      6201502,
+      6204000
+    ],
+    "faixas": [],
+    "grupo": "tecnologia",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "070",
+    "termo": "tecnologia da informacao",
+    "aceitos": [
+      6201500,
+      6201501,
+      6201502,
+      6204000
+    ],
+    "faixas": [],
+    "grupo": "tecnologia",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "071",
+    "termo": "transportadoras",
+    "aceitos": [
+      4930201,
+      4930202,
+      4930203,
+      4930204
+    ],
+    "faixas": [],
+    "grupo": "logistica",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "072",
+    "termo": "transportadora de carga",
+    "aceitos": [
+      4930201,
+      4930202
+    ],
+    "faixas": [],
+    "grupo": "logistica",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "073",
+    "termo": "armazem",
+    "aceitos": [
+      5211701,
+      5211799
+    ],
+    "faixas": [],
+    "grupo": "logistica",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "074",
+    "termo": "fretamento",
+    "aceitos": [
+      4929901,
+      4929902
+    ],
+    "faixas": [],
+    "grupo": "logistica",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "075",
+    "termo": "taxi",
+    "aceitos": [
+      4923002
+    ],
+    "faixas": [],
+    "grupo": "logistica",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "076",
+    "termo": "hotel",
+    "aceitos": [
+      5510801,
+      5510802
+    ],
+    "faixas": [],
+    "grupo": "hospedagem",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "077",
+    "termo": "pousada",
+    "aceitos": [
+      5510801,
+      5590603
+    ],
+    "faixas": [],
+    "grupo": "hospedagem",
+    "dificuldade": "medio",
+    "tipo": "atividade",
+    "observacao": "pousada nao tem CNAE exato"
+  },
+  {
+    "id": "078",
+    "termo": "academias",
+    "aceitos": [
+      9313100
+    ],
+    "faixas": [],
+    "grupo": "esporte",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": "nao esta na KB; vetor deve achar condicionamento fisico"
+  },
+  {
+    "id": "079",
+    "termo": "crossfit",
+    "aceitos": [
+      9313100
+    ],
+    "faixas": [],
+    "grupo": "esporte",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "080",
+    "termo": "pilates",
+    "aceitos": [
+      9313100
+    ],
+    "faixas": [],
+    "grupo": "esporte",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "081",
+    "termo": "escola de idiomas",
+    "aceitos": [
+      8599699
+    ],
+    "faixas": [],
+    "grupo": "educacao",
+    "dificuldade": "dificil",
+    "tipo": "atividade",
+    "observacao": "CNAE generico de ensino"
+  },
+  {
+    "id": "082",
+    "termo": "industrias metalurgicas",
+    "aceitos": [],
+    "faixas": [
+      [
+        2400000,
+        2599999
+      ]
+    ],
+    "grupo": "industria",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "083",
+    "termo": "metalurgicas",
+    "aceitos": [],
+    "faixas": [
+      [
+        2400000,
+        2599999
+      ]
+    ],
+    "grupo": "industria",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "084",
+    "termo": "industrias",
+    "aceitos": [],
+    "faixas": [
+      [
+        1000000,
+        3399999
+      ]
+    ],
+    "grupo": "industria",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "085",
+    "termo": "industria extrativa",
+    "aceitos": [],
+    "faixas": [
+      [
+        500000,
+        999999
+      ]
+    ],
+    "grupo": "industria",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "086",
+    "termo": "industrias de transformacao",
+    "aceitos": [],
+    "faixas": [
+      [
+        1000000,
+        3399999
+      ]
+    ],
+    "grupo": "industria",
+    "dificuldade": "facil",
+    "tipo": "atividade",
+    "observacao": ""
+  },
+  {
+    "id": "087",
+    "termo": "naves espaciais",
+    "aceitos": [],
+    "faixas": [],
+    "grupo": "negativo",
+    "dificuldade": "dificil",
+    "tipo": "negativo",
+    "observacao": "deve pedir esclarecimento ou nao achar"
+  },
+  {
+    "id": "088",
+    "termo": "xpto inexistente",
+    "aceitos": [],
+    "faixas": [],
+    "grupo": "negativo",
+    "dificuldade": "facil",
+    "tipo": "negativo",
+    "observacao": ""
+  },
+  {
+    "id": "089",
+    "termo": "servicos gerais",
+    "aceitos": [],
+    "faixas": [],
+    "grupo": "negativo",
+    "dificuldade": "dificil",
+    "tipo": "negativo",
+    "observacao": "ambiguo demais"
+  }
+]
