@@ -133,7 +133,7 @@ humana para ligar a flag em produção.
 **Objetivo:** melhorar a qualidade dos candidatos que alimentam a KB e o chat.
 
 **Ordem de experimentos**
-1. **BrazEmbed-PT-BR** (768d, 110M, MIT): escolhido; com `nm_cnae` puro deu top-1 54,7% e top-3 74,4%.
+1. **BrazEmbed-PT-BR** (768d, 110M, MIT): escolhido; com `nm_cnae` puro deu top-1 54,7% e top-3 74,4%. Migração local aplicada em 27/11; produção pendente.
 2. **Híbrido lexical (`pg_trgm`) + denso + fusão de ranks** — BGE-M3 ficou em 52,3%/65,1%; não justifica o custo sozinho.
 3. **Reranking com IA** sobre top 20–30 CNAEs.
 4. Só depois: BGE-M3/Qwen3-0.6B em **serviço de embedding dedicado** (uma cópia,

@@ -203,13 +203,13 @@ TABELAS DE LOOKUP (pequenas, JOIN barato)
 c_cnaes
   cnae      integer (PK)     -- codigo do CNAE
   nm_cnae   varchar(255)     -- descricao
-  embedding halfvec(384)     -- vetor da descricao (para busca semantica)
+  embedding halfvec(768)     -- vetor da descricao (para busca semantica)
 
 =====================================================================
 BUSCA SEMANTICA (VETORIAL) - SOMENTE COMO FALLBACK DO ILIKE
 =====================================================================
 
-A tabela c_cnaes tem uma coluna `embedding` (halfvec(384)) com o vetor
+A tabela c_cnaes tem uma coluna `embedding` (halfvec(768)) com o vetor
 da descricao do CNAE. Ela serve para descobrir o CNAE quando o termo
 da pergunta NAO aparece no nm_cnae.
 
@@ -241,7 +241,7 @@ resultado pulava para 100 linhas de mercearia.
                SELECT 1 FROM c_cnaes
                WHERE nm_cnae ILIKE '%PALAVRA%'
            )
-           ORDER BY embedding <=> %s::halfvec(384)
+           ORDER BY embedding <=> %s::halfvec(768)
            LIMIT 2
        ) sub
    )
@@ -285,7 +285,7 @@ nada, entao o vetor entra):
                 SELECT 1 FROM c_cnaes
                 WHERE nm_cnae ILIKE '%energia solar%'
             )
-            ORDER BY embedding <=> %s::halfvec(384)
+            ORDER BY embedding <=> %s::halfvec(768)
             LIMIT 2
         ) sub
     )
@@ -293,11 +293,11 @@ nada, entao o vetor entra):
 
 O %s acima e um vetor que o sistema vai injetar automaticamente na
 query. Voce NAO precisa saber o valor. Apenas use a sintaxe
-`ORDER BY embedding <=> %s::halfvec(384)`.
+`ORDER BY embedding <=> %s::halfvec(768)`.
 
 REGRA CRITICA: no UNION, o vetor DEVE estar em subquery:
-  CERTO: UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(384) LIMIT 2) sub
-  ERRADO: UNION SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(384) LIMIT 2
+  CERTO: UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(768) LIMIT 2) sub
+  ERRADO: UNION SELECT cnae FROM c_cnaes WHERE NOT EXISTS (...) ORDER BY embedding <=> %s::halfvec(768) LIMIT 2
   (o "ERRADO" nao tem a subquery "SELECT cnae FROM (...) sub" e da
   erro "ORDER BY invalido em UNION")
 
@@ -378,7 +378,7 @@ EXEMPLO COMPLETO para "liste os mercados KOCH":
                 SELECT 1 FROM c_cnaes
                 WHERE nm_cnae ILIKE '%mercado%'
             )
-            ORDER BY embedding <=> %s::halfvec(384)
+            ORDER BY embedding <=> %s::halfvec(768)
             LIMIT 2
         ) sub
     )

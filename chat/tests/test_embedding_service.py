@@ -86,7 +86,7 @@ class InjetarVetorTests(TestCase):
 
         sql_final, erro = embedding_service.injetar_vetor(sql, 'pergunta')
 
-        self.assertEqual(sql_final, "SELECT * FROM t ORDER BY embedding <=> '[0.1,0.2]'::halfvec(384) LIMIT 5")
+        self.assertEqual(sql_final, "SELECT * FROM t ORDER BY embedding <=> '[0.1,0.2]'::halfvec(768) LIMIT 5")
         self.assertIsNone(erro)
         mock_gerar.assert_called_once_with('pergunta')
 
@@ -94,13 +94,24 @@ class InjetarVetorTests(TestCase):
     def test_nao_duplica_cast(self, mock_gerar):
         mock_gerar.return_value = '[0.1,0.2]'
         # O SQL ja tem o cast (a IA copiou do schema_context)
-        sql = 'SELECT * FROM t ORDER BY embedding <=> %s::halfvec(384) LIMIT 5'
+        sql = 'SELECT * FROM t ORDER BY embedding <=> %s::halfvec(768) LIMIT 5'
 
         sql_final, erro = embedding_service.injetar_vetor(sql, 'pergunta')
 
         # Nao deve ter ::halfvec duplicado
-        self.assertEqual(sql_final, "SELECT * FROM t ORDER BY embedding <=> '[0.1,0.2]'::halfvec(384) LIMIT 5")
+        self.assertEqual(sql_final, "SELECT * FROM t ORDER BY embedding <=> '[0.1,0.2]'::halfvec(768) LIMIT 5")
         self.assertIsNone(erro)
+
+    @patch('chat.services.embedding_service.gerar_vetor')
+    def test_normaliza_cast_antigo_384_para_768(self, mock_gerar):
+        mock_gerar.return_value = '[0.1,0.2]'
+        # SQL historico pode ter sido gravado quando o modelo era 384d.
+        sql = 'SELECT * FROM t ORDER BY embedding <=> %s::halfvec(384) LIMIT 5'
+        sql_final, erro = embedding_service.injetar_vetor(sql, 'pergunta')
+        self.assertIsNone(erro)
+        self.assertIn("'[0.1,0.2]'::halfvec(768)", sql_final)
+        self.assertNotIn('halfvec(384)', sql_final)
+        self.assertNotIn('halfvec(768)::halfvec(768)', sql_final)
 
     @patch('chat.services.embedding_service.gerar_vetor')
     def test_falha_no_embedding_retorna_erro(self, mock_gerar):
@@ -127,7 +138,7 @@ class InjetarVetorTests(TestCase):
             '  UNION '
             '  SELECT cnae FROM ( '
             '    SELECT cnae FROM c_cnaes '
-            '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+            '    ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
             '  ) sub '
             ') LIMIT 100'
         )
@@ -139,7 +150,7 @@ class InjetarVetorTests(TestCase):
         self.assertIn("ILIKE '%supermercado%'", sql_final)
         self.assertNotIn("'upermercado%'", sql_final)
         # ...e o vetor entra no placeholder de verdade.
-        self.assertIn("'[0.1,0.2]'::halfvec(384)", sql_final)
+        self.assertIn("'[0.1,0.2]'::halfvec(768)", sql_final)
         self.assertNotIn('<=> %s', sql_final)
         mock_gerar.assert_called_once_with('supermercados')
 
@@ -157,7 +168,7 @@ class InjetarVetorTests(TestCase):
     def test_injeta_multiplos_placeholders(self, mock_gerar):
         mock_gerar.return_value = '[0.1,0.2]'
         sql = (
-            'SELECT * FROM t WHERE a <=> %s::halfvec(384) '
+            'SELECT * FROM t WHERE a <=> %s::halfvec(768) '
             "AND b ILIKE '%s%' "
             'AND c <=> %s LIMIT 5'
         )
@@ -167,9 +178,9 @@ class InjetarVetorTests(TestCase):
         self.assertIsNone(erro)
         self.assertEqual(
             sql_final,
-            "SELECT * FROM t WHERE a <=> '[0.1,0.2]'::halfvec(384) "
+            "SELECT * FROM t WHERE a <=> '[0.1,0.2]'::halfvec(768) "
             "AND b ILIKE '%s%' "
-            "AND c <=> '[0.1,0.2]'::halfvec(384) LIMIT 5",
+            "AND c <=> '[0.1,0.2]'::halfvec(768) LIMIT 5",
         )
         mock_gerar.assert_called_once_with('pergunta')
 
@@ -196,7 +207,7 @@ class IntegracaoGerarSqlTests(TestCase):
             '      SELECT 1 FROM c_cnaes '
             "      WHERE nm_cnae ILIKE '%energia solar%' "
             '    ) '
-            '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+            '    ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
             '  ) sub '
             ') LIMIT 100'
         )
@@ -206,9 +217,9 @@ class IntegracaoGerarSqlTests(TestCase):
         r = gerar_sql('empresas de energia solar')
 
         self.assertTrue(r['ok'])
-        self.assertIn("'[0.1,0.2,0.3]'::halfvec(384)", r['sql'])
+        self.assertIn("'[0.1,0.2,0.3]'::halfvec(768)", r['sql'])
         self.assertNotIn('%s', r['sql'])
-        self.assertNotIn('::halfvec(384)::halfvec(384)', r['sql'])
+        self.assertNotIn('::halfvec(768)::halfvec(768)', r['sql'])
 
     @patch('chat.services.sql_generator.gerar_resposta')
     @patch('chat.services.embedding_service.gerar_vetor')

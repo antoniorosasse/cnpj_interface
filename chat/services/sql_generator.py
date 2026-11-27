@@ -204,7 +204,7 @@ REGRAS DE OURO:
                  SELECT 1 FROM c_cnaes
                  WHERE nm_cnae ILIKE '%PALAVRA%'
              )
-             ORDER BY embedding <=> %s::halfvec(384)
+             ORDER BY embedding <=> %s::halfvec(768)
              LIMIT 2
          ) sub
      )
@@ -456,7 +456,7 @@ REGRAS DE OURO:
      filtro exato que esta nele (e.cnae_principal BETWEEN ... OR
      e.cnae_principal IN (...)).
    - Nesse caso NAO use o ILIKE de CNAE nem o embedding
-     (%s::halfvec(384)) para a atividade: o filtro da KB entra no
+     (%s::halfvec(768)) para a atividade: o filtro da KB entra no
      lugar deles.
    - Mantenha os outros filtros da pergunta (cidade/UF/situacao)
      ligados por AND.
@@ -516,7 +516,7 @@ FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
                 SELECT 1 FROM c_cnaes
                 WHERE nm_cnae ILIKE '%PALAVRA%'
             )
-            ORDER BY embedding <=> %s::halfvec(384)
+            ORDER BY embedding <=> %s::halfvec(768)
             LIMIT 2
         ) sub
     )
@@ -712,7 +712,7 @@ def montar_bloco_categorias(pergunta: str) -> str:
         '- Use EXATAMENTE este filtro de atividade (copie literal), no lugar '
         'do ILIKE e do vetor:',
         f'  {filtro_sql}',
-        '- NAO use embedding nem %s::halfvec(384) para a atividade quando '
+        '- NAO use embedding nem %s::halfvec(768) para a atividade quando '
         'este bloco estiver presente.',
         '- Mantenha os outros filtros da pergunta (cidade/UF/situacao) '
         'ligados por AND.',

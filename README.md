@@ -901,10 +901,10 @@ seção [1.2 RAG](#12-rag--o-que-é-recuperado-e-o-que-vai-no-prompt) e no
 Quando a pergunta for sobre um **conceito** (ex: "empresas de energia solar") e não houver um código CNAE explícito, o `sql_generator` gera um SQL com `ILIKE` **e** com a cláusula:
 
 ```sql
-ORDER BY embedding <=> %s::halfvec(384)
+ORDER BY embedding <=> %s::halfvec(768)
 ```
 
-O `chat/services/embedding_service.py` gera o vetor da pergunta (usando o modelo calneymgp/braza-embedding-ptbr-v1) e substitui o `%s` antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(384)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
+O `chat/services/embedding_service.py` gera o vetor da pergunta (usando o modelo tardellirs/brazembed-pt-br) e substitui o `%s` antes da execução. A tabela c_cnaes tem a coluna embedding (halfvec(768)) populada com os vetores das descrições dos CNAEs. O schema_context.py documenta essa coluna e o operador <=> para o LLM.
 
 **O vetor é apenas fallback do `ILIKE`**: a parte vetorial só devolve linhas quando o `ILIKE` não encontra nenhum CNAE, através de um `NOT EXISTS (SELECT 1 FROM c_cnaes WHERE nm_cnae ILIKE ...)`. Sem esse guarda, o `UNION` mistura CNAEs "vizinhos" com o CNAE exato e o `LIMIT 100` enche de categorias erradas (ex: "supermercados de picarras" trazia 121 minimercados/mercearias junto com os 4 supermercados). O `sql_generator` rejeita e pede correção ao LLM quando o SQL usa `%s` sem esse `NOT EXISTS`.
 
@@ -947,7 +947,7 @@ num lugar diferente:
 | Fonte | Classe | O que recupera | Onde entra |
 |---|---|---|---|
 | `schema_context.py` | **KB fixa** (escrita à mão) | DDL real, tamanhos, códigos de porte/situação, índices e regras de performance | direto no `SYSTEM_PROMPT` do `sql_generator`, em **toda** pergunta |
-| `embedding_service.py` + pgvector | vetorial (`<=>`, cosseno) | até **2 CNAEs** vizinhos do termo, com `halfvec(384)` (Braza) | **dentro do SQL**, como filtro `cnae_principal IN (...)` — e só quando o `ILIKE` não acha nenhum CNAE |
+| `embedding_service.py` + pgvector | vetorial (`<=>`, cosseno) | até **2 CNAEs** vizinhos do termo, com `halfvec(768)` (BrazEmbed-PT-BR) | **dentro do SQL**, como filtro `cnae_principal IN (...)` — e só quando o `ILIKE` não acha nenhum CNAE |
 | `sql_executor.py` | SQL (a consulta em si) | as linhas que a consulta devolveu (até `CHAT_SQL_MAX_ROWS`, padrão 1000) | as **20 primeiras** (`LIMITE_LINHAS`) viram `Dados (JSON)` no prompt do `resposta_natural`, junto do **total real** e do aviso de truncamento |
 | histórico da conversa | memória | as últimas 10 interações (`MAX_CONTEXTO`, até 20 mensagens) | no prompt do `sql_generator`, para continuidade ("e dessas em SC?") |
 

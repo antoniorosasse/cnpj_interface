@@ -197,7 +197,7 @@ class FallbackVetorTests(TestCase):
         '      SELECT 1 FROM c_cnaes '
         "      WHERE nm_cnae ILIKE '%supermercado%' "
         '    ) '
-        '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+        '    ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
         '  ) sub '
         ') LIMIT 100'
     )
@@ -209,7 +209,7 @@ class FallbackVetorTests(TestCase):
         '  UNION '
         '  SELECT cnae FROM ( '
         '    SELECT cnae FROM c_cnaes '
-        '    ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+        '    ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
         '  ) sub '
         ') LIMIT 100'
     )
@@ -218,7 +218,7 @@ class FallbackVetorTests(TestCase):
         'SELECT e.cnpj_basico FROM c_estabelecimentos e '
         'WHERE e.cnae_principal IN ( '
         '  SELECT cnae FROM c_cnaes '
-        '  ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+        '  ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
         ') LIMIT 100'
     )
 
@@ -244,7 +244,7 @@ class FallbackVetorTests(TestCase):
 
         self.assertTrue(r['ok'])
         self.assertEqual(r['tentativas'], 1)
-        self.assertIn("'[0.1,0.2]'::halfvec(384)", r['sql'])
+        self.assertIn("'[0.1,0.2]'::halfvec(768)", r['sql'])
         self.assertNotIn('<=> %s', r['sql'])
         mock_vetor.assert_called_once_with('supermercados em picarras')
 
@@ -317,7 +317,7 @@ class AtividadeENomeTests(TestCase):
         'SELECT 1 FROM c_cnaes '
         "WHERE nm_cnae ILIKE '%mercado%' "
         ') '
-        'ORDER BY embedding <=> %s::halfvec(384) LIMIT 2 '
+        'ORDER BY embedding <=> %s::halfvec(768) LIMIT 2 '
         ') sub '
         ') '
         'AND EXISTS ( '
@@ -359,7 +359,7 @@ class AtividadeENomeTests(TestCase):
 
         self.assertTrue(r['ok'])
         # O vetor entra na subquery do fallback...
-        self.assertIn("'[0.1,0.2]'::halfvec(384)", r['sql'])
+        self.assertIn("'[0.1,0.2]'::halfvec(768)", r['sql'])
         self.assertNotIn('<=> %s', r['sql'])
         # ...e os dois filtros continuam na query final
         self.assertIn("ILIKE '%mercado%'", r['sql'])
@@ -525,7 +525,7 @@ class CategoriaCnaeKBTests(TestCase):
         self.assertIn('e.cnae_principal BETWEEN 2400000 AND 2599999', bloco)
         # Instrucao explicita: nada de embedding/vetor para a atividade.
         self.assertIn('NAO use embedding', bloco)
-        self.assertIn('%s::halfvec(384)', bloco)
+        self.assertIn('%s::halfvec(768)', bloco)
 
     def test_bloco_de_clinicas_usa_os_codigos_da_kb(self):
         bloco = montar_bloco_categorias('clinicas medicas e odontologicas')

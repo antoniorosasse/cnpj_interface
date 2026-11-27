@@ -1,6 +1,6 @@
 # Migração Braza 384d → BrazEmbed-PT-BR 768d
 
-**Criado em:** 27/11/2026 · **Status:** plano; formato decidido; nenhuma DDL/DML executada
+**Criado em:** 27/11/2026 · **Status local:** migração aplicada em 27/11; produção pendente
 
 ## Decisão
 
@@ -9,6 +9,17 @@ do benchmark inicial: top-1 53,5%, top-3 73,3%). Ele substitui o Braza 384d como
 **gerador de candidatos**, não como decisor final: KB + híbrido + reranking
 
 continuam necessários.
+
+## Execução local (27/11/2026)
+
+- Backup antes da DDL: `Projetos/backups/bancos/pre_brazembed_20261127_132543/c_cnaes.dump`
+  (1,4 MB).
+- Coluna `embedding_768 halfvec(768)` criada; **1.359/1.359** descrições
+  reembedadas com `nm_cnae` puro.
+- Índice HNSW criado e coluna trocada atomicamente; a antiga ficou em
+  `embedding_braza_384` (rollback por 30 dias).
+- Sanidade: `vector_dims(embedding)=768`, 1.359 preenchidos.
+- Smoke vetorial local: "energia solar" → `[3511500, 3511501]`, score 0,724.
 
 ## Formato do documento: decidido
 

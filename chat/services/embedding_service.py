@@ -2,8 +2,8 @@
 """
 Servico de embedding para o chat IA.
 
-Gera o vetor de uma pergunta em portugues usando o modelo Braza
-e formata como string para injetar no SQL (halfvec(384)).
+Gera o vetor de uma pergunta em portugues usando BrazEmbed-PT-BR
+e formata como string para injetar no SQL (halfvec(768)).
 """
 
 import logging
@@ -15,7 +15,8 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-MODELO_NOME = 'calneymgp/braza-embedding-ptbr-v1'
+MODELO_NOME = 'tardellirs/brazembed-pt-br'
+EMBEDDING_DIM = 768
 
 # Arquivo de sinônimos (na raiz do projeto, ao lado do manage.py).
 # Formato: termo_coloquial -> texto_para_o_modelo
@@ -259,8 +260,8 @@ def injetar_vetor(sql: str, pergunta: str) -> tuple[str, str | None]:
     Substitui os placeholders %s REAIS do SQL pelo vetor da pergunta.
 
     Placeholders dentro de literais (ex: ILIKE '%supermercado%', que
-    contem a substring "%s") sao ignorados. O cast ::halfvec(384) e'
-    adicionado apenas quando o SQL nao o traz logo apos o placeholder.
+    contem a substring "%s") sao ignorados. O cast e' normalizado para a
+    dimensao atual (768), inclusive em SQL antigo gravado com 384.
 
     Retorna (sql_final, erro). Se erro for None, deu certo.
     """
@@ -277,11 +278,15 @@ def injetar_vetor(sql: str, pergunta: str) -> tuple[str, str | None]:
 
     # Da direita para a esquerda, para as posicoes anteriores continuarem
     # validas depois de cada substituicao.
+    cast_atual = f'::halfvec({EMBEDDING_DIM})'
     for inicio in reversed(posicoes):
         fim = inicio + 2
-        # A IA pode ja ter copiado o cast do schema_context.
-        tem_cast = re.match(r'\s*::', sql[fim:]) is not None
-        trecho = literal if tem_cast else literal + '::halfvec(384)'
-        sql_final = sql_final[:inicio] + trecho + sql_final[fim:]
+        # A IA pode ja ter copiado o cast, inclusive com dimensao antiga.
+        match = re.match(r'\s*::halfvec\s*\(\s*\d+\s*\)', sql_final[fim:])
+        if match:
+            sql_final = (sql_final[:inicio] + literal + cast_atual
+                         + sql_final[fim + match.end():])
+        else:
+            sql_final = sql_final[:inicio] + literal + cast_atual + sql_final[fim:]
 
     return sql_final, None

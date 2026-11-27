@@ -122,7 +122,7 @@ def _consultar_vetor(cur, texto, embedder):
     try:
         cur.execute(
             'SELECT cnae, nm_cnae, '
-            '       (embedding <=> %s::halfvec(384)) AS distancia '
+            '       (embedding <=> %s::halfvec(768)) AS distancia '
             'FROM c_cnaes WHERE embedding IS NOT NULL '
             'ORDER BY distancia LIMIT %s',
             (vetor, LIMITE_VETOR),

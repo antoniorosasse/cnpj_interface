@@ -541,8 +541,8 @@ def chat_api_view(request):
     if execucao['ok'] and '<vetor>' not in sql_exibicao:
         import re
         sql_exibicao = re.sub(
-            r"'\[[^\]]+\]'::halfvec\(384\)",
-            "'[VETOR]'::halfvec(384)",
+            r"'\[[^\]]+\]'::halfvec\(768\)",
+            "'[VETOR]'::halfvec(768)",
             sql_exibicao
         )
 

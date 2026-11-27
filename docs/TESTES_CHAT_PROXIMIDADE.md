@@ -70,7 +70,7 @@ Esperado para cada URL: `/proximidade/` 200; `/proximidade/?origem=Joinville/SC&
 ### C1. Chat SQL (não geográfico) com categoria de atividade (CNAE)
 1. Pergunte: `Indústrias metalúrgicas em Santa Catarina abertas há mais de 3 anos`.
 2. Esperado: SQL com `e.cnae_principal BETWEEN 2400000 AND 2599999` e
-   `e.dt_ini < CURRENT_DATE - INTERVAL '3 years'`; sem `%s::halfvec(384)`;
+   `e.dt_ini < CURRENT_DATE - INTERVAL '3 years'`; sem `%s::halfvec(768)`;
    a lista **inclui a Data Abertura** (`e.dt_ini`) em `dd/mm/aaaa`.
    Regra geral: todo campo citado na pergunta (idade, capital, UF, situação,
    atividade) deve aparecer na lista, mesmo já estando no filtro.
