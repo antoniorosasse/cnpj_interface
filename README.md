@@ -692,6 +692,7 @@ busca. Decisões fechadas com o dono do produto em 25/11/2026 (Fase 0):
 | "metalúrgicas" | divisões 24 + 25 (Metalurgia + produtos de metal) |
 | "clínicas médicas e odontológicas" | 8630-5/01..05 + 8640-2/02 (laboratórios clínicos inclusos) |
 | "transportadoras" | 4930-2/01..04 (transporte rodoviário de carga) |
+| "postos de gasolina/combustível" | 4731-8/00 (comércio varejista de combustíveis) |
 | Endereço ambíguo ("Av. Paulista") | pedir desambiguação (cidade/UF ou CEP); não usar heurística |
 | Contagem | total exato sempre que couber no timeout; "até N" só quando a consulta não fechar, com aviso |
 | Filiais no raio | incluir (filial de supermercado/padaria também é lead); a página mantém o checkbox "somente matrizes" |
@@ -1299,6 +1300,7 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 ## Documentação de apoio
 
 - [Checklist de testes — integração Chat IA ↔ Proximidade](docs/TESTES_CHAT_PROXIMIDADE.md)
+- [Matriz de perguntas para testar o chat](docs/PERGUNTAS_TESTE_CHAT.md)
 - [Script de verificação](scripts/verificar_chat_proximidade.sh)
   (`--rapido`, `--completo`, `--smoke URL`)
 - [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)

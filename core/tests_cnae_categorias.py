@@ -104,6 +104,14 @@ class CategoriasCnaeTests(SimpleTestCase):
             cnae_categorias.resolver_filtro_cnae('clínicas de estética')['cnaes'],
             [])
 
+    def test_postos_de_combustivel(self):
+        for termo in ('postos de gasolina', 'posto de combustível',
+                      'gasolina', 'POSTOS'):
+            filtro = cnae_categorias.resolver_filtro_cnae(termo)
+            self.assertEqual(filtro['categorias'], ['postos'], termo)
+            self.assertEqual(filtro['cnaes'], [4731800], termo)
+            self.assertEqual(filtro['rotulo'], 'postos de combustíveis', termo)
+
     def test_transportadoras_de_carga(self):
         filtro = cnae_categorias.resolver_filtro_cnae('transportadoras')
         self.assertEqual(filtro['categorias'], ['transportadoras'])

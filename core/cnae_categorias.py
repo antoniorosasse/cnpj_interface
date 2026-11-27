@@ -84,6 +84,18 @@ CATEGORIAS = {
             'odontologia', 'dentista', 'dentistas',
         ),
     },
+    'postos': {
+        'rotulo': 'postos de combustíveis',
+        'divisoes': (),
+        'cnaes': (4731800,),
+        'generica': False,
+        'aliases': (
+            'posto', 'postos', 'posto de gasolina', 'postos de gasolina',
+            'posto de combustivel', 'postos de combustiveis',
+            'posto de combustiveis', 'gasolina', 'combustivel',
+            'combustiveis',
+        ),
+    },
     'transportadoras': {
         'rotulo': 'transportadoras de carga',
         'divisoes': (),
