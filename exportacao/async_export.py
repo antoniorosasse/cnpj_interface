@@ -41,6 +41,13 @@ def limite_para(user):
     return int(getattr(settings, 'EXPORTACAO_COMPLETA_MAX_CLIENTE', 50000))
 
 
+def creditos_exportacao_completa(total):
+    """Preco: creditos por linha, com minimo configurado. Staff nao paga."""
+    por_linha = int(getattr(settings, 'EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA', 1))
+    minimo = int(getattr(settings, 'EXPORTACAO_COMPLETA_CREDITOS_MINIMO', 1))
+    return max(minimo, int(total or 0) * max(0, por_linha))
+
+
 def criar_job(user, cliente, sql, formato, pergunta, ip, total):
     """Cria um pedido pendente; nao executa e nao debita ainda."""
     token = secrets.token_urlsafe(32)
@@ -170,7 +177,8 @@ def processar_job(job_id):
                 raise RuntimeError('Conta sem cliente/creditos.')
             try:
                 creditos = debitar(
-                    job.cliente, total, f'exportacao-completa:{job.pk}')
+                    job.cliente, creditos_exportacao_completa(total),
+                    f'exportacao-completa:{job.pk}')
             except SaldoInsuficiente as exc:
                 raise RuntimeError(
                     f'Saldo insuficiente: {exc.necessarios} necessarios, '

@@ -297,7 +297,8 @@ def exportar_lista(request):
     O arquivo e' montado ANTES de debitar e de enviar: o valor cobrado e' o
     numero real de linhas, e abortar o download nao sai de graca.
     """
-    formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
+    formato = ('json' if (request.POST.get('formato') or
+                          request.GET.get('formato')) == 'json' else 'csv')
     filtros = _filtros(request)
     colunas = _colunas(request)
     user = getattr(request, 'user', None)
@@ -758,7 +759,8 @@ def exportar_chat_completo(request):
     from chat.services.embedding_service import injetar_vetor, tem_placeholder
     from chat.services.sql_executor import contar_linhas
     from chat.services.sql_validator import SQLValidationError, validar_sql
-    from .async_export import criar_job, iniciar_job, limite_para
+    from .async_export import (creditos_exportacao_completa, criar_job,
+                               iniciar_job, limite_para)
     from .servicos import ip_do_request
 
     formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
@@ -802,18 +804,32 @@ def exportar_chat_completo(request):
             'mensagem': (f'Esta lista tem {total} linhas; o limite para exportação '
                          f'completa é {cap}. Refine a consulta.'),
         }, status=400)
+    custo = 0 if staff else creditos_exportacao_completa(total)
     if not staff:
         if cliente is None:
             return render(request, 'exportacao/bloqueado.html', {
                 'motivo': 'sem_creditos',
                 'mensagem': 'Sua conta não tem créditos para exportar esta lista.',
             }, status=402)
-        if cliente.saldo_creditos < total:
+        if cliente.saldo_creditos < custo:
             return render(request, 'exportacao/bloqueado.html', {
                 'motivo': 'sem_creditos',
-                'mensagem': (f'Esta lista tem {total} linhas e sua conta tem '
-                             f'{cliente.saldo_creditos} créditos.'),
+                'mensagem': (f'Esta exportação custa {custo} créditos ({total} linhas) '
+                             f'e sua conta tem {cliente.saldo_creditos}.'),
             }, status=402)
+
+    if request.method != 'POST':
+        return render(request, 'exportacao/completa_confirmar.html', {
+            'total': total,
+            'custo': custo,
+            'saldo': cliente.saldo_creditos if cliente else None,
+            'staff': staff,
+            'formato': formato,
+            'cap': cap,
+            'pergunta': pergunta,
+            'por_linha': settings.EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA,
+        })
+
     job = criar_job(user, cliente, sql, formato, pergunta,
                     ip_do_request(request), total)
     iniciar_job(job.pk)

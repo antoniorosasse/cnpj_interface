@@ -1,0 +1,52 @@
+{% extends 'core/base.html' %}
+{% block title %}Confirmar exportação completa — BusqueCNPJ{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width: 760px;">
+  <div class="ui-card p-4">
+    <p class="ui-eyebrow mb-1">Exportação completa</p>
+    <h1 class="h4 mb-3">Confirmar exportação</h1>
+
+    <div class="alert alert-warning">
+      <strong>Atenção:</strong> o export completo reexecuta a consulta original
+      no servidor <strong>sem o LIMIT 100</strong> do preview. Ele pode gerar
+      muitas linhas, demorar e consumir créditos.
+    </div>
+
+    <dl class="row mb-3">
+      <dt class="col-sm-4">Consulta</dt>
+      <dd class="col-sm-8">{{ pergunta|default:"Última lista do chat" }}</dd>
+      <dt class="col-sm-4">Linhas estimadas</dt>
+      <dd class="col-sm-8">{{ total }}</dd>
+      <dt class="col-sm-4">Formato</dt>
+      <dd class="col-sm-8">{{ formato|upper }}</dd>
+      <dt class="col-sm-4">Custo</dt>
+      <dd class="col-sm-8">
+        {% if staff %}
+          <strong>Sem custo</strong> (conta administrativa)
+        {% else %}
+          <strong>{{ custo }} crédito(s)</strong>
+          <span class="text-muted">· {{ por_linha }} crédito(s) por linha</span>
+          {% if saldo is not None %}<br><span class="small text-muted">Saldo atual: {{ saldo }}</span>{% endif %}
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Limite</dt>
+      <dd class="col-sm-8">{{ cap }} linhas</dd>
+    </dl>
+
+    <p class="small text-muted">
+      O arquivo ficará disponível por 24 h. O débito ocorre somente depois que o
+      arquivo for gerado com sucesso. Se a geração falhar, os créditos não são
+      consumidos.
+    </p>
+
+    <form method="post" class="d-flex gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="formato" value="{{ formato }}">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-cloud-arrow-down"></i> Confirmar exportação
+      </button>
+      <a href="{% url 'chat:chat' %}" class="btn btn-outline-secondary">Cancelar</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

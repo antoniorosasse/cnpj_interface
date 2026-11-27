@@ -5,7 +5,8 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
 
-from exportacao.async_export import criar_job, limite_para
+from exportacao.async_export import (creditos_exportacao_completa, criar_job,
+                                     limite_para)
 from exportacao.models import Exportacao
 
 
@@ -20,6 +21,12 @@ class ExportacaoCompletaTests(TestCase):
         cliente = type('U', (), {'is_authenticated': True, 'is_staff': False,
                                  'is_superuser': False})()
         self.assertEqual(limite_para(cliente), 50000)
+
+    def test_preco_por_linha_com_minimo(self):
+        self.assertEqual(creditos_exportacao_completa(0), 1)
+        self.assertEqual(creditos_exportacao_completa(219), 219)
+        with self.settings(EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA=2):
+            self.assertEqual(creditos_exportacao_completa(10), 20)
 
     def test_criar_job_gera_token_e_status_pendente(self):
         job = criar_job(self.user, None, 'SELECT 1 AS x', 'csv', '', None, 1)

@@ -5,6 +5,7 @@
 <div class="container py-5" style="max-width: 760px;">
   <div class="ui-card p-4">
     <p class="ui-eyebrow mb-1">Exportação completa</p>
+    <p class="small text-muted mb-2">O export completo reexecuta a consulta sem o LIMIT 100 do preview.</p>
     <h1 class="h4 mb-3">
       {% if job.status == 'processando' %}Preparando seu arquivo…
       {% elif job.status == 'pronto' %}Arquivo pronto

@@ -72,6 +72,10 @@ EXPORTACAO_COMPLETA_TTL_HORAS = int(
     os.getenv('EXPORTACAO_COMPLETA_TTL_HORAS', '24') or 24)
 EXPORTACAO_COMPLETA_TIMEOUT = int(
     os.getenv('EXPORTACAO_COMPLETA_TIMEOUT', '600') or 600)
+EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA = int(
+    os.getenv('EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA', '1') or 1)
+EXPORTACAO_COMPLETA_CREDITOS_MINIMO = int(
+    os.getenv('EXPORTACAO_COMPLETA_CREDITOS_MINIMO', '1') or 1)
 
 # ==================== DESAFIO (Cloudflare Turnstile) ====================
 # Chaves gratuitas em https://dash.cloudflare.com -> Turnstile.

@@ -27,6 +27,34 @@ botão Exportar tudo
 A página de status atualiza sozinha enquanto processa e mostra o erro em caso
 de falha.
 
+## Aviso e preço antes de confirmar
+
+O botão **Exportar tudo** abre uma página de confirmação que explica:
+
+- o export **reexecuta o SQL sem o LIMIT 100** do preview;
+- o número estimado de linhas;
+- o custo em créditos e o saldo atual;
+- que o débito acontece somente depois que o arquivo for gerado.
+
+O cliente precisa clicar em **Confirmar exportação**; o GET não cria o job.
+
+### Fórmula de cobrança
+
+```text
+custo = max(CREDITOS_MINIMO, linhas * CREDITOS_POR_LINHA)
+```
+
+Padrão: **1 crédito por linha**, mínimo **1 crédito**. Admin/staff pagam 0.
+Configurável:
+
+```env
+EXPORTACAO_COMPLETA_CREDITOS_POR_LINHA=1
+EXPORTACAO_COMPLETA_CREDITOS_MINIMO=1
+```
+
+O bloqueio é feito antes de criar o job; o débito real ocorre depois da geração
+bem-sucedida. Se o arquivo falhar, não há débito.
+
 ## Limites padrão
 
 | Perfil | Teto |
