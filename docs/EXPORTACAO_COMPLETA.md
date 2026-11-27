@@ -44,7 +44,8 @@ O cliente precisa clicar em **Confirmar exportação**; o GET não cria o job.
 custo = max(CREDITOS_MINIMO, linhas * CREDITOS_POR_LINHA)
 ```
 
-Padrão: **1 crédito por linha**, mínimo **1 crédito**. Admin/staff pagam 0.
+Padrão **provisório**: **1 crédito por linha**, mínimo **1 crédito**. Admin/staff pagam 0.
+A definição definitiva (1 crédito = R$, pacotes e assinaturas) está nas pendências 66–68 do `PROJETOS.md`.
 Configurável:
 
 ```env
