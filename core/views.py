@@ -779,12 +779,14 @@ def filtros_proximidade(request):
     erro = ''
     if atividade:
         filtro_cnae = resolver_filtro_cnae(atividade)
+        if filtro_cnae['categorias']:
+            filtro_cnae['fonte'] = 'kb'
         if not (filtro_cnae['categorias'] or filtro_cnae['cnaes']):
             digitos = ''.join(c for c in atividade if c.isdigit())
             if len(digitos) in (6, 7):
                 filtro_cnae = {
                     'categorias': [], 'faixas': [], 'cnaes': [int(digitos)],
-                    'rotulo': f'CNAE {digitos}',
+                    'rotulo': f'CNAE {digitos}', 'fonte': 'codigo',
                 }
             else:
                 # Mesma regra do SQL: ILIKE em c_cnaes e, se nada, vetor.
@@ -798,6 +800,7 @@ def filtros_proximidade(request):
                             'faixas': [],
                             'cnaes': filtro_fallback['cnaes'],
                             'rotulo': filtro_fallback['rotulo'],
+                            'fonte': filtro_fallback.get('fonte') or 'iliKe',
                         }
                 except Exception:
                     logger.exception(
@@ -825,6 +828,19 @@ def filtros_proximidade(request):
         rotulos.append(
             'capital acima de R$ '
             + f'{int(capital):,}'.replace(',', '.'))
+
+    if atividade and not getattr(request, '_atividade_logged', False):
+        from chat.atividade_log import registrar_atividade
+        from chat.models import AtividadeLog
+        registrar_atividade(
+            atividade,
+            filtro_cnae,
+            AtividadeLog.ORIGEM_PAGINA,
+            usuario=(request.user
+                     if getattr(getattr(request, 'user', None),
+                               'is_authenticated', False) else None),
+        )
+        request._atividade_logged = True
 
     return {
         'atividade': atividade,

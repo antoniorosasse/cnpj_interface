@@ -1303,6 +1303,7 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 - [Matriz de perguntas para testar o chat](docs/PERGUNTAS_TESTE_CHAT.md)
 - [Avaliação atividade → CNAE (gold set e benchmark)](docs/AVALIACAO_ATIVIDADE_CNAE.md)
 - [Plano de KB autoaprendizável e embeddings](docs/PLANO_KB_E_EMBEDDINGS.md)
+- [Arquitetura: API do chat × API financeira](docs/ARQUITETURA_API_CHAT_E_FINANCEIRO.md)
 - [Script de verificação](scripts/verificar_chat_proximidade.sh)
   (`--rapido`, `--completo`, `--smoke URL`)
 - [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)

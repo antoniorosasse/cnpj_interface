@@ -40,7 +40,8 @@ from .geoip import (
     rodar_script,
 )
 from .manutencao import MIN_DIAS, contar_acessos, limpar_acessos
-from .models import LocalizacaoIP, LogAcesso
+from .models import (AtividadeLog, CnaeAliasCandidato, LocalizacaoIP,
+                     LogAcesso)
 from .relatorio import PERIODOS, resumo_acesso
 
 # Host/pasta usados nos comandos exibidos na tela (copiar e colar).
@@ -542,6 +543,48 @@ class LogAcessoAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+
+@admin.register(AtividadeLog)
+class AtividadeLogAdmin(admin.ModelAdmin):
+    """Telemetria da resolucao atividade -> CNAE (somente leitura)."""
+
+    list_display = ('criado_em', 'termo', 'origem', 'fonte', 'cnaes',
+                    'resultados')
+    list_filter = ('origem', 'fonte', 'criado_em')
+    search_fields = ('termo', 'termo_normalizado')
+    date_hierarchy = 'criado_em'
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CnaeAliasCandidato)
+class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
+    """Candidatos gerados por `propor_aliases_cnae` (revisao na Fase 2)."""
+
+    list_display = ('termo', 'cnaes', 'ocorrencias', 'status',
+                    'atualizado_em')
+    list_filter = ('status',)
+    search_fields = ('termo', 'termo_normalizado')
+    readonly_fields = ('termo', 'termo_normalizado', 'cnaes', 'categorias',
+                       'fontes', 'ocorrencias', 'resultados_medios',
+                       'evidencia', 'criado_em', 'atualizado_em')
+    list_per_page = 50
+
+    def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):

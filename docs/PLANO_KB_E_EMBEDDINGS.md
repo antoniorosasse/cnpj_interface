@@ -34,7 +34,11 @@ em produção.
 
 ---
 
-## Fase 1 — Telemetria e fila de candidatos (sem escrever na KB)
+## Fase 1 — Telemetria e fila de candidatos (sem escrever na KB) ✅ implementada localmente
+
+**Status 27/11:** modelos `AtividadeLog`/`CnaeAliasCandidato` (migração
+`chat.0008`), log em chat/página, admin somente leitura e comando
+`propor_aliases_cnae`; 808 testes OK. Falta deploy.
 
 **Objetivo:** descobrir o que os usuários realmente perguntam e medir a qualidade
 do resolvedor.

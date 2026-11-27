@@ -35,6 +35,8 @@ from core.cnae_categorias import (
     resolver_filtro_cnae,
 )
 from core.cnae_atividade import resolver_atividade
+from chat.atividade_log import registrar_atividade
+from chat.models import AtividadeLog
 from core.proximidade import (
     buscar_proximos,
     buscar_proximos_endereco,
@@ -392,12 +394,22 @@ def consultar_proximidade(plano, contexto_geo=None, conectar=None,
             filtro_cnae = _resolver_atividades(atividades, cur=cur)
             if not (filtro_cnae['categorias'] or filtro_cnae['faixas']
                     or filtro_cnae['cnaes']):
+                registrar_atividade(
+                    ' e '.join(str(a) for a in atividades),
+                    filtro_cnae, AtividadeLog.ORIGEM_CHAT,
+                )
                 return {
                     'ok': False,
                     'etapa': 'atividade',
                     'erro': _mensagem_atividade_nao_reconhecida(
                         filtro_cnae['nao_reconhecidas'] or atividades),
                 }
+
+        if atividades:
+            registrar_atividade(
+                ' e '.join(str(a) for a in atividades), filtro_cnae,
+                AtividadeLog.ORIGEM_CHAT,
+            )
 
         if origem is None:
             origem, erro_origem = resolver_origem(cur, origem_texto)

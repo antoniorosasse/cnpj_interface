@@ -182,3 +182,94 @@ class LocalizacaoIP(models.Model):
         local = '/'.join(p for p in (self.cidade, self.uf) if p) or self.regiao
         partes = [p for p in (local, self.pais) if p]
         return ', '.join(partes)
+
+
+class AtividadeLog(models.Model):
+    """Uma resolucao de atividade -> CNAE (chat ou pagina de proximidade).
+
+    Base da Fase 1 da KB autoaprendizavel: guarda o termo, a fonte que
+    resolveu (KB/codigo/ILIKE/vetor/nenhuma), os CNAEs e quantos resultados
+    a consulta devolveu. Nao altera o comportamento do chat.
+    """
+
+    ORIGEM_CHAT = 'chat_proximidade'
+    ORIGEM_PAGINA = 'pagina_proximidade'
+    ORIGENS = [
+        (ORIGEM_CHAT, 'Chat/proximidade'),
+        (ORIGEM_PAGINA, 'Pagina/proximidade'),
+    ]
+
+    FONTE_KB = 'kb'
+    FONTE_CODIGO = 'codigo'
+    FONTE_ILIKE = 'iliKe'
+    FONTE_VETOR = 'vetor'
+    FONTE_NENHUMA = 'nenhuma'
+    FONTES = [
+        (FONTE_KB, 'KB'),
+        (FONTE_CODIGO, 'Codigo CNAE'),
+        (FONTE_ILIKE, 'ILIKE'),
+        (FONTE_VETOR, 'Vetor'),
+        (FONTE_NENHUMA, 'Nenhuma'),
+    ]
+
+    termo = models.CharField('termo', max_length=200)
+    termo_normalizado = models.CharField(
+        'termo normalizado', max_length=200, db_index=True)
+    origem = models.CharField('origem', max_length=24, choices=ORIGENS)
+    fonte = models.CharField('fonte', max_length=12, choices=FONTES)
+    categorias = models.JSONField('categorias', default=list, blank=True)
+    cnaes = models.JSONField('cnaes', default=list, blank=True)
+    faixas = models.JSONField('faixas', default=list, blank=True)
+    resultados = models.IntegerField('resultados', null=True, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='atividades_log',
+    )
+    criado_em = models.DateTimeField('criado em', auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-criado_em']
+        verbose_name = 'log de atividade'
+        verbose_name_plural = 'logs de atividade'
+        indexes = [
+            models.Index(fields=['termo_normalizado', '-criado_em']),
+            models.Index(fields=['fonte', '-criado_em']),
+        ]
+
+    def __str__(self):
+        return f'{self.termo} -> {self.cnaes or "sem CNAE"} ({self.fonte})'
+
+
+class CnaeAliasCandidato(models.Model):
+    """Candidato a alias de atividade na KB (Fase 1: nunca aplica sozinho)."""
+
+    STATUS_PENDENTE = 'pendente'
+    STATUS_APROVADO = 'aprovado'
+    STATUS_REJEITADO = 'rejeitado'
+    STATUS = [
+        (STATUS_PENDENTE, 'Pendente'),
+        (STATUS_APROVADO, 'Aprovado'),
+        (STATUS_REJEITADO, 'Rejeitado'),
+    ]
+
+    termo = models.CharField('termo', max_length=200)
+    termo_normalizado = models.CharField(
+        'termo normalizado', max_length=200, unique=True)
+    cnaes = models.JSONField('cnaes', default=list, blank=True)
+    categorias = models.JSONField('categorias', default=list, blank=True)
+    fontes = models.JSONField('fontes', default=dict, blank=True)
+    ocorrencias = models.PositiveIntegerField('ocorrencias', default=0)
+    resultados_medios = models.FloatField('resultados medios', null=True, blank=True)
+    evidencia = models.JSONField('evidencia', default=dict, blank=True)
+    status = models.CharField('status', max_length=10, choices=STATUS,
+                              default=STATUS_PENDENTE, db_index=True)
+    criado_em = models.DateTimeField('criado em', auto_now_add=True)
+    atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['-ocorrencias', 'termo_normalizado']
+        verbose_name = 'candidato a alias CNAE'
+        verbose_name_plural = 'candidatos a alias CNAE'
+
+    def __str__(self):
+        return f'{self.termo} -> {self.cnaes} ({self.status})'
