@@ -615,6 +615,19 @@ class ConfiguracaoContadoresTests(TestCase):
             estados = [registrar_uso(req, 'chat')['permitido'] for _ in range(3)]
         self.assertEqual(estados, [True, True, False])
 
+    def test_staff_ignora_teto_por_ip_mas_continua_contando(self):
+        from exportacao.servicos import registrar_uso
+        admin = User.objects.create_superuser('adm-ip', 'a@b.com', 'x')
+        cfg = ConfiguracaoUso(id=1)
+        cfg.ip_dia_lista = 1
+        cfg.save()
+        req = self._request(admin, ip='10.9.9.9')
+        with patch('exportacao.servicos.visitante_id', return_value='z'):
+            estados = [registrar_uso(req, 'lista') for _ in range(2)]
+        self.assertTrue(all(e['permitido'] for e in estados))
+        self.assertEqual(estados[-1]['usados'], 2)
+        self.assertTrue(estados[-1]['ilimitado'])
+
     def test_staff_conta_mas_nunca_bloqueia(self):
         from exportacao.servicos import registrar_uso
         admin = User.objects.create_superuser('adm-lim', 'a@b.com', 'x')

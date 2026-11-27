@@ -4,7 +4,7 @@
 {% block title %}Chat IA — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261127a">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261127b">
 {% endblock %}
 
 {% block content %}
@@ -597,6 +597,70 @@
         return { colunas: colunasNovas, rows: rowsNovas, colunaAbertura: colunaAbertura };
     }
 
+    // --------------------------------------------------------
+    // Ordenacao clicavel das tabelas (client-side, sem nova consulta).
+    // --------------------------------------------------------
+    function chaveOrdenacao(valor, coluna) {
+        if (valor === null || valor === undefined) return '';
+        const texto = String(valor);
+        const c = String(coluna || '').toLowerCase();
+        if (c === 'tempo_abertura') {
+            const m = texto.match(/^(\d+)A(?:\s+(\d+)M)?$/);
+            if (m) return String(Number(m[1]) * 12 + Number(m[2] || 0));
+        }
+        if (c === 'dt_ini' || c === 'data_abertura' || c === 'dt_abertura') {
+            const d = lerData(texto);
+            if (d) return String(d.getTime());
+        }
+        // Numeros formatados (R$, milhar, virgula decimal) e datas dd/mm/aaaa.
+        const limpo = texto.replace(/[R$\s.]/g, '').replace(',', '.');
+        if (/^-?\d+(\.\d+)?$/.test(limpo)) return limpo;
+        return texto.toLocaleLowerCase('pt-BR');
+    }
+
+    function compararOrdenacao(a, b) {
+        if (a === '' && b === '') return 0;
+        if (a === '') return 1;
+        if (b === '') return -1;
+        const na = Number(a), nb = Number(b);
+        if (isFinite(na) && isFinite(nb)) return na - nb;
+        return String(a).localeCompare(String(b), 'pt-BR', { numeric: true });
+    }
+
+    function ordenarTabela(th) {
+        const idTabela = th.getAttribute('data-tabela-id');
+        const idx = Number(th.getAttribute('data-sort-idx'));
+        if (!idTabela || !isFinite(idx)) return;
+        const table = th.closest('table');
+        const tbody = table ? table.querySelector('tbody') : null;
+        const store = tabelaStore[idTabela];
+        if (!tbody || !store) return;
+        const direcao = th.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+        th.setAttribute('data-sort-dir', direcao);
+        const linhas = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        linhas.sort(function (a, b) {
+            const ca = a.children[idx], cb = b.children[idx];
+            const va = ca ? ca.getAttribute('data-valor') : '';
+            const vb = cb ? cb.getAttribute('data-valor') : '';
+            const cmp = compararOrdenacao(va, vb);
+            return direcao === 'asc' ? cmp : -cmp;
+        });
+        linhas.forEach(function (tr) { tbody.appendChild(tr); });
+        // Mantem o export alinhado com a ordem visivel.
+        store.rows = linhas.map(function (tr) {
+            return store.rows[Number(tr.getAttribute('data-row-idx'))];
+        });
+        table.querySelectorAll('th[data-sort-idx]').forEach(function (h) {
+            h.removeAttribute('aria-sort');
+            if (h !== th) h.removeAttribute('data-sort-dir');
+            const seta = h.querySelector('.sorter');
+            if (seta) seta.textContent = '↕';
+        });
+        th.setAttribute('aria-sort', direcao === 'asc' ? 'ascending' : 'descending');
+        const seta = th.querySelector('.sorter');
+        if (seta) seta.textContent = direcao === 'asc' ? '▲' : '▼';
+    }
+
     function renderTabela(colunas, rows) {
         if (!colunas || colunas.length === 0) {
             return '<div class="text-muted small">Nenhuma coluna retornada.</div>';
@@ -643,17 +707,19 @@
         function labelColuna(c) {
             return TITULOS_COLUNAS[c] || String(c).replace(/_/g, ' ');
         }
-        for (const c of colunasTabela) {
-            if (c === 'tempo_abertura') {
-                html += `<th title="Tempo desde a data de abertura (anos e meses completos)">${escaparHtml(labelColuna(c))}</th>`;
-            } else {
-                html += `<th>${escaparHtml(labelColuna(c))}</th>`;
-            }
-        }
+        colunasTabela.forEach(function (c, idx) {
+            const titulo = c === 'tempo_abertura'
+                ? 'Tempo desde a data de abertura (anos e meses completos)'
+                : 'Clique para ordenar por esta coluna';
+            html += `<th class="th-ordenavel" data-sort-idx="${idx}" `
+                + `data-tabela-id="${idTabela}" role="button" tabindex="0" `
+                + `title="${escaparHtml(titulo)}">${escaparHtml(labelColuna(c))} `
+                + `<span class="sorter" aria-hidden="true">↕</span></th>`;
+        });
         html += '</tr></thead><tbody>';
         
-        for (const row of rowsTabela) {
-            html += '<tr>';
+        rowsTabela.forEach(function (row, rowIdx) {
+            html += `<tr data-row-idx="${rowIdx}">`;
             for (const c of colunasTabela) {
                 const rotulo = ` data-label="${escaparHtml(labelColuna(c))}"`;
                 // Se for a coluna cnpj_completo e tiver valor, transforma em link
@@ -668,11 +734,11 @@
                                   cnpjLimpo.slice(8,12) + '-' +
                                   cnpjLimpo.slice(12,14);
                     }
-                    html += `<td${rotulo} class="sis-cnpj"><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(cnpjFmt)}</a></td>`;
+                    html += `<td${rotulo} class="sis-cnpj" data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}"><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(cnpjFmt)}</a></td>`;
                 } else if (c === 'razao_social' && row[c] && row['cnpj_completo']) {
                     // Razao social tambem leva para a pagina da empresa
                     const cnpjLimpo = String(row['cnpj_completo']).replace(/\D/g, '');
-                    html += `<td${rotulo}><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(String(row[c]))}</a></td>`;
+                    html += `<td${rotulo} data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}"><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(String(row[c]))}</a></td>`;
                 } else if (c === 'tempo_abertura') {
                     // Coluna calculada: "3A 5M"; sem data valida fica "—".
                     const tempo = row[c];
@@ -680,14 +746,14 @@
                         ? formatarValor(row[tabela.colunaAbertura]) : null;
                     const titulo = dataRef
                         ? ` title="Aberta desde ${escaparHtml(String(dataRef))}"` : '';
-                    html += `<td${rotulo} class="sis-num"${titulo}>${tempo ? escaparHtml(tempo) : '&mdash;'}</td>`;
+                    html += `<td${rotulo} class="sis-num" data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}"${titulo}>${tempo ? escaparHtml(tempo) : '&mdash;'}</td>`;
                 } else {
                     const vFmt = formatarValor(row[c]);
-                    html += `<td${rotulo}>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
+                    html += `<td${rotulo} data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}">${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
                 }
             }
             html += '</tr>';
-        }
+        });
         html += '</tbody></table></div>';
         return html;
     }
@@ -1033,6 +1099,12 @@
             baixarTabela(baixar.getAttribute('data-tabela-id'), baixar.getAttribute('data-baixar'));
             return;
         }
+        const thOrdenar = ev.target.closest('th[data-sort-idx]');
+        if (thOrdenar) {
+            ev.preventDefault();
+            ordenarTabela(thOrdenar);
+            return;
+        }
         const botao = ev.target.closest('[data-tabela-topo], [data-tabela-fim]');
         if (!botao) return;
         const bloco = botao.closest('.resultado-historico') || painelEl;
@@ -1042,6 +1114,14 @@
         if (!alvo) return;
         const fim = botao.hasAttribute('data-tabela-fim');
         alvo.scrollTo({ top: fim ? alvo.scrollHeight : 0, behavior: 'smooth' });
+    });
+
+    document.addEventListener('keydown', function (ev) {
+        const th = ev.target.closest && ev.target.closest('th[data-sort-idx]');
+        if (th && (ev.key === 'Enter' || ev.key === ' ')) {
+            ev.preventDefault();
+            ordenarTabela(th);
+        }
     });
 
     botaoEl.addEventListener('click', consultar);

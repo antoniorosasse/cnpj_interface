@@ -176,7 +176,9 @@ def registrar_uso(request, tipo='lista') -> dict:
     cfg = configuracao()
     teto_ip = getattr(cfg, f'ip_dia_{tipo}', 0)
     total_ip = 0
-    if ip and teto_ip:
+    # Staff/superusuario e usuarios com ignorar_limites continuam contando,
+    # mas nao podem ser bloqueados nem pelo teto por IP.
+    if ip and teto_ip and not regra['ilimitado']:
         total_ip = (PesquisaAnonima.objects.filter(dia=dia, ip=ip, tipo=tipo)
                     .aggregate(total=Sum('total'))['total'] or 0)
         if total_ip >= teto_ip:

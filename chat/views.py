@@ -507,7 +507,7 @@ def chat_api_view(request):
     total_real = None
     if truncado_efetivo and execucao.get('ok'):
         # COUNT companheiro, com timeout curto; se nao der, segue sem total.
-        total_real = contar_linhas(sql_executado, timeout_ms=8000)
+        total_real = contar_linhas(sql_executado, timeout_ms=3000)
 
     if execucao['ok'] and execucao.get('rows'):
         resposta_texto = gerar_texto_resposta(
