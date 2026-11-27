@@ -271,6 +271,8 @@ class CnaeAliasCandidato(models.Model):
     confianca_ia = models.FloatField('confianca da IA', null=True, blank=True)
     justificativa_ia = models.TextField('justificativa da IA', blank=True,
                                         default='')
+    cnaes_ia = models.JSONField('CNAEs escolhidos pela IA', default=list,
+                                blank=True)
     revisado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
         blank=True, related_name='cnae_candidatos_revisados')

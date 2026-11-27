@@ -77,6 +77,7 @@ class Command(BaseCommand):
                 'decisao_ia': '',
                 'confianca_ia': None,
                 'justificativa_ia': '',
+                'cnaes_ia': [],
                 'evidencia': {
                     'termos': dict(contagem_termos),
                     'cnaes': {','.join(map(str, k)): v

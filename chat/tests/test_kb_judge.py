@@ -49,7 +49,8 @@ class JuizTests(TestCase):
         self.assertEqual(resultado['confianca'], 0.0)
 
     def test_autoaprovacao_exige_evidencia_e_recorrencia(self):
-        cand = _candidato(decisao_ia='adicionar', confianca_ia=0.95)
+        cand = _candidato(decisao_ia='adicionar', confianca_ia=0.95,
+                          cnaes_ia=[5620104])
         self.assertTrue(kb_judge.pode_autoaprovar(cand))
         cand.fontes = {'vetor': 5}
         cand.save(update_fields=['fontes'])
@@ -71,6 +72,12 @@ class PublicacaoAliasTests(TestCase):
         self.assertEqual(cand.status, CnaeAliasCandidato.STATUS_APROVADO)
         self.assertEqual(CnaeAliasHistorico.objects.count(), 1)
         self.assertEqual(CnaeAliasHistorico.objects.get().acao, 'publicado')
+
+    def test_publica_usa_cnaes_da_ia_quando_existirem(self):
+        cand = _candidato(cnaes=[5611201, 5620104],
+                          cnaes_ia=[5620104])
+        alias = kb_judge.publicar_alias(cand)
+        self.assertEqual(alias.cnaes, [5620104])
 
     def test_republica_incrementa_versao(self):
         cand = _candidato()

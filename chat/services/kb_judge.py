@@ -138,7 +138,8 @@ def pode_autoaprovar(candidato):
     """Regra estreita da Fase 2/3: nao usa vetor-only nem termo generico."""
     if (candidato.decisao_ia != 'adicionar'
             or (candidato.confianca_ia or 0) < 0.90
-            or candidato.ocorrencias < 3):
+            or candidato.ocorrencias < 3
+            or not (candidato.cnaes_ia or [])):
         return False
     fontes = candidato.fontes or {}
     if not (fontes.get('kb') or fontes.get('iliKe') or fontes.get('codigo')):
@@ -156,7 +157,8 @@ def pode_autoaprovar(candidato):
 @transaction.atomic
 def publicar_alias(candidato, usuario=None, automatico=False):
     """Cria/atualiza o alias publicado e grava historico imutavel."""
-    cnaes = sorted({int(c) for c in (candidato.cnaes or [])})
+    # A revisao humana/IA pode ter reduzido a lista de candidatos.
+    cnaes = sorted({int(c) for c in (candidato.cnaes_ia or candidato.cnaes or [])})
     if not cnaes:
         raise ValueError('candidato sem CNAEs')
     alias = (CnaeAlias.objects.select_for_update()
@@ -189,6 +191,7 @@ def publicar_alias(candidato, usuario=None, automatico=False):
         dados={
             'termo': alias.termo,
             'cnaes': alias.cnaes,
+            'cnaes_ia': candidato.cnaes_ia or [],
             'categorias': alias.categorias,
             'confianca_ia': candidato.confianca_ia,
             'justificativa_ia': candidato.justificativa_ia,

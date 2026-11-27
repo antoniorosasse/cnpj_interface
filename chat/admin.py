@@ -557,7 +557,7 @@ class AtividadeLogAdmin(admin.ModelAdmin):
     """Telemetria da resolucao atividade -> CNAE (somente leitura)."""
 
     list_display = ('criado_em', 'termo', 'origem', 'fonte', 'cnaes',
-                    'resultados')
+                    'score', 'resultados')
     list_filter = ('origem', 'fonte', 'criado_em')
     search_fields = ('termo', 'termo_normalizado')
     date_hierarchy = 'criado_em'
@@ -577,14 +577,15 @@ class AtividadeLogAdmin(admin.ModelAdmin):
 class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
     """Candidatos gerados por `propor_aliases_cnae` (revisao na Fase 2)."""
 
-    list_display = ('termo', 'cnaes', 'ocorrencias', 'status',
+    list_display = ('termo', 'cnaes', 'cnaes_ia', 'ocorrencias', 'status',
                     'atualizado_em')
     list_filter = ('status',)
     search_fields = ('termo', 'termo_normalizado')
     readonly_fields = ('termo', 'termo_normalizado', 'cnaes', 'categorias',
                        'fontes', 'ocorrencias', 'resultados_medios',
                        'score_medio', 'evidencia', 'decisao_ia',
-                       'confianca_ia', 'justificativa_ia', 'status',
+                       'confianca_ia', 'justificativa_ia', 'cnaes_ia',
+                       'status',
                        'revisado_por', 'revisado_em', 'criado_em',
                        'atualizado_em')
     list_per_page = 50
@@ -605,8 +606,10 @@ class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
             cand.decisao_ia = resultado['decisao']
             cand.confianca_ia = resultado['confianca']
             cand.justificativa_ia = resultado['justificativa']
+            cand.cnaes_ia = resultado['cnaes']
             cand.save(update_fields=['decisao_ia', 'confianca_ia',
-                                     'justificativa_ia', 'atualizado_em'])
+                                     'justificativa_ia', 'cnaes_ia',
+                                     'atualizado_em'])
             self.message_user(
                 request,
                 f'{cand.termo}: {resultado["decisao"]} '
