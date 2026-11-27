@@ -5,6 +5,8 @@ Testes dos filtros da /proximidade/ (Fase 3 - 25/11/2026).
 Sem banco: `filtros_proximidade` e' parsing puro e o template e' renderizado
 com contexto manual (mesmo padrao de ProximidadeTemplateTests).
 """
+from unittest.mock import patch
+
 from django.template.loader import render_to_string
 from django.test import RequestFactory, SimpleTestCase
 
@@ -36,10 +38,20 @@ class FiltrosProximidadeTests(SimpleTestCase):
         self.assertTrue(filtros['filtrado'])
         self.assertEqual(filtros['cnaes'], [8630504])
 
-    def test_atividade_desconhecida(self):
+    @patch('core.views._resolver_atividade_fallback_pagina',
+           return_value={'cnaes': [], 'rotulo': ''})
+    def test_atividade_desconhecida(self, mock_fallback):
         filtros = self._filtros(atividade='naves espaciais')
         self.assertTrue(filtros['erro'])
         self.assertFalse(filtros['filtrado'])
+
+    @patch('core.views._resolver_atividade_fallback_pagina',
+           return_value={'cnaes': [3511501], 'rotulo': 'energia solar'})
+    def test_atividade_usa_fallback(self, mock_fallback):
+        filtros = self._filtros(atividade='energia solar')
+        self.assertTrue(filtros['filtrado'])
+        self.assertEqual(filtros['cnaes'], [3511501])
+        self.assertEqual(filtros['erro'], '')
 
     def test_uf_idade_capital(self):
         filtros = self._filtros(uf='sc', idade='3', capital='500.000')

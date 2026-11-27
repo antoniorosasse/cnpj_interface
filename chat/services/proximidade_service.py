@@ -34,6 +34,7 @@ from core.cnae_categorias import (
     descrever_categorias,
     resolver_filtro_cnae,
 )
+from core.cnae_atividade import resolver_atividade
 from core.proximidade import (
     buscar_proximos,
     buscar_proximos_endereco,
@@ -169,22 +170,23 @@ def _fmt_numero(valor):
         return '0'
 
 
-def _resolver_atividades(atividades):
+def _resolver_atividades(atividades, cur=None, embedder=None):
     """
     Expressoes de atividade -> filtro CNAE ({faixas, cnaes, categorias, rotulo}).
 
-    Resolve o texto JUNTO (como a pagina faz) para que o link "abrir na
-    proximidade" reproduza exatamente o mesmo recorte: "industrias" +
-    "metalurgicas" vira "industrias e metalurgicas", e a regra "especifica
-    vence a generica" vale igual nos dois lados. Se o texto nao casar com a
-    KB, ainda aceita codigo CNAE de 6/7 digitos (mesma tolerancia da pagina).
+    Mesma ordem dos dois caminhos: KB -> codigo CNAE -> ILIKE -> vetor
+    (core.cnae_atividade). O fallback so' roda quando `cur` e' passado; a
+    proximidade resolve a KB antes de abrir o banco e completa depois.
     """
     termos = [str(t).strip() for t in (atividades or []) if str(t).strip()]
     texto = ' e '.join(termos)
-    filtro = resolver_filtro_cnae(texto) if texto else {
-        'categorias': [], 'faixas': [], 'cnaes': [], 'rotulo': ''}
-
-    if filtro['categorias']:
+    if not texto:
+        return {
+            'faixas': [], 'cnaes': [], 'categorias': [], 'rotulo': '',
+            'reconhecidas': [], 'nao_reconhecidas': [], 'fonte': 'nenhuma',
+        }
+    filtro = resolver_atividade(texto, cur=cur, embedder=embedder)
+    if filtro['categorias'] or filtro['faixas'] or filtro['cnaes']:
         return {
             'faixas': sorted({tuple(f) for f in filtro['faixas']}),
             'cnaes': sorted({int(c) for c in filtro['cnaes']}),
@@ -192,26 +194,16 @@ def _resolver_atividades(atividades):
             'rotulo': filtro['rotulo'],
             'reconhecidas': termos,
             'nao_reconhecidas': [],
+            'fonte': filtro.get('fonte') or 'kb',
         }
-
-    # Codigo CNAE digitado no lugar de uma categoria.
-    cnaes = set()
-    rotulos = []
-    nao_reconhecidas = []
-    for termo in termos:
-        digitos = ''.join(c for c in termo if c.isdigit())
-        if len(digitos) in (6, 7):
-            cnaes.add(int(digitos))
-            rotulos.append(f'CNAE {digitos}')
-        else:
-            nao_reconhecidas.append(termo)
     return {
         'faixas': [],
-        'cnaes': sorted(cnaes),
+        'cnaes': [],
         'categorias': [],
-        'rotulo': ', '.join(rotulos),
-        'reconhecidas': [t for t in termos if t not in nao_reconhecidas],
-        'nao_reconhecidas': nao_reconhecidas,
+        'rotulo': '',
+        'reconhecidas': [],
+        'nao_reconhecidas': filtro.get('nao_reconhecidas') or termos,
+        'fonte': 'nenhuma',
     }
 
 
@@ -353,14 +345,9 @@ def consultar_proximidade(plano, contexto_geo=None, conectar=None,
     dt_ini_antes_de = data_ha_anos(idade) if idade else None
 
     atividades = plano.get('atividades') or []
+    # Primeira passada sem banco: KB/codigo CNAE. Se nao resolver, o fallback
+    # ILIKE/vetor roda depois de abrir o cursor (mesma regra do SQL).
     filtro_cnae = _resolver_atividades(atividades)
-    if atividades and not filtro_cnae['categorias']:
-        return {
-            'ok': False,
-            'etapa': 'atividade',
-            'erro': _mensagem_atividade_nao_reconhecida(
-                filtro_cnae['nao_reconhecidas'] or atividades),
-        }
 
     # --- origem sem precisar de banco
     origem = None
@@ -398,6 +385,19 @@ def consultar_proximidade(plano, contexto_geo=None, conectar=None,
     inicio = time.monotonic()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if atividades and not (
+                filtro_cnae['categorias'] or filtro_cnae['faixas']
+                or filtro_cnae['cnaes']):
+            filtro_cnae = _resolver_atividades(atividades, cur=cur)
+            if not (filtro_cnae['categorias'] or filtro_cnae['faixas']
+                    or filtro_cnae['cnaes']):
+                return {
+                    'ok': False,
+                    'etapa': 'atividade',
+                    'erro': _mensagem_atividade_nao_reconhecida(
+                        filtro_cnae['nao_reconhecidas'] or atividades),
+                }
 
         if origem is None:
             origem, erro_origem = resolver_origem(cur, origem_texto)
