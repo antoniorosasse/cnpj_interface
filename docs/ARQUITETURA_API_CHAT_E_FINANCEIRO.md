@@ -2,6 +2,10 @@
 
 **Criado em:** 27/11/2026 · **Status:** proposta para decisão
 
+> **Escopo:** esta é a API **de produto/integração** (clientes externos e
+> cobrança). Ela **não** substitui as credenciais de IA do DeepSeek, que ficam
+> no admin em `Configurações de IA` — ver `CONFIGURACAO_IA_ADMIN.md`.
+
 ## Problema atual
 
 Hoje o navegador chama `POST /chat/api/` com **sessão + CSRF**. Esse endpoint:

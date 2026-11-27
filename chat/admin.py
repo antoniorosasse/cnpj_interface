@@ -22,6 +22,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.models import CHANGE, DELETION, LogEntry
 from django.core.exceptions import PermissionDenied
@@ -40,8 +41,8 @@ from .geoip import (
     rodar_script,
 )
 from .manutencao import MIN_DIAS, contar_acessos, limpar_acessos
-from .models import (AtividadeLog, CnaeAliasCandidato, LocalizacaoIP,
-                     LogAcesso)
+from .models import (AtividadeLog, CnaeAliasCandidato, ConfiguracaoIA,
+                     LocalizacaoIP, LogAcesso, UsoIA)
 from .relatorio import PERIODOS, resumo_acesso
 
 # Host/pasta usados nos comandos exibidos na tela (copiar e colar).
@@ -585,6 +586,104 @@ class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
     list_per_page = 50
 
     def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+
+class ConfiguracaoIAForm(forms.ModelForm):
+    """Form do admin: a chave e' write-only e nunca volta para a tela."""
+
+    api_key = forms.CharField(
+        label='Nova API key', required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text='Deixe em branco para manter a chave atual. A chave nao e '
+                  'exibida depois de salva.',
+    )
+
+    class Meta:
+        model = ConfiguracaoIA
+        fields = ('nome', 'finalidade', 'provedor', 'base_url', 'modelo',
+                  'ativo', 'padrao', 'timeout')
+
+    def save(self, commit=True):
+        from chat.ia_credentials import criptografar
+        obj = super().save(commit=False)
+        nova = self.cleaned_data.get('api_key') or ''
+        if nova:
+            obj.api_key_encrypted = criptografar(nova)
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
+
+
+@admin.register(ConfiguracaoIA)
+class ConfiguracaoIAAdmin(admin.ModelAdmin):
+    """Credenciais/modelos de IA gerenciados sem editar o .env."""
+
+    form = ConfiguracaoIAForm
+    list_display = ('nome', 'finalidade', 'provedor', 'modelo', 'ativo',
+                    'padrao', 'api_key_mascarada', 'atualizado_em')
+    list_filter = ('finalidade', 'provedor', 'ativo', 'padrao')
+    search_fields = ('nome', 'modelo', 'base_url')
+    readonly_fields = ('api_key_mascarada', 'criado_em', 'atualizado_em')
+    fieldsets = (
+        ('Identificacao', {
+            'fields': ('nome', 'finalidade', 'provedor', 'ativo', 'padrao'),
+        }),
+        ('Conexao', {
+            'fields': ('base_url', 'modelo', 'timeout', 'api_key',
+                       'api_key_mascarada'),
+        }),
+        ('Auditoria', {'fields': ('criado_em', 'atualizado_em')}),
+    )
+    actions = ('testar_conexoes',)
+
+    def save_model(self, request, obj, form, change):
+        from chat.services.llm_client import limpar_cache
+        if obj.padrao:
+            (ConfiguracaoIA.objects
+             .filter(finalidade=obj.finalidade, padrao=True)
+             .exclude(pk=obj.pk)
+             .update(padrao=False))
+        super().save_model(request, obj, form, change)
+        limpar_cache()
+
+    def delete_model(self, request, obj):
+        from chat.services.llm_client import limpar_cache
+        super().delete_model(request, obj)
+        limpar_cache()
+
+    @admin.action(description='Testar conexao das configuracoes selecionadas')
+    def testar_conexoes(self, request, queryset):
+        from chat.services.llm_client import testar_conexao
+        for conf in queryset:
+            ok, msg = testar_conexao(conf.finalidade, config=conf)
+            if ok:
+                self.message_user(request, f'{conf.nome}: {msg}',
+                                  level=messages.SUCCESS)
+            else:
+                self.message_user(request, f'{conf.nome}: {msg}',
+                                  level=messages.ERROR)
+
+
+@admin.register(UsoIA)
+class UsoIAAdmin(admin.ModelAdmin):
+    """Consumo de IA por finalidade, para custo e auditoria (leitura)."""
+
+    list_display = ('criado_em', 'finalidade', 'provedor', 'modelo',
+                    'tokens_total', 'duracao_ms', 'sucesso')
+    list_filter = ('finalidade', 'provedor', 'sucesso', 'criado_em')
+    date_hierarchy = 'criado_em'
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):

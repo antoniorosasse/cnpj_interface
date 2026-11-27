@@ -273,3 +273,79 @@ class CnaeAliasCandidato(models.Model):
 
     def __str__(self):
         return f'{self.termo} -> {self.cnaes} ({self.status})'
+
+
+class ConfiguracaoIA(models.Model):
+    """Credencial/modelo de IA gerenciado pelo admin (sem editar .env).
+
+    O segredo fica criptografado em `api_key_encrypted`; a interface so mostra
+    a versao mascarada. Use `finalidade` para separar o que atende os clientes
+    do que e' usado em tarefas internas (ex.: aprendizado da KB CNAE).
+    """
+
+    FINALIDADE_CHAT = 'chat_cliente'
+    FINALIDADE_KB = 'kb_interna'
+    FINALIDADE_TESTE = 'teste'
+    FINALIDADES = [
+        (FINALIDADE_CHAT, 'Chat dos clientes'),
+        (FINALIDADE_KB, 'Aprendizado interno da KB'),
+        (FINALIDADE_TESTE, 'Testes/diagnostico'),
+    ]
+
+    nome = models.CharField('nome', max_length=120)
+    finalidade = models.CharField('finalidade', max_length=20,
+                                  choices=FINALIDADES,
+                                  default=FINALIDADE_CHAT, db_index=True)
+    provedor = models.CharField('provedor', max_length=40, default='deepseek')
+    base_url = models.URLField('base URL', max_length=200,
+                               default='https://api.deepseek.com')
+    modelo = models.CharField('modelo', max_length=80, default='deepseek-chat')
+    api_key_encrypted = models.TextField('API key criptografada', blank=True,
+                                         default='')
+    ativo = models.BooleanField('ativo', default=True)
+    padrao = models.BooleanField('padrao desta finalidade', default=False)
+    timeout = models.PositiveIntegerField('timeout (s)', default=60)
+    criado_em = models.DateTimeField('criado em', auto_now_add=True)
+    atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ('finalidade', '-padrao', 'nome')
+        verbose_name = 'configuracao de IA'
+        verbose_name_plural = 'configuracoes de IA'
+
+    def __str__(self):
+        return f'{self.nome} [{self.get_finalidade_display()}]'
+
+    @property
+    def api_key_mascarada(self):
+        from chat.ia_credentials import descriptografar, mascarar
+        return mascarar(descriptografar(self.api_key_encrypted))
+
+
+class UsoIA(models.Model):
+    """Uma chamada feita a um provedor de IA, para custo/auditoria."""
+
+    configuracao = models.ForeignKey(
+        ConfiguracaoIA, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='usos')
+    finalidade = models.CharField('finalidade', max_length=20)
+    provedor = models.CharField('provedor', max_length=40, blank=True, default='')
+    modelo = models.CharField('modelo', max_length=80, blank=True, default='')
+    tokens_prompt = models.PositiveIntegerField('tokens de prompt', default=0)
+    tokens_resposta = models.PositiveIntegerField('tokens de resposta', default=0)
+    tokens_total = models.PositiveIntegerField('tokens totais', default=0)
+    duracao_ms = models.PositiveIntegerField('duracao (ms)', default=0)
+    sucesso = models.BooleanField('sucesso', default=True)
+    erro = models.TextField('erro', blank=True, default='')
+    criado_em = models.DateTimeField('criado em', auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ('-criado_em',)
+        verbose_name = 'uso de IA'
+        verbose_name_plural = 'usos de IA'
+        indexes = [
+            models.Index(fields=['finalidade', '-criado_em']),
+        ]
+
+    def __str__(self):
+        return f'{self.finalidade}/{self.modelo} ({self.tokens_total} tokens)'

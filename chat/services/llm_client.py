@@ -1,72 +1,137 @@
 # cnpj_interface/chat/services/llm_client.py
 """
-Cliente LLM para o chat IA.
+Cliente LLM do chat, com credenciais gerenciadas pelo admin.
 
-Wrapper em torno do SDK da OpenAI, apontando para a API do DeepSeek.
+Ordem de resolucao para uma `finalidade`:
+1. `chat.ConfiguracaoIA` ativa e padrao da finalidade (chave criptografada);
+2. fallback das variaveis DEEPSEEK_* do .env (compatibilidade/bootstrap).
+
+O segredo nunca e' logado nem devolvido pela API do admin.
 """
-
-import os
 import logging
+import os
+import time
 from typing import Generator, Optional
 
 from openai import OpenAI
 from django.conf import settings
 
-
 logger = logging.getLogger(__name__)
-
-
-# ============================================================
-# CONFIGURAÇÃO
-# ============================================================
 
 DEEPSEEK_API_KEY = getattr(settings, 'DEEPSEEK_API_KEY', None) or os.getenv('DEEPSEEK_API_KEY')
 DEFAULT_MODEL = os.getenv('CHAT_DEEPSEEK_MODEL', 'deepseek-chat')
 DEEPSEEK_BASE_URL = os.getenv('CHAT_DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
 DEFAULT_TIMEOUT = 60
 
+FINALIDADE_CHAT = 'chat_cliente'
+FINALIDADE_KB = 'kb_interna'
 
-# ============================================================
-# EXCEÇÕES
-# ============================================================
 
 class LLMError(Exception):
-    """Erro genérico do LLM."""
-    pass
+    """Erro generico do LLM."""
 
 
 class LLMConfigError(LLMError):
-    """Erro de configuração (ex: API key faltando)."""
-    pass
+    """Erro de configuracao (ex: API key faltando)."""
 
 
-# ============================================================
-# CLIENTE
-# ============================================================
-
-_client: Optional[OpenAI] = None
+_clientes: dict[tuple, OpenAI] = {}
 
 
-def get_client() -> OpenAI:
-    """Retorna um cliente OpenAI configurado para o DeepSeek (singleton)."""
-    global _client
+def limpar_cache():
+    """Chamado pelo admin quando uma configuracao de IA muda."""
+    _clientes.clear()
 
-    if not DEEPSEEK_API_KEY:
-        raise LLMConfigError('DEEPSEEK_API_KEY não configurada no .env')
 
-    if _client is None:
-        _client = OpenAI(
-            api_key=DEEPSEEK_API_KEY,
-            base_url=DEEPSEEK_BASE_URL,
-            timeout=DEFAULT_TIMEOUT,
+def _configuracao_do_banco(finalidade):
+    """Le a configuracao ativa/padrao; NUNCA quebra se o banco falhar."""
+    try:
+        from chat.models import ConfiguracaoIA
+        return (ConfiguracaoIA.objects
+                .filter(finalidade=finalidade, ativo=True)
+                .order_by('-padrao', 'nome')
+                .first())
+    except Exception:
+        logger.exception('Falha ao ler ConfiguracaoIA do banco')
+        return None
+
+
+def _resolver(finalidade, config=None):
+    """Devolve dict com api_key/base_url/modelo/timeout/config."""
+    from chat.ia_credentials import descriptografar
+
+    conf = config or _configuracao_do_banco(finalidade)
+    if conf:
+        chave = descriptografar(conf.api_key_encrypted)
+        if chave:
+            return {
+                'api_key': chave,
+                'base_url': conf.base_url or DEEPSEEK_BASE_URL,
+                'modelo': conf.modelo or DEFAULT_MODEL,
+                'timeout': conf.timeout or DEFAULT_TIMEOUT,
+                'config': conf,
+                'finalidade': finalidade,
+                'origem': 'admin',
+            }
+        logger.warning('ConfiguracaoIA %s sem chave descriptografavel; usando .env',
+                       conf.pk)
+    return {
+        'api_key': DEEPSEEK_API_KEY,
+        'base_url': DEEPSEEK_BASE_URL,
+        'modelo': DEFAULT_MODEL,
+        'timeout': DEFAULT_TIMEOUT,
+        'config': None,
+        'finalidade': finalidade,
+        'origem': 'env',
+    }
+
+
+def _client_para(dados):
+    chave = dados.get('api_key')
+    if not chave:
+        raise LLMConfigError(
+            'Nenhuma API de IA configurada. Cadastre em Admin → '
+            'Configuracoes de IA ou defina DEEPSEEK_API_KEY no .env.')
+    cache_key = (dados.get('base_url'), dados.get('timeout'),
+                 abs(hash(chave)))
+    cliente = _clientes.get(cache_key)
+    if cliente is None:
+        cliente = OpenAI(
+            api_key=chave,
+            base_url=dados.get('base_url') or DEEPSEEK_BASE_URL,
+            timeout=dados.get('timeout') or DEFAULT_TIMEOUT,
         )
+        _clientes[cache_key] = cliente
+    return cliente
 
-    return _client
+
+def get_client(finalidade=FINALIDADE_CHAT) -> OpenAI:
+    """Mantido para compatibilidade: devolve o cliente da finalidade."""
+    return _client_para(_resolver(finalidade))
 
 
-# ============================================================
-# CHAMADAS
-# ============================================================
+def _registrar_uso(dados, modelo, duracao_ms, resposta=None, erro=''):
+    try:
+        from chat.models import UsoIA
+        uso = getattr(resposta, 'usage', None) if resposta is not None else None
+        tokens_prompt = int(getattr(uso, 'prompt_tokens', 0) or 0)
+        tokens_resposta = int(getattr(uso, 'completion_tokens', 0) or 0)
+        tokens_total = int(getattr(uso, 'total_tokens', 0) or 0)
+        UsoIA.objects.create(
+            configuracao=dados.get('config'),
+            finalidade=dados.get('finalidade') or FINALIDADE_CHAT,
+            provedor='deepseek',
+            modelo=modelo,
+            tokens_prompt=tokens_prompt,
+            tokens_resposta=tokens_resposta,
+            tokens_total=tokens_total or (tokens_prompt + tokens_resposta),
+            duracao_ms=max(0, int(duracao_ms)),
+            sucesso=not bool(erro),
+            erro=str(erro or '')[:1000],
+        )
+    except Exception:
+        logger.exception('Falha ao registrar UsoIA')
+
 
 def gerar_resposta(
     system_prompt: str,
@@ -74,10 +139,13 @@ def gerar_resposta(
     model: Optional[str] = None,
     temperature: float = 0.0,
     max_tokens: int = 2000,
+    finalidade: str = FINALIDADE_CHAT,
 ) -> str:
-    """Chama o LLM e retorna a resposta completa (não-streaming)."""
-    client = get_client()
-    modelo = model or DEFAULT_MODEL
+    """Chama o LLM e retorna a resposta completa (nao-streaming)."""
+    dados = _resolver(finalidade)
+    client = _client_para(dados)
+    modelo = model or dados['modelo']
+    inicio = time.monotonic()
 
     try:
         resposta = client.chat.completions.create(
@@ -90,12 +158,18 @@ def gerar_resposta(
             max_tokens=max_tokens,
         )
     except Exception as e:
-        logger.exception('Erro ao chamar DeepSeek')
+        _registrar_uso(dados, modelo, (time.monotonic() - inicio) * 1000,
+                       erro=str(e))
+        logger.exception('Erro ao chamar o provedor de IA')
         raise LLMError(f'Erro na chamada ao LLM: {e}')
 
     if not resposta.choices:
+        _registrar_uso(dados, modelo, (time.monotonic() - inicio) * 1000,
+                       resposta=resposta, erro='Resposta vazia')
         raise LLMError('Resposta vazia do LLM')
 
+    _registrar_uso(dados, modelo, (time.monotonic() - inicio) * 1000,
+                   resposta=resposta)
     return resposta.choices[0].message.content or ''
 
 
@@ -105,10 +179,13 @@ def gerar_resposta_stream(
     model: Optional[str] = None,
     temperature: float = 0.0,
     max_tokens: int = 2000,
+    finalidade: str = FINALIDADE_CHAT,
 ) -> Generator[str, None, None]:
-    """Chama o LLM com streaming e vai retornando pedaços de texto."""
-    client = get_client()
-    modelo = model or DEFAULT_MODEL
+    """Chama o LLM com streaming e vai retornando pedacos de texto."""
+    dados = _resolver(finalidade)
+    client = _client_para(dados)
+    modelo = model or dados['modelo']
+    inicio = time.monotonic()
 
     try:
         stream = client.chat.completions.create(
@@ -129,29 +206,39 @@ def gerar_resposta_stream(
             if delta and delta.content:
                 yield delta.content
 
+        _registrar_uso(dados, modelo, (time.monotonic() - inicio) * 1000)
     except Exception as e:
-        logger.exception('Erro no streaming do DeepSeek')
+        _registrar_uso(dados, modelo, (time.monotonic() - inicio) * 1000,
+                       erro=str(e))
+        logger.exception('Erro no streaming do provedor de IA')
         raise LLMError(f'Erro no streaming do LLM: {e}')
 
 
-# ============================================================
-# TESTE DE CONEXÃO
-# ============================================================
-
-def testar_conexao() -> tuple[bool, str]:
-    """Testa a conexão com o DeepSeek."""
+def testar_conexao(finalidade=FINALIDADE_CHAT, config=None) -> tuple[bool, str]:
+    """Testa a conexao com a configuracao (ou com a padrao da finalidade)."""
     try:
-        resposta = gerar_resposta(
-            system_prompt='Você é um assistente útil. Responda de forma curta.',
-            user_prompt='Responda apenas: OK',
+        dados = _resolver(finalidade, config=config)
+        client = _client_para(dados)
+        inicio = time.monotonic()
+        resposta_obj = client.chat.completions.create(
+            model=dados['modelo'],
+            messages=[
+                {'role': 'system',
+                 'content': 'Voce e um assistente util. Responda de forma curta.'},
+                {'role': 'user', 'content': 'Responda apenas: OK'},
+            ],
+            temperature=0.0,
             max_tokens=10,
         )
+        _registrar_uso(dados, dados['modelo'],
+                       (time.monotonic() - inicio) * 1000, resposta=resposta_obj)
+        resposta = resposta_obj.choices[0].message.content or ''
         if 'OK' in resposta.upper():
-            return True, f'Conexão OK — resposta: {resposta.strip()!r}'
-        return True, f'Conexão OK — resposta inesperada: {resposta.strip()!r}'
+            return True, f'Conexao OK - resposta: {resposta.strip()!r}'
+        return True, f'Conexao OK - resposta inesperada: {resposta.strip()!r}'
     except LLMConfigError as e:
-        return False, f'Erro de configuração: {e}'
+        return False, f'Erro de configuracao: {e}'
     except LLMError as e:
-        return False, f'Erro de comunicação: {e}'
+        return False, f'Erro de comunicacao: {e}'
     except Exception as e:
         return False, f'Erro inesperado: {e}'

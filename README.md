@@ -1304,6 +1304,7 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 - [Avaliação atividade → CNAE (gold set e benchmark)](docs/AVALIACAO_ATIVIDADE_CNAE.md)
 - [Plano de KB autoaprendizável e embeddings](docs/PLANO_KB_E_EMBEDDINGS.md)
 - [Arquitetura: API do chat × API financeira](docs/ARQUITETURA_API_CHAT_E_FINANCEIRO.md)
+- [Configuração das APIs de IA pelo admin](docs/CONFIGURACAO_IA_ADMIN.md)
 - [Script de verificação](scripts/verificar_chat_proximidade.sh)
   (`--rapido`, `--completo`, `--smoke URL`)
 - [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)
@@ -1324,7 +1325,7 @@ Ver `.env.example` para a lista completa. As principais:
 - `CHAT_SQL_MAX_ROWS` - limite de linhas (padrão: 1000)
 - `CHAT_USE_MONGO` - `0` = Postgres (padrão), `1` = MongoDB
 - `MONGO_*` - conexão MongoDB (host, porta, db, user, password)
-- `DEEPSEEK_API_KEY` - chave da API do chat
+- `DEEPSEEK_API_KEY` - chave de fallback do chat (o ideal é cadastrar no admin; ver `docs/CONFIGURACAO_IA_ADMIN.md`)
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrão: `deepseek-chat`)
 - `CHAT_DEEPSEEK_BASE_URL` - endpoint compatível OpenAI (padrão: `https://api.deepseek.com`)
 - `AS400_*` - **removidos**: o `cnpj_interface` não fala mais com o IBM i

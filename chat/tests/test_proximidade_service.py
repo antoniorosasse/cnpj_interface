@@ -149,6 +149,11 @@ class ConsultarProximidadeTests(SimpleTestCase):
         proximidade._tabela_total_cache = {}
         self.addCleanup(
             setattr, proximidade, '_tabela_total_cache', self._cache_original)
+        # Nao gravar AtividadeLog em SimpleTestCase (sem banco).
+        self._log_patcher = patch(
+            'chat.services.proximidade_service.registrar_atividade')
+        self._log_patcher.start()
+        self.addCleanup(self._log_patcher.stop)
 
     def test_sem_origem_pede_esclarecimento(self):
         resultado = svc.consultar_proximidade(
