@@ -1307,6 +1307,7 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
   e credenciais de IA no admin em `docs/CONFIGURACAO_IA_ADMIN.md`.
 - [Arquitetura: API do chat × API financeira](docs/ARQUITETURA_API_CHAT_E_FINANCEIRO.md)
 - [Configuração das APIs de IA pelo admin](docs/CONFIGURACAO_IA_ADMIN.md)
+- [Plano de migração para BrazEmbed 768d](docs/PLANO_MIGRACAO_BRAZEMBED.md)
 - [Script de verificação](scripts/verificar_chat_proximidade.sh)
   (`--rapido`, `--completo`, `--smoke URL`)
 - [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)

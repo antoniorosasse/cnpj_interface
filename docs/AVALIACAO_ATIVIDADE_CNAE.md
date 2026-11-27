@@ -75,6 +75,8 @@ O cache de embeddings fica em `/tmp/avaliacao_cnae` (não versionado).
 
 ## Limitações
 
+- **Formato do documento:** o benchmark usa `nome (cnae)`; o embedding atual do banco usa só `nm_cnae`. Antes de migrar, rebenchmarkar os dois formatos (ver `PLANO_MIGRACAO_BRAZEMBED.md`).
+
 - Gold set inicial de 86 atividades, não 200–300; ainda precisa de ampliação com
   perguntas reais.
 - CNAEs aceitos foram curados manualmente; alguns termos amplos aceitam mais de

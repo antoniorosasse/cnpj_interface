@@ -46,7 +46,7 @@ class ResolverAtividadeTests(SimpleTestCase):
     def test_ilike_antes_do_vetor(self):
         cur = FakeCursor(ilike=[{'cnae': 5620104, 'nm_cnae': 'Fornecimento de alimentos'}],
                         vetor=[{'cnae': 9999999, 'nm_cnae': 'Vetor nao deveria rodar'}])
-        filtro = resolver_atividade('pizzarias', cur=cur)
+        filtro = resolver_atividade('serralheria', cur=cur)
         self.assertEqual(filtro['cnaes'], [5620104])
         self.assertEqual(filtro['fonte'], 'iliKe')
         self.assertAlmostEqual(filtro['score'], 0.9)

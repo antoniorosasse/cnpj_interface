@@ -100,9 +100,10 @@ class PublicacaoAliasTests(TestCase):
     @override_settings(ATIVIDADE_RESOLVER='v2')
     def test_resolvedor_usa_alias_publicado(self):
         from core.cnae_atividade import resolver_atividade
-        _candidato()
+        _candidato(termo='calzone',
+                   termo_normalizado='calzone')
         kb_judge.publicar_alias(CnaeAliasCandidato.objects.get())
-        filtro = resolver_atividade('pizzarias')
+        filtro = resolver_atividade('calzone')
         self.assertEqual(filtro['fonte'], 'alias')
         self.assertEqual(set(filtro['cnaes']), {5611201, 5620104})
         self.assertEqual(filtro['score'], 1.0)
