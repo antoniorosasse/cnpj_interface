@@ -1292,8 +1292,9 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 - **Migrações**: `chat.0006_mensagem_plano` e `chat.0007_mensagem_colunas_
   mensagem_erro_mensagem_rows_and_more` aplicadas no deploy de 26/11.
 - **Validação**: 792 testes OK; deploy `cnpj` 23 s; smoke em produção OK.
-- **Pendência**: consultas de contagem do chat em produção levaram 42–54 s no
-  smoke (uma consulta quente 3,9 s); medir LLM x SQL e otimizar.
+- **Latência**: as contagens do chat eram dominadas por SQL; em 27/11 um
+  `VACUUM (ANALYZE) c_estabelecimentos` em produção zerou os heap fetches
+  (SC 2,6 s → 0,42 s) e as quatro UFs medidas ficaram em 3–7 s de API.
 
 ## Documentação de apoio
 
