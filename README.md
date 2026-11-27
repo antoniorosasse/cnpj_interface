@@ -1284,8 +1284,8 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 - **Identidade final**: paleta aço/platina + teal/âmbar; tokens em
   `static/css/portal.css`; logo SVG em `static/img/logo-horizontal.svg`,
   `logo-vertical.svg`, `logo-mono.svg`, `logo-mono-branco.svg`,
-  `marca-busquecnpj.svg` e `favicon.svg` (wordmark em texto vetorial; falta
-  outline).
+  `marca-busquecnpj.svg` e `favicon.svg`; o wordmark foi contornado para
+  paths por `scripts/gerar_logo_svg.py` (não depende de fonte).
 - **Copy**: H1 “Encontre empresas conversando com a IA ou busque por
   geolocalização”; tagline “Prospecção B2B inteligente”; subheadline e pilar
   atualizados para CRM/ERP.
