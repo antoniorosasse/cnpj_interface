@@ -27,6 +27,19 @@ def registrar_atividade(termo, filtro=None, origem='', resultados=None,
         if not termo:
             return None
         filtro = filtro or {}
+        from chat.models import AtividadeLog
+        fonte = filtro.get('fonte') or AtividadeLog.FONTE_NENHUMA
+        if fonte not in dict(AtividadeLog.FONTES):
+            fonte = AtividadeLog.FONTE_NENHUMA
+        categorias = [str(c) for c in (filtro.get('categorias') or [])]
+        cnaes = []
+        for c in filtro.get('cnaes') or []:
+            try:
+                cnaes.append(int(c))
+            except (TypeError, ValueError):
+                continue
+        usuario_log = (usuario
+                       if getattr(usuario, 'is_authenticated', False) else None)
         faixas = []
         for faixa in filtro.get('faixas') or []:
             try:
@@ -37,12 +50,13 @@ def registrar_atividade(termo, filtro=None, origem='', resultados=None,
             termo=termo,
             termo_normalizado=normalizar_termo(termo),
             origem=origem,
-            fonte=filtro.get('fonte') or AtividadeLog.FONTE_NENHUMA,
-            categorias=list(filtro.get('categorias') or []),
-            cnaes=[int(c) for c in (filtro.get('cnaes') or [])],
+            fonte=fonte,
+            categorias=categorias,
+            cnaes=cnaes,
             faixas=faixas,
             resultados=resultados,
-            usuario=usuario,
+            score=filtro.get('score'),
+            usuario=usuario_log,
         )
     except Exception:
         logger.exception('Falha ao registrar log de atividade')

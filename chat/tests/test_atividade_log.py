@@ -21,7 +21,8 @@ class RegistrarAtividadeTests(TestCase):
     def test_grava_log_com_filtro(self):
         log = registrar_atividade(
             'postos de gasolina',
-            {'fonte': 'iliKe', 'cnaes': [4731800], 'faixas': []},
+            {'fonte': 'iliKe', 'cnaes': [4731800], 'faixas': [],
+             'score': 0.91},
             AtividadeLog.ORIGEM_CHAT, resultados=22,
         )
         self.assertIsNotNone(log)
@@ -30,6 +31,7 @@ class RegistrarAtividadeTests(TestCase):
         self.assertEqual(log.cnaes, [4731800])
         self.assertEqual(log.fonte, 'iliKe')
         self.assertEqual(log.resultados, 22)
+        self.assertAlmostEqual(log.score, 0.91)
 
     def test_termo_vazio_nao_grava(self):
         self.assertIsNone(registrar_atividade('', {}, AtividadeLog.ORIGEM_CHAT))
@@ -54,6 +56,7 @@ class ProporAliasesCommandTests(TestCase):
             fonte=fonte,
             cnaes=cnaes,
             resultados=resultados,
+            score=0.90,
         )
         if dias:
             AtividadeLog.objects.filter(pk=log.pk).update(
@@ -69,6 +72,7 @@ class ProporAliasesCommandTests(TestCase):
         self.assertEqual(cand.termo_normalizado, 'pizzarias')
         self.assertEqual(cand.cnaes, [5611201, 5620104])
         self.assertEqual(cand.ocorrencias, 3)
+        self.assertAlmostEqual(cand.score_medio, 0.90)
         self.assertEqual(cand.status, CnaeAliasCandidato.STATUS_PENDENTE)
 
     def test_ignora_pouco_recorrente_e_sem_cnae(self):

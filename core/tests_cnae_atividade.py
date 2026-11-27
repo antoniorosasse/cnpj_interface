@@ -1,5 +1,7 @@
 # cnpj_interface/core/tests_cnae_atividade.py
 """Testes do resolvedor de atividade compartilhado entre SQL e proximidade."""
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
 from core.cnae_atividade import resolver_atividade
@@ -18,12 +20,18 @@ class FakeCursor:
         self._sql = sql
 
     def fetchall(self):
-        if 'ORDER BY embedding' in self._sql:
+        if 'distancia' in self._sql or 'ORDER BY embedding' in self._sql:
             return self.vetor
         return self.ilike
 
 
 class ResolverAtividadeTests(SimpleTestCase):
+    def setUp(self):
+        # SimpleTestCase nao pode consultar o banco; isola o lookup de alias.
+        self._alias_patcher = patch(
+            "core.cnae_atividade._alias_publicado", return_value=None)
+        self._alias_patcher.start()
+        self.addCleanup(self._alias_patcher.stop)
     def test_kb_nao_toca_no_banco(self):
         filtro = resolver_atividade('indústrias metalúrgicas')
         self.assertEqual(filtro['categorias'], ['metalurgica'])
@@ -41,13 +49,16 @@ class ResolverAtividadeTests(SimpleTestCase):
         filtro = resolver_atividade('pizzarias', cur=cur)
         self.assertEqual(filtro['cnaes'], [5620104])
         self.assertEqual(filtro['fonte'], 'iliKe')
+        self.assertAlmostEqual(filtro['score'], 0.9)
         self.assertTrue(any('ILIKE' in sql for sql, _ in cur.chamadas))
-        self.assertFalse(any('ORDER BY embedding' in sql for sql, _ in cur.chamadas))
+        self.assertFalse(any('distancia' in sql or 'ORDER BY embedding' in sql
+                             for sql, _ in cur.chamadas))
 
     def test_vetor_so_quando_ilike_nao_acha(self):
         cur = FakeCursor(
             ilike=[],
-            vetor=[{'cnae': 3511500, 'nm_cnae': 'Geração de energia elétrica'}],
+            vetor=[{'cnae': 3511500, 'nm_cnae': 'Geração de energia elétrica',
+                     'distancia': 0.2}],
         )
         chamadas = []
 
@@ -58,6 +69,7 @@ class ResolverAtividadeTests(SimpleTestCase):
         filtro = resolver_atividade('energia solar', cur=cur, embedder=embedder)
         self.assertEqual(filtro['cnaes'], [3511500])
         self.assertEqual(filtro['fonte'], 'vetor')
+        self.assertAlmostEqual(filtro['score'], 0.8)
         self.assertEqual(chamadas, ['energia solar'])
         # A frase inteira foi tentada no ILIKE; nao pode ter virado "energia"
         # solta (que casaria "energia eletrica").

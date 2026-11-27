@@ -16,6 +16,10 @@ from core.views import filtros_proximidade
 class FiltrosProximidadeTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
+        self._alias_patcher = patch(
+            "core.cnae_atividade._alias_publicado", return_value=None)
+        self._alias_patcher.start()
+        self.addCleanup(self._alias_patcher.stop)
 
     def _filtros(self, **params):
         return filtros_proximidade(self.factory.get('/proximidade/', params))

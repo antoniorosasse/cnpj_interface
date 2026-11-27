@@ -78,3 +78,47 @@ class AdminConfiguracaoIATests(TestCase):
         from chat.ia_credentials import descriptografar
         self.assertEqual(descriptografar(conf.api_key_encrypted),
                          'sk-teste-admin-123456')
+
+
+class AdminSegurancaIATests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        self.superuser = User.objects.create_superuser(
+            username='admin_sec', email='admin2@example.com', password='x')
+        self.staff = User.objects.create_user(
+            username='staff_sec', password='x', is_staff=True)
+
+    def test_staff_nao_acessa_configuracao_ia(self):
+        self.client.force_login(self.staff)
+        resposta = self.client.get('/admin/chat/configuracaoia/')
+        self.assertNotEqual(resposta.status_code, 200)
+
+    def test_base_url_fora_da_allowlist_e_bloqueada(self):
+        self.client.force_login(self.superuser)
+        resposta = self.client.post('/admin/chat/configuracaoia/add/', {
+            'nome': 'Exfiltracao',
+            'finalidade': ConfiguracaoIA.FINALIDADE_CHAT,
+            'base_url': 'https://evil.example.com',
+            'modelo': 'deepseek-chat',
+            'ativo': 'on',
+            'padrao': 'on',
+            'timeout': '60',
+            'api_key': 'sk-nao-vazar',
+        })
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'api.deepseek.com')
+        self.assertFalse(ConfiguracaoIA.objects.filter(nome='Exfiltracao').exists())
+
+    def test_criacao_sem_chave_e_bloqueada(self):
+        self.client.force_login(self.superuser)
+        resposta = self.client.post('/admin/chat/configuracaoia/add/', {
+            'nome': 'Sem chave',
+            'finalidade': ConfiguracaoIA.FINALIDADE_CHAT,
+            'base_url': 'https://api.deepseek.com',
+            'modelo': 'deepseek-chat',
+            'ativo': 'on',
+            'timeout': '60',
+        })
+        self.assertEqual(resposta.status_code, 200)
+        self.assertFalse(ConfiguracaoIA.objects.filter(nome='Sem chave').exists())

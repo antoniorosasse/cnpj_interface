@@ -41,8 +41,9 @@ from .geoip import (
     rodar_script,
 )
 from .manutencao import MIN_DIAS, contar_acessos, limpar_acessos
-from .models import (AtividadeLog, CnaeAliasCandidato, ConfiguracaoIA,
-                     LocalizacaoIP, LogAcesso, UsoIA)
+from .models import (AtividadeLog, CnaeAlias, CnaeAliasCandidato,
+                     CnaeAliasHistorico, ConfiguracaoIA, LocalizacaoIP,
+                     LogAcesso, UsoIA)
 from .relatorio import PERIODOS, resumo_acesso
 
 # Host/pasta usados nos comandos exibidos na tela (copiar e colar).
@@ -582,10 +583,109 @@ class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
     search_fields = ('termo', 'termo_normalizado')
     readonly_fields = ('termo', 'termo_normalizado', 'cnaes', 'categorias',
                        'fontes', 'ocorrencias', 'resultados_medios',
-                       'evidencia', 'criado_em', 'atualizado_em')
+                       'score_medio', 'evidencia', 'decisao_ia',
+                       'confianca_ia', 'justificativa_ia', 'status',
+                       'revisado_por', 'revisado_em', 'criado_em',
+                       'atualizado_em')
     list_per_page = 50
+    actions = ('avaliar_com_ia', 'autoaprovar', 'publicar_selecionados',
+               'rejeitar_selecionados')
 
     def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description='Avaliar com IA (juiz kb_interna)')
+    def avaliar_com_ia(self, request, queryset):
+        from chat.services.kb_judge import avaliar_candidato
+        for cand in queryset.filter(status=CnaeAliasCandidato.STATUS_PENDENTE):
+            resultado = avaliar_candidato(cand)
+            cand.decisao_ia = resultado['decisao']
+            cand.confianca_ia = resultado['confianca']
+            cand.justificativa_ia = resultado['justificativa']
+            cand.save(update_fields=['decisao_ia', 'confianca_ia',
+                                     'justificativa_ia', 'atualizado_em'])
+            self.message_user(
+                request,
+                f'{cand.termo}: {resultado["decisao"]} '
+                f'({resultado["confianca"]:.0%})',
+                level=messages.INFO)
+
+    @admin.action(description='Autoaprovar (alta confianca + evidencia)')
+    def autoaprovar(self, request, queryset):
+        from chat.services.kb_judge import pode_autoaprovar, publicar_alias
+        for cand in queryset.filter(status=CnaeAliasCandidato.STATUS_PENDENTE):
+            if not pode_autoaprovar(cand):
+                self.message_user(
+                    request, f'{cand.termo}: nao atende aos criterios de '
+                    'autoaprovacao; fica para revisao.', level=messages.WARNING)
+                continue
+            publicar_alias(cand, usuario=request.user, automatico=True)
+            self.message_user(request, f'{cand.termo}: publicado automaticamente',
+                              level=messages.SUCCESS)
+
+    @admin.action(description='Publicar selecionados (revisao humana)')
+    def publicar_selecionados(self, request, queryset):
+        from chat.services.kb_judge import publicar_alias
+        for cand in queryset.filter(status=CnaeAliasCandidato.STATUS_PENDENTE):
+            try:
+                publicar_alias(cand, usuario=request.user)
+                self.message_user(request, f'{cand.termo}: publicado',
+                                  level=messages.SUCCESS)
+            except ValueError as exc:
+                self.message_user(request, f'{cand.termo}: {exc}',
+                                  level=messages.ERROR)
+
+    @admin.action(description='Rejeitar selecionados')
+    def rejeitar_selecionados(self, request, queryset):
+        from django.utils import timezone
+        n = queryset.filter(status=CnaeAliasCandidato.STATUS_PENDENTE).update(
+            status=CnaeAliasCandidato.STATUS_REJEITADO,
+            revisado_por=request.user, revisado_em=timezone.now(),
+            atualizado_em=timezone.now())
+        self.message_user(request, f'{n} candidato(s) rejeitado(s)')
+
+
+@admin.register(CnaeAlias)
+class CnaeAliasAdmin(admin.ModelAdmin):
+    list_display = ('termo', 'cnaes', 'versao', 'ativo', 'origem',
+                    'atualizado_em')
+    list_filter = ('ativo', 'origem')
+    search_fields = ('termo', 'termo_normalizado')
+    readonly_fields = ('termo', 'termo_normalizado', 'cnaes', 'categorias',
+                       'origem', 'versao', 'evidencia', 'ativo',
+                       'criado_por', 'criado_em', 'atualizado_em')
+    actions = ('desativar_aliases',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description='Desativar aliases selecionados')
+    def desativar_aliases(self, request, queryset):
+        from chat.services.kb_judge import desativar_alias
+        for alias in queryset.filter(ativo=True):
+            desativar_alias(alias, usuario=request.user)
+        self.message_user(request, f'{queryset.count()} alias(es) desativado(s)')
+
+
+@admin.register(CnaeAliasHistorico)
+class CnaeAliasHistoricoAdmin(admin.ModelAdmin):
+    list_display = ('criado_em', 'termo_normalizado', 'versao', 'acao',
+                    'usuario')
+    list_filter = ('acao', 'criado_em')
+    search_fields = ('termo_normalizado',)
+    readonly_fields = ('termo_normalizado', 'versao', 'acao', 'dados',
+                       'usuario', 'criado_em')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):
@@ -605,8 +705,28 @@ class ConfiguracaoIAForm(forms.ModelForm):
 
     class Meta:
         model = ConfiguracaoIA
-        fields = ('nome', 'finalidade', 'provedor', 'base_url', 'modelo',
+        fields = ('nome', 'finalidade', 'base_url', 'modelo',
                   'ativo', 'padrao', 'timeout')
+
+    def clean(self):
+        dados = super().clean()
+        from urllib.parse import urlparse
+        from django.core.exceptions import ValidationError
+        url = (dados.get('base_url') or '').strip()
+        host = (urlparse(url).hostname or '').lower()
+        if url and (urlparse(url).scheme != 'https'
+                    or host != 'api.deepseek.com'):
+            raise ValidationError({
+                'base_url': 'Use https://api.deepseek.com para a API DeepSeek.',
+            })
+        if not dados.get('api_key'):
+            if not self.instance.pk:
+                raise ValidationError({'api_key': 'Informe a API key na criacao.'})
+            if (self.instance.base_url or '').strip() != url:
+                raise ValidationError({
+                    'api_key': 'Ao trocar a base URL, redigite a API key.',
+                })
+        return dados
 
     def save(self, commit=True):
         from chat.ia_credentials import criptografar
@@ -632,7 +752,7 @@ class ConfiguracaoIAAdmin(admin.ModelAdmin):
     readonly_fields = ('api_key_mascarada', 'criado_em', 'atualizado_em')
     fieldsets = (
         ('Identificacao', {
-            'fields': ('nome', 'finalidade', 'provedor', 'ativo', 'padrao'),
+            'fields': ('nome', 'finalidade', 'ativo', 'padrao'),
         }),
         ('Conexao', {
             'fields': ('base_url', 'modelo', 'timeout', 'api_key',
@@ -641,6 +761,18 @@ class ConfiguracaoIAAdmin(admin.ModelAdmin):
         ('Auditoria', {'fields': ('criado_em', 'atualizado_em')}),
     )
     actions = ('testar_conexoes',)
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
 
     def save_model(self, request, obj, form, change):
         from chat.services.llm_client import limpar_cache

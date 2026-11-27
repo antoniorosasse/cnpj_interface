@@ -56,6 +56,8 @@ class Command(BaseCommand):
             resultados = [i.resultados for i in itens
                           if i.resultados is not None]
             media = (sum(resultados) / len(resultados)) if resultados else None
+            scores = [i.score for i in itens if i.score is not None]
+            score_medio = (sum(scores) / len(scores)) if scores else None
 
             candidato = CnaeAliasCandidato.objects.filter(
                 termo_normalizado=chave).first()
@@ -70,6 +72,11 @@ class Command(BaseCommand):
                 'fontes': fontes,
                 'ocorrencias': len(itens),
                 'resultados_medios': media,
+                'score_medio': score_medio,
+                # Evidencia mudou: a avaliacao anterior da IA nao vale mais.
+                'decisao_ia': '',
+                'confianca_ia': None,
+                'justificativa_ia': '',
                 'evidencia': {
                     'termos': dict(contagem_termos),
                     'cnaes': {','.join(map(str, k)): v

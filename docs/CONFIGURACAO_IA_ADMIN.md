@@ -67,7 +67,9 @@ ConfiguracaoIA ativa/padrão da finalidade
 
 ## Segurança
 
-- Apenas superusuários devem gerenciar `ConfiguracaoIA`.
+- Apenas superusuários gerenciam `ConfiguracaoIA` (implementado no admin).
+- A `base_url` e' limitada a `https://api.deepseek.com`; ao troca-la, a chave
+  precisa ser redigitada.
 - Nunca copie a chave para documento, issue ou chat.
 - A chave fica em `api_key_encrypted`; não a coloque em `UsoIA`, logs ou
   mensagens de erro.

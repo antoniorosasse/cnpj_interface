@@ -12,6 +12,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -203,12 +204,14 @@ class AtividadeLog(models.Model):
     FONTE_CODIGO = 'codigo'
     FONTE_ILIKE = 'iliKe'
     FONTE_VETOR = 'vetor'
+    FONTE_ALIAS = 'alias'
     FONTE_NENHUMA = 'nenhuma'
     FONTES = [
         (FONTE_KB, 'KB'),
         (FONTE_CODIGO, 'Codigo CNAE'),
         (FONTE_ILIKE, 'ILIKE'),
         (FONTE_VETOR, 'Vetor'),
+        (FONTE_ALIAS, 'Alias publicado'),
         (FONTE_NENHUMA, 'Nenhuma'),
     ]
 
@@ -221,6 +224,7 @@ class AtividadeLog(models.Model):
     cnaes = models.JSONField('cnaes', default=list, blank=True)
     faixas = models.JSONField('faixas', default=list, blank=True)
     resultados = models.IntegerField('resultados', null=True, blank=True)
+    score = models.FloatField('score', null=True, blank=True)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='atividades_log',
@@ -260,7 +264,17 @@ class CnaeAliasCandidato(models.Model):
     fontes = models.JSONField('fontes', default=dict, blank=True)
     ocorrencias = models.PositiveIntegerField('ocorrencias', default=0)
     resultados_medios = models.FloatField('resultados medios', null=True, blank=True)
+    score_medio = models.FloatField('score medio', null=True, blank=True)
     evidencia = models.JSONField('evidencia', default=dict, blank=True)
+    decisao_ia = models.CharField('decisao da IA', max_length=12, blank=True,
+                                  default='')
+    confianca_ia = models.FloatField('confianca da IA', null=True, blank=True)
+    justificativa_ia = models.TextField('justificativa da IA', blank=True,
+                                        default='')
+    revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+        blank=True, related_name='cnae_candidatos_revisados')
+    revisado_em = models.DateTimeField('revisado em', null=True, blank=True)
     status = models.CharField('status', max_length=10, choices=STATUS,
                               default=STATUS_PENDENTE, db_index=True)
     criado_em = models.DateTimeField('criado em', auto_now_add=True)
@@ -304,7 +318,9 @@ class ConfiguracaoIA(models.Model):
                                          default='')
     ativo = models.BooleanField('ativo', default=True)
     padrao = models.BooleanField('padrao desta finalidade', default=False)
-    timeout = models.PositiveIntegerField('timeout (s)', default=60)
+    timeout = models.PositiveIntegerField(
+        'timeout (s)', default=60,
+        validators=[MinValueValidator(5), MaxValueValidator(120)])
     criado_em = models.DateTimeField('criado em', auto_now_add=True)
     atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
 
@@ -319,7 +335,12 @@ class ConfiguracaoIA(models.Model):
     @property
     def api_key_mascarada(self):
         from chat.ia_credentials import descriptografar, mascarar
-        return mascarar(descriptografar(self.api_key_encrypted))
+        if not self.api_key_encrypted:
+            return '(nao configurada)'
+        chave = descriptografar(self.api_key_encrypted)
+        if chave is None:
+            return '(erro de descriptografia)'
+        return mascarar(chave)
 
 
 class UsoIA(models.Model):
@@ -349,3 +370,58 @@ class UsoIA(models.Model):
 
     def __str__(self):
         return f'{self.finalidade}/{self.modelo} ({self.tokens_total} tokens)'
+
+
+class CnaeAlias(models.Model):
+    """Alias de atividade publicado na KB dinamica (versao atual).
+
+    A resolucao consulta esta tabela antes do fallback ILIKE/vetor. Cada
+    publicacao gera uma linha imutavel em CnaeAliasHistorico, o que permite
+    auditoria e rollback.
+    """
+
+    termo = models.CharField('termo', max_length=200)
+    termo_normalizado = models.CharField(
+        'termo normalizado', max_length=200, unique=True)
+    cnaes = models.JSONField('cnaes', default=list, blank=True)
+    categorias = models.JSONField('categorias', default=list, blank=True)
+    origem = models.CharField('origem', max_length=20, blank=True, default='')
+    evidencia = models.JSONField('evidencia', default=dict, blank=True)
+    versao = models.PositiveIntegerField('versao', default=1)
+    ativo = models.BooleanField('ativo', default=True, db_index=True)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='cnae_aliases_criados')
+    criado_em = models.DateTimeField('criado em', auto_now_add=True)
+    atualizado_em = models.DateTimeField('atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ('termo_normalizado',)
+        verbose_name = 'alias CNAE publicado'
+        verbose_name_plural = 'aliases CNAE publicados'
+
+    def __str__(self):
+        return f'{self.termo} -> {self.cnaes} (v{self.versao})'
+
+
+class CnaeAliasHistorico(models.Model):
+    """Snapshot imutavel de cada publicacao/alteracao/desativacao de alias."""
+
+    termo_normalizado = models.CharField('termo normalizado', max_length=200,
+                                         db_index=True)
+    versao = models.PositiveIntegerField('versao')
+    acao = models.CharField('acao', max_length=20, default='publicado')
+    dados = models.JSONField('dados', default=dict, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='cnae_alias_historico')
+    criado_em = models.DateTimeField('criado em', auto_now_add=True,
+                                     db_index=True)
+
+    class Meta:
+        ordering = ('-criado_em',)
+        verbose_name = 'historico de alias CNAE'
+        verbose_name_plural = 'historico de aliases CNAE'
+
+    def __str__(self):
+        return f'{self.termo_normalizado} v{self.versao} {self.acao}'

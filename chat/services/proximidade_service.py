@@ -186,6 +186,7 @@ def _resolver_atividades(atividades, cur=None, embedder=None):
         return {
             'faixas': [], 'cnaes': [], 'categorias': [], 'rotulo': '',
             'reconhecidas': [], 'nao_reconhecidas': [], 'fonte': 'nenhuma',
+            'score': None,
         }
     filtro = resolver_atividade(texto, cur=cur, embedder=embedder)
     if filtro['categorias'] or filtro['faixas'] or filtro['cnaes']:
@@ -197,6 +198,7 @@ def _resolver_atividades(atividades, cur=None, embedder=None):
             'reconhecidas': termos,
             'nao_reconhecidas': [],
             'fonte': filtro.get('fonte') or 'kb',
+            'score': filtro.get('score'),
         }
     return {
         'faixas': [],
@@ -206,6 +208,7 @@ def _resolver_atividades(atividades, cur=None, embedder=None):
         'reconhecidas': [],
         'nao_reconhecidas': filtro.get('nao_reconhecidas') or termos,
         'fonte': 'nenhuma',
+        'score': None,
     }
 
 

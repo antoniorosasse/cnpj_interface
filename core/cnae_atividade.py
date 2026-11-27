@@ -33,6 +33,7 @@ GENERICOS = {
 
 LIMITE_ILIKE = 30
 LIMITE_VETOR = 2
+SCORE_MIN_VETOR = 0.20
 
 
 def _normalizar(texto):
@@ -81,8 +82,8 @@ def _frases_busca(texto):
 
 def _par_cnae(linha):
     if isinstance(linha, dict):
-        return int(linha['cnae']), linha['nm_cnae']
-    return int(linha[0]), linha[1]
+        return int(linha['cnae']), linha['nm_cnae'], linha.get('distancia')
+    return int(linha[0]), linha[1], (linha[2] if len(linha) > 2 else None)
 
 
 def _consultar_ilike(cur, frases):
@@ -98,7 +99,8 @@ def _consultar_ilike(cur, frases):
             logger.exception('Falha no fallback ILIKE de CNAE')
             return None
         if linhas:
-            return [_par_cnae(l) for l in linhas]
+            # ILIKE lexical: score fixo alto; nao e' distancia vetorial.
+            return [(c, n, 0.10) for c, n, _ in (_par_cnae(l) for l in linhas)]
     return []
 
 
@@ -117,10 +119,10 @@ def _consultar_vetor(cur, texto, embedder):
         return []
     try:
         cur.execute(
-            'SELECT cnae, nm_cnae FROM c_cnaes '
-            'WHERE embedding IS NOT NULL '
-            'ORDER BY embedding <=> %s::halfvec(384) '
-            'LIMIT %s',
+            'SELECT cnae, nm_cnae, '
+            '       (embedding <=> %s::halfvec(384)) AS distancia '
+            'FROM c_cnaes WHERE embedding IS NOT NULL '
+            'ORDER BY distancia LIMIT %s',
             (vetor, LIMITE_VETOR),
         )
         linhas = cur.fetchall()
@@ -128,6 +130,31 @@ def _consultar_vetor(cur, texto, embedder):
         logger.exception('Falha no fallback vetorial de CNAE')
         return []
     return [_par_cnae(l) for l in linhas]
+
+
+def _alias_publicado(texto):
+    """Alias aprovado no admin (KB dinamica), se existir.
+
+    Tenta a expressao inteira e, se ela tiver " e ", cada termo individual
+    (o chat pode juntar varias atividades).
+    """
+    try:
+        from chat.models import CnaeAlias
+    except Exception:
+        return None
+    candidatos = [_normalizar(texto)]
+    if ' e ' in (texto or ''):
+        candidatos += [_normalizar(p) for p in str(texto).split(' e ')]
+    for termo in dict.fromkeys(c for c in candidatos if c):
+        try:
+            alias = CnaeAlias.objects.filter(
+                termo_normalizado=termo, ativo=True).first()
+        except Exception:
+            logger.exception('Falha ao consultar alias CNAE publicado')
+            return None
+        if alias:
+            return alias
+    return None
 
 
 def resolver_atividade(texto, cur=None, embedder=None):
@@ -149,6 +176,7 @@ def resolver_atividade(texto, cur=None, embedder=None):
             'cnaes': sorted({int(c) for c in filtro['cnaes']}),
             'rotulo': filtro['rotulo'],
             'fonte': 'kb',
+            'score': 1.0,
             'nao_reconhecidas': [],
         }
 
@@ -161,6 +189,19 @@ def resolver_atividade(texto, cur=None, embedder=None):
             'cnaes': [int(digitos)],
             'rotulo': f'CNAE {digitos}',
             'fonte': 'codigo',
+            'score': 1.0,
+            'nao_reconhecidas': [],
+        }
+
+    alias = _alias_publicado(original)
+    if alias and alias.cnaes:
+        return {
+            'categorias': list(alias.categorias or []),
+            'faixas': [],
+            'cnaes': sorted({int(c) for c in alias.cnaes}),
+            'rotulo': alias.termo,
+            'fonte': 'alias',
+            'score': 1.0,
             'nao_reconhecidas': [],
         }
 
@@ -170,6 +211,7 @@ def resolver_atividade(texto, cur=None, embedder=None):
         'cnaes': [],
         'rotulo': '',
         'fonte': 'nenhuma',
+        'score': None,
         'nao_reconhecidas': [original] if original else [],
     }
     if not original or cur is None:
@@ -190,14 +232,21 @@ def resolver_atividade(texto, cur=None, embedder=None):
 
     # Deduplica e devolve uma lista FECHADA para o motor filtrado.
     vistos = {}
-    for cnae, nome in linhas:
+    scores = []
+    for cnae, nome, distancia in linhas:
         vistos.setdefault(cnae, nome)
+        if distancia is not None:
+            scores.append(max(0.0, 1.0 - float(distancia)))
+    score = max(scores) if scores else (0.9 if fonte == 'iliKe' else None)
+    if fonte == 'vetor' and (score is None or score < SCORE_MIN_VETOR):
+        return vazio
     return {
         'categorias': [],
         'faixas': [],
         'cnaes': sorted(vistos),
         'rotulo': original,
         'fonte': fonte,
+        'score': score,
         'nao_reconhecidas': [],
         'cnaes_nomes': vistos,
     }

@@ -56,6 +56,11 @@ class DataHaAnosTests(SimpleTestCase):
 
 
 class ResolverAtividadesTests(SimpleTestCase):
+    def setUp(self):
+        self._alias_patcher = patch(
+            "core.cnae_atividade._alias_publicado", return_value=None)
+        self._alias_patcher.start()
+        self.addCleanup(self._alias_patcher.stop)
     def test_metalurgicas(self):
         filtro = svc._resolver_atividades(['indústrias metalúrgicas'])
         self.assertEqual(filtro['categorias'], ['metalurgica'])
@@ -151,9 +156,13 @@ class ConsultarProximidadeTests(SimpleTestCase):
             setattr, proximidade, '_tabela_total_cache', self._cache_original)
         # Nao gravar AtividadeLog em SimpleTestCase (sem banco).
         self._log_patcher = patch(
-            'chat.services.proximidade_service.registrar_atividade')
+            "chat.services.proximidade_service.registrar_atividade")
         self._log_patcher.start()
         self.addCleanup(self._log_patcher.stop)
+        self._alias_patcher = patch(
+            "core.cnae_atividade._alias_publicado", return_value=None)
+        self._alias_patcher.start()
+        self.addCleanup(self._alias_patcher.stop)
 
     def test_sem_origem_pede_esclarecimento(self):
         resultado = svc.consultar_proximidade(

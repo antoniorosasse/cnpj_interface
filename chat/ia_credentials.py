@@ -29,14 +29,30 @@ def criptografar(valor):
     return _fernet().encrypt(str(valor).encode('utf-8')).decode('ascii')
 
 
+def _fernet_de(segredo):
+    base = hashlib.sha256(('busquecnpj:ia:' + str(segredo)).encode('utf-8'))
+    return Fernet(base64.urlsafe_b64encode(base.digest()))
+
+
 def descriptografar(valor):
+    """Devolve a chave, '' se vazia, ou None se nao for possivel decifrar.
+
+    Tenta a chave atual e, se IA_CREDENTIALS_KEY estiver definida, tambem a
+    derivacao antiga da SECRET_KEY. Isso permite migrar para uma chave-mestra
+    propria sem perder os segredos ja cadastrados.
+    """
     if not valor:
         return ''
-    try:
-        return _fernet().decrypt(str(valor).encode('ascii')).decode('utf-8')
-    except (InvalidToken, ValueError, TypeError):
-        logger.exception('Falha ao descriptografar chave de IA')
-        return ''
+    candidatos = [_fernet()]
+    if os.getenv('IA_CREDENTIALS_KEY'):
+        candidatos.append(_fernet_de(settings.SECRET_KEY))
+    for fernet in candidatos:
+        try:
+            return fernet.decrypt(str(valor).encode('ascii')).decode('utf-8')
+        except (InvalidToken, ValueError, TypeError):
+            continue
+    logger.error('Nao foi possivel descriptografar uma chave de IA')
+    return None
 
 
 def mascarar(valor):

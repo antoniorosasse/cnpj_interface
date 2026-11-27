@@ -760,7 +760,7 @@ def filtros_proximidade(request):
     odontologicas", "supermercados e padarias") ou um codigo CNAE de 6/7
     digitos. Devolve faixas/cnaes prontos para o motor filtrado.
     """
-    from core.cnae_categorias import resolver_filtro_cnae
+    from core.cnae_atividade import resolver_atividade
 
     atividade = (request.GET.get('atividade') or '').strip()
     uf = (request.GET.get('uf') or '').strip().upper()
@@ -778,41 +778,36 @@ def filtros_proximidade(request):
     filtro_cnae = {'categorias': [], 'faixas': [], 'cnaes': [], 'rotulo': ''}
     erro = ''
     if atividade:
-        filtro_cnae = resolver_filtro_cnae(atividade)
+        filtro_cnae = resolver_atividade(atividade)
         if filtro_cnae['categorias']:
-            filtro_cnae['fonte'] = 'kb'
+            filtro_cnae['fonte'] = filtro_cnae.get('fonte') or 'kb'
+            filtro_cnae['score'] = filtro_cnae.get('score', 1.0)
         if not (filtro_cnae['categorias'] or filtro_cnae['cnaes']):
-            digitos = ''.join(c for c in atividade if c.isdigit())
-            if len(digitos) in (6, 7):
-                filtro_cnae = {
-                    'categorias': [], 'faixas': [], 'cnaes': [int(digitos)],
-                    'rotulo': f'CNAE {digitos}', 'fonte': 'codigo',
-                }
-            else:
-                # Mesma regra do SQL: ILIKE em c_cnaes e, se nada, vetor.
-                # A pagina usa a lista fechada de CNAEs no motor filtrado.
-                try:
-                    filtro_fallback = _resolver_atividade_fallback_pagina(
-                        atividade)
-                    if filtro_fallback['cnaes']:
-                        filtro_cnae = {
-                            'categorias': [],
-                            'faixas': [],
-                            'cnaes': filtro_fallback['cnaes'],
-                            'rotulo': filtro_fallback['rotulo'],
-                            'fonte': filtro_fallback.get('fonte') or 'iliKe',
-                        }
-                except Exception:
-                    logger.exception(
-                        'Falha no fallback de atividade da proximidade')
-                if not (filtro_cnae['categorias'] or filtro_cnae['cnaes']):
-                    erro = (
-                        f'Atividade "{atividade}" não reconhecida. Use uma das '
-                        'categorias (metalúrgicas, clínicas médicas e '
-                        'odontológicas, transportadoras, supermercados, '
-                        'padarias, postos, indústrias) ou um código CNAE de '
-                        '6/7 dígitos.'
-                    )
+            # resolver_atividade ja tratou KB/codigo/alias; falta o fallback
+            # textual/vetorial (mesma regra do SQL).
+            try:
+                filtro_fallback = _resolver_atividade_fallback_pagina(
+                    atividade)
+                if filtro_fallback['cnaes']:
+                    filtro_cnae = {
+                        'categorias': [],
+                        'faixas': [],
+                        'cnaes': filtro_fallback['cnaes'],
+                        'rotulo': filtro_fallback['rotulo'],
+                        'fonte': filtro_fallback.get('fonte') or 'iliKe',
+                        'score': filtro_fallback.get('score'),
+                    }
+            except Exception:
+                logger.exception(
+                    'Falha no fallback de atividade da proximidade')
+            if not (filtro_cnae['categorias'] or filtro_cnae['cnaes']):
+                erro = (
+                    f'Atividade "{atividade}" não reconhecida. Use uma das '
+                    'categorias (metalúrgicas, clínicas médicas e '
+                    'odontológicas, transportadoras, supermercados, '
+                    'padarias, postos, indústrias) ou um código CNAE de '
+                    '6/7 dígitos.'
+                )
 
     filtrado = bool(filtro_cnae['faixas'] or filtro_cnae['cnaes']
                     or uf or idade or capital)

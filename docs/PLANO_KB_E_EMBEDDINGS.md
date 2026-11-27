@@ -36,9 +36,9 @@ em produção.
 
 ## Fase 1 — Telemetria e fila de candidatos (sem escrever na KB) ✅ implementada localmente
 
-**Status 27/11:** modelos `AtividadeLog`/`CnaeAliasCandidato` (migração
-`chat.0008`), log em chat/página, admin somente leitura e comando
-`propor_aliases_cnae`; 808 testes OK. Falta deploy.
+**Status 27/11:** modelos `AtividadeLog`/`CnaeAliasCandidato` (migrações
+`chat.0008` e `0010`), log em chat/página com **score**, admin e comando
+`propor_aliases_cnae`; testes cobrindo score/fila. Falta deploy.
 
 **Objetivo:** descobrir o que os usuários realmente perguntam e medir a qualidade
 do resolvedor.
@@ -65,7 +65,12 @@ do resolvedor.
 
 ---
 
-## Fase 2 — Juiz IA + revisão humana
+## Fase 2 — Juiz IA + revisão humana ✅ implementada localmente
+
+**Status 27/11:** `chat/services/kb_judge.py` (juiz com lista fechada),
+`CnaeAlias`/`CnaeAliasHistorico` versionados, ações no admin para avaliar,
+autoaprovar com critérios e publicar/desativar; migrações `chat.0011`/`0012`.
+Ainda não deployado.
 
 **Objetivo:** usar IA para triar candidatos, deixando ao humano apenas os casos
 ambíguos.
@@ -91,6 +96,11 @@ ambíguos.
 - Testes de regressão por alias aprovado.
 
 **Riscos:** viés de confirmação e contaminação; por isso aprovação humana inicial.
+
+**Segurança aplicada:** admin de `ConfiguracaoIA` restrito a superusuário;
+`base_url` allowlist `https://api.deepseek.com`; chave obrigatória na criação e
+re-digitação ao trocar endpoint; prompt do juiz delimita dados do usuário e
+ignora instruções embutidas.
 
 ---
 

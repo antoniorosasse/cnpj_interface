@@ -15,6 +15,7 @@ from typing import Generator, Optional
 
 from openai import OpenAI
 from django.conf import settings
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +44,38 @@ def limpar_cache():
     _clientes.clear()
 
 
-def _configuracao_do_banco(finalidade):
-    """Le a configuracao ativa/padrao; NUNCA quebra se o banco falhar."""
+def _configuracoes_do_banco(finalidade):
+    """Le todas as configuracoes ativas da finalidade; nao quebra sem banco."""
     try:
         from chat.models import ConfiguracaoIA
-        return (ConfiguracaoIA.objects
-                .filter(finalidade=finalidade, ativo=True)
-                .order_by('-padrao', 'nome')
-                .first())
+        return list(ConfiguracaoIA.objects
+                    .filter(finalidade=finalidade, ativo=True)
+                    .order_by('-padrao', 'nome'))
     except Exception:
         logger.exception('Falha ao ler ConfiguracaoIA do banco')
-        return None
+        return []
 
 
 def _resolver(finalidade, config=None):
     """Devolve dict com api_key/base_url/modelo/timeout/config."""
     from chat.ia_credentials import descriptografar
 
-    conf = config or _configuracao_do_banco(finalidade)
-    if conf:
+    configs = [config] if config is not None else _configuracoes_do_banco(finalidade)
+    for conf in configs:
         chave = descriptografar(conf.api_key_encrypted)
         if chave:
             return {
                 'api_key': chave,
                 'base_url': conf.base_url or DEEPSEEK_BASE_URL,
                 'modelo': conf.modelo or DEFAULT_MODEL,
-                'timeout': conf.timeout or DEFAULT_TIMEOUT,
+                'timeout': max(5, min(int(conf.timeout or DEFAULT_TIMEOUT), 120)),
                 'config': conf,
                 'finalidade': finalidade,
                 'origem': 'admin',
             }
-        logger.warning('ConfiguracaoIA %s sem chave descriptografavel; usando .env',
-                       conf.pk)
+        logger.error(
+            'ConfiguracaoIA %s (%s) sem chave valida; tentando a proxima',
+            conf.pk, finalidade)
     return {
         'api_key': DEEPSEEK_API_KEY,
         'base_url': DEEPSEEK_BASE_URL,
@@ -99,7 +100,8 @@ def _client_para(dados):
         cliente = OpenAI(
             api_key=chave,
             base_url=dados.get('base_url') or DEEPSEEK_BASE_URL,
-            timeout=dados.get('timeout') or DEFAULT_TIMEOUT,
+            timeout=max(5, min(int(dados.get('timeout') or DEFAULT_TIMEOUT), 120)),
+            max_retries=1,
         )
         _clientes[cache_key] = cliente
     return cliente
@@ -117,18 +119,20 @@ def _registrar_uso(dados, modelo, duracao_ms, resposta=None, erro=''):
         tokens_prompt = int(getattr(uso, 'prompt_tokens', 0) or 0)
         tokens_resposta = int(getattr(uso, 'completion_tokens', 0) or 0)
         tokens_total = int(getattr(uso, 'total_tokens', 0) or 0)
-        UsoIA.objects.create(
-            configuracao=dados.get('config'),
-            finalidade=dados.get('finalidade') or FINALIDADE_CHAT,
-            provedor='deepseek',
-            modelo=modelo,
-            tokens_prompt=tokens_prompt,
-            tokens_resposta=tokens_resposta,
-            tokens_total=tokens_total or (tokens_prompt + tokens_resposta),
-            duracao_ms=max(0, int(duracao_ms)),
-            sucesso=not bool(erro),
-            erro=str(erro or '')[:1000],
-        )
+        with transaction.atomic(using='default'):
+            UsoIA.objects.create(
+                configuracao=dados.get('config'),
+                finalidade=dados.get('finalidade') or FINALIDADE_CHAT,
+                provedor=(dados.get('config').provedor
+                          if dados.get('config') else 'deepseek'),
+                modelo=modelo,
+                tokens_prompt=tokens_prompt,
+                tokens_resposta=tokens_resposta,
+                tokens_total=tokens_total or (tokens_prompt + tokens_resposta),
+                duracao_ms=max(0, int(duracao_ms)),
+                sucesso=not bool(erro),
+                erro=str(erro or '')[:1000],
+            )
     except Exception:
         logger.exception('Falha ao registrar UsoIA')
 
