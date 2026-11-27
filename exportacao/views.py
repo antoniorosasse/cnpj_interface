@@ -720,6 +720,154 @@ def _exportar_chat_proximidade(request, alvo, formato, maximo):
     return resposta
 
 
+def _alvo_lista_chat(request, user):
+    """Devolve (sql_original, pergunta, cliente) da ultima lista SQL do chat."""
+    from chat import repo
+    from chat.views import SESSION_CONVERSA_ID
+
+    cid = request.session.get(SESSION_CONVERSA_ID)
+    conversa = repo.buscar_conversa(cid, user=user) if cid else None
+    if conversa is None:
+        return None, None, None
+    conversa_id = conversa.pk if not isinstance(conversa, dict) else (
+        conversa.get('pk') or conversa.get('id') or conversa.get('_id'))
+    mensagens = list(repo.mensagens_da_conversa(conversa_id))
+    alvo = None
+    for msg in reversed(mensagens):
+        if _ler(msg, 'papel') != 'assistant':
+            continue
+        if str(_ler(msg, 'sql') or '').strip():
+            alvo = msg
+            break
+        if _ler(msg, 'plano'):
+            return None, None, None  # export completo de proximidade: fase 2
+    if alvo is None:
+        return None, None, None
+    posicao = mensagens.index(alvo)
+    pergunta = ''
+    for anterior in reversed(mensagens[:posicao]):
+        if _ler(anterior, 'papel') == 'user':
+            pergunta = str(_ler(anterior, 'conteudo') or '').strip()
+            break
+    from .servicos import cliente_do_usuario
+    return str(_ler(alvo, 'sql')).strip(), pergunta, cliente_do_usuario(user)
+
+
+def exportar_chat_completo(request):
+    """Cria exportacao completa (background) da ultima lista do chat."""
+    from chat.services.embedding_service import injetar_vetor, tem_placeholder
+    from chat.services.sql_executor import contar_linhas
+    from chat.services.sql_validator import SQLValidationError, validar_sql
+    from .async_export import criar_job, iniciar_job, limite_para
+    from .servicos import ip_do_request
+
+    formato = 'json' if request.GET.get('formato') == 'json' else 'csv'
+    user = getattr(request, 'user', None)
+    if user is None or not user.is_authenticated:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'login',
+            'mensagem': 'Entre na sua conta para baixar a lista completa.',
+        }, status=403)
+    staff = bool(user.is_staff or user.is_superuser)
+    sql, pergunta, cliente = _alvo_lista_chat(request, user)
+    if not sql:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sem_lista',
+            'mensagem': 'A última resposta não tem uma lista SQL para exportar.',
+        }, status=404)
+    cap = limite_para(user)
+    try:
+        validation = validar_sql(sql, max_rows=cap)
+    except SQLValidationError as exc:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sql', 'mensagem': f'SQL inválido: {exc}',
+        }, status=400)
+    sql_exec = validation.sql
+    if tem_placeholder(sql_exec):
+        sql_exec, erro = injetar_vetor(sql_exec, pergunta)
+        if erro:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sql', 'mensagem': erro,
+            }, status=400)
+    total = contar_linhas(sql_exec, timeout_ms=8000)
+    if total is None:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'consulta',
+            'mensagem': 'Não foi possível calcular o total desta lista. '
+                        'Refine a consulta (cidade/UF/atividade) e tente de novo.',
+        }, status=400)
+    if total > cap:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'limite',
+            'mensagem': (f'Esta lista tem {total} linhas; o limite para exportação '
+                         f'completa é {cap}. Refine a consulta.'),
+        }, status=400)
+    if not staff:
+        if cliente is None:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': 'Sua conta não tem créditos para exportar esta lista.',
+            }, status=402)
+        if cliente.saldo_creditos < total:
+            return render(request, 'exportacao/bloqueado.html', {
+                'motivo': 'sem_creditos',
+                'mensagem': (f'Esta lista tem {total} linhas e sua conta tem '
+                             f'{cliente.saldo_creditos} créditos.'),
+            }, status=402)
+    job = criar_job(user, cliente, sql, formato, pergunta,
+                    ip_do_request(request), total)
+    iniciar_job(job.pk)
+    return redirect('exportacao:completa_status', token=job.token)
+
+
+def exportacao_completa_status(request, token):
+    job = Exportacao.objects.filter(token=token, completo=True).first()
+    if job is None:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'sem_lista', 'mensagem': 'Exportação não encontrada.',
+        }, status=404)
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated or (
+            job.usuario_id and job.usuario_id != user.pk and not user.is_staff):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'login', 'mensagem': 'Sem permissão para esta exportação.',
+        }, status=403)
+    return render(request, 'exportacao/completa_status.html', {'job': job})
+
+
+def exportacao_completa_baixar(request, token):
+    from django.http import FileResponse, Http404
+    from pathlib import Path
+    from django.conf import settings
+
+    job = Exportacao.objects.filter(token=token, completo=True).first()
+    if job is None:
+        raise Http404()
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated or (
+            job.usuario_id and job.usuario_id != user.pk and not user.is_staff):
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'login', 'mensagem': 'Sem permissão para esta exportação.',
+        }, status=403)
+    if job.status != 'pronto' or not job.arquivo_nome:
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'consulta', 'mensagem': 'O arquivo ainda não está pronto.',
+        }, status=409)
+    caminho = Path(getattr(settings, 'EXPORTACAO_COMPLETA_DIR',
+                           Path(settings.BASE_DIR) / 'exportacoes')) / job.arquivo_nome
+    if not caminho.is_file():
+        return render(request, 'exportacao/bloqueado.html', {
+            'motivo': 'erro', 'mensagem': 'Arquivo expirado ou removido.',
+        }, status=410)
+    tipo = 'application/json' if job.formato == 'json' else 'text/csv'
+    resposta = FileResponse(open(caminho, 'rb'), content_type=f'{tipo}; charset=utf-8')
+    resposta['Content-Disposition'] = (
+        f'attachment; filename="{job.arquivo_nome}"')
+    Exportacao.objects.filter(pk=job.pk).update(
+        status='baixada', baixada_em=timezone.now())
+    return resposta
+
+
 def exportar_chat(request):
     """
     Baixa a lista da ULTIMA resposta com tabela na conversa aberta.

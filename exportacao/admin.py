@@ -122,10 +122,12 @@ class MovimentoCreditoAdmin(admin.ModelAdmin):
 @admin.register(Exportacao)
 class ExportacaoAdmin(admin.ModelAdmin):
     list_display = ('criado_em', 'origem', 'formato', 'cliente', 'visitante',
-                    'n_linhas', 'creditos', 'amostra', 'status')
-    list_filter = ('origem', 'formato', 'status', 'amostra')
-    search_fields = ('cliente__nome', 'visitante', 'usuario__username')
-    readonly_fields = ('criado_em', 'baixada_em', 'expira_em', 'sql', 'filtros')
+                    'n_linhas', 'creditos', 'amostra', 'completo', 'status')
+    list_filter = ('origem', 'formato', 'status', 'amostra', 'completo')
+    search_fields = ('cliente__nome', 'visitante', 'usuario__username', 'token')
+    readonly_fields = ('criado_em', 'baixada_em', 'expira_em', 'sql', 'filtros',
+                       'token', 'arquivo_nome', 'erro', 'iniciado_em',
+                       'concluido_em')
 
 
 @admin.register(PesquisaAnonima)

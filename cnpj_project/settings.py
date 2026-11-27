@@ -61,6 +61,18 @@ PAGINAS_DIA_IP = int(os.getenv('PAGINAS_DIA_IP', '3000') or 3000)
 # Teto de linhas no export do chat (o executor do chat corta em CHAT_SQL_MAX_ROWS).
 EXPORTACAO_CHAT_MAX_LINHAS = int(os.getenv('EXPORTACAO_CHAT_MAX_LINHAS', '5000') or 5000)
 
+# Exportacao completa/assincrona (arquivo temporario + worker).
+EXPORTACAO_COMPLETA_MAX_ADMIN = int(
+    os.getenv('EXPORTACAO_COMPLETA_MAX_ADMIN', '500000') or 500000)
+EXPORTACAO_COMPLETA_MAX_CLIENTE = int(
+    os.getenv('EXPORTACAO_COMPLETA_MAX_CLIENTE', '50000') or 50000)
+EXPORTACAO_COMPLETA_DIR = os.getenv(
+    'EXPORTACAO_COMPLETA_DIR', str(BASE_DIR / 'exportacoes'))
+EXPORTACAO_COMPLETA_TTL_HORAS = int(
+    os.getenv('EXPORTACAO_COMPLETA_TTL_HORAS', '24') or 24)
+EXPORTACAO_COMPLETA_TIMEOUT = int(
+    os.getenv('EXPORTACAO_COMPLETA_TIMEOUT', '600') or 600)
+
 # ==================== DESAFIO (Cloudflare Turnstile) ====================
 # Chaves gratuitas em https://dash.cloudflare.com -> Turnstile.
 # Sem as chaves, o desafio fica desativado (o export segue com cookie + cotas).

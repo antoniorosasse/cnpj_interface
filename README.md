@@ -1309,6 +1309,7 @@ local e respostas/artefatos falsos: não tocam a base `.mmdb` nem a rede.
 - [Configuração das APIs de IA pelo admin](docs/CONFIGURACAO_IA_ADMIN.md)
 - [Plano de migração para BrazEmbed 768d](docs/PLANO_MIGRACAO_BRAZEMBED.md)
 - [Índices UF+CNAE e município+data para listagens](docs/INDICE_UF_CNAE.md)
+- [Exportação completa em background](docs/EXPORTACAO_COMPLETA.md): botão “Exportar tudo”, status e arquivo temporário
 - [Script de verificação](scripts/verificar_chat_proximidade.sh)
   (`--rapido`, `--completo`, `--smoke URL`)
 - [Contrato de identidade visual e design tokens](../Projetos/docs/interface/IDENTIDADE_VISUAL_TOKENS.md)

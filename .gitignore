@@ -53,3 +53,6 @@ Thumbs.db
 
 # cookie jar local (nunca no repo)
 jpx.txt
+
+# Exportacoes completas temporarias (nao versionar)
+exportacoes/

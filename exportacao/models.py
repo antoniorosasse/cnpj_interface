@@ -62,7 +62,8 @@ class Exportacao(models.Model):
 
     ORIGENS = (('lista', 'Lista'), ('chat', 'Chat'), ('proximidade', 'Proximidade'))
     FORMATOS = (('csv', 'CSV'), ('json', 'JSON'))
-    STATUS = (('pendente', 'Pendente'), ('baixada', 'Baixada'),
+    STATUS = (('pendente', 'Pendente'), ('processando', 'Processando'),
+              ('pronto', 'Pronto'), ('baixada', 'Baixada'),
               ('falhou', 'Falhou'), ('expirada', 'Expirada'))
 
     cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, null=True, blank=True,
@@ -78,10 +79,19 @@ class Exportacao(models.Model):
     creditos = models.IntegerField('creditos debitados', default=0)
     amostra = models.BooleanField('amostra', default=False)
     ip = models.GenericIPAddressField('IP', null=True, blank=True)
-    status = models.CharField('status', max_length=10, choices=STATUS, default='pendente')
+    status = models.CharField('status', max_length=12, choices=STATUS, default='pendente')
     criado_em = models.DateTimeField('criado em', auto_now_add=True, db_index=True)
     expira_em = models.DateTimeField('expira em', null=True, blank=True)
     baixada_em = models.DateTimeField('baixada em', null=True, blank=True)
+    # Exportacao completa/assincrona (tabela unica; as antigas ficam null)
+    completo = models.BooleanField('exportacao completa', default=False)
+    token = models.CharField('token', max_length=64, unique=True, null=True,
+                             blank=True)
+    arquivo_nome = models.CharField('nome do arquivo', max_length=255,
+                                  blank=True, default='')
+    erro = models.TextField('erro', blank=True, default='')
+    iniciado_em = models.DateTimeField('iniciado em', null=True, blank=True)
+    concluido_em = models.DateTimeField('concluido em', null=True, blank=True)
 
     class Meta:
         verbose_name = 'exportacao'

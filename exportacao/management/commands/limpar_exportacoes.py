@@ -11,6 +11,9 @@ Uso:
 """
 
 from datetime import timedelta
+from pathlib import Path
+
+from django.conf import settings
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -38,6 +41,14 @@ class Command(BaseCommand):
             self.stdout.write(f'[dry-run] pesquisas: {pesquisas.count()}')
             return
 
+        # Remove tambem os arquivos temporarios das exportacoes completas.
+        pasta = Path(getattr(settings, 'EXPORTACAO_COMPLETA_DIR',
+                             Path(settings.BASE_DIR) / 'exportacoes'))
+        for job in exportacoes.filter(completo=True).exclude(arquivo_nome=''):
+            try:
+                (pasta / job.arquivo_nome).unlink(missing_ok=True)
+            except OSError:
+                pass
         removidas = exportacoes.delete()[0]
         removidas_p = pesquisas.delete()[0]
         self.stdout.write(self.style.SUCCESS(

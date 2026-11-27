@@ -1,0 +1,42 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% block title %}Exportação completa — BusqueCNPJ{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width: 760px;">
+  <div class="ui-card p-4">
+    <p class="ui-eyebrow mb-1">Exportação completa</p>
+    <h1 class="h4 mb-3">
+      {% if job.status == 'processando' %}Preparando seu arquivo…
+      {% elif job.status == 'pronto' %}Arquivo pronto
+      {% elif job.status == 'baixada' %}Arquivo baixado
+      {% elif job.status == 'falhou' %}Falha na exportação
+      {% else %}Na fila…{% endif %}
+    </h1>
+
+    {% if job.status == 'processando' or job.status == 'pendente' %}
+      <p class="text-muted">Estamos gerando o arquivo em segundo plano. Esta página atualiza sozinha.</p>
+      <div class="progress mb-3" role="progressbar" aria-label="Processando">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+      </div>
+      <p class="small text-muted">{{ job.n_linhas }} linha(s) previstas · formato {{ job.formato|upper }}</p>
+
+    {% elif job.status == 'pronto' or job.status == 'baixada' %}
+      <p>O arquivo está pronto: <strong>{{ job.n_linhas }}</strong> linha(s), formato {{ job.formato|upper }}.</p>
+      <a class="btn btn-primary" href="{% url 'exportacao:completa_baixar' job.token %}">
+        <i class="bi bi-download"></i> Baixar arquivo
+      </a>
+      <p class="small text-muted mt-3">O link expira em {{ job.expira_em|date:"d/m/Y H:i" }}.</p>
+
+    {% elif job.status == 'falhou' %}
+      <div class="alert alert-danger">{{ job.erro }}</div>
+      <a class="btn btn-outline-secondary" href="{% url 'exportacao:exportar_chat_completo' %}?formato=csv">Tentar novamente</a>
+
+    {% else %}
+      <p class="text-muted">Este pedido não está mais disponível.</p>
+    {% endif %}
+  </div>
+</div>
+{% if job.status == 'processando' or job.status == 'pendente' %}
+<script>window.setTimeout(function(){ window.location.reload(); }, 3000);</script>
+{% endif %}
+{% endblock %}

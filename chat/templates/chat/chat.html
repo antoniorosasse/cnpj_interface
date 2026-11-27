@@ -179,6 +179,11 @@
                        title="Baixar a última lista desta conversa em JSON">
                         <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
                     </a>
+                    <a href="{% url 'exportacao:exportar_chat_completo' %}?formato=csv"
+                       class="btn btn-sm btn-outline-secondary" rel="nofollow"
+                       title="Exportar a lista completa em background (admin: até 500 mil; clientes: até 50 mil, com créditos)">
+                        <i class="bi bi-cloud-arrow-down" aria-hidden="true"></i> Exportar tudo
+                    </a>
                 </div>
             </aside>
             {% endif %}
@@ -202,6 +207,11 @@
            class="btn btn-outline-primary" rel="nofollow"
            title="Baixar a última lista desta conversa em JSON">
             <i class="bi bi-filetype-json" aria-hidden="true"></i> JSON
+        </a>
+        <a href="{% url 'exportacao:exportar_chat_completo' %}?formato=csv"
+           class="btn btn-outline-secondary" rel="nofollow"
+           title="Exportar a lista completa em background">
+            <i class="bi bi-cloud-arrow-down"></i> Exportar tudo
         </a>
         {% endif %}
     </div>
