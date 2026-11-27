@@ -240,13 +240,13 @@ class FallbackVetorTests(TestCase):
         mock_llm.return_value = self.SQL_COM_FALLBACK
         mock_vetor.return_value = '[0.1,0.2]'
 
-        r = gerar_sql('supermercados em picarras')
+        r = gerar_sql('energia solar em picarras')
 
         self.assertTrue(r['ok'])
         self.assertEqual(r['tentativas'], 1)
         self.assertIn("'[0.1,0.2]'::halfvec(768)", r['sql'])
         self.assertNotIn('<=> %s', r['sql'])
-        mock_vetor.assert_called_once_with('supermercados em picarras')
+        mock_vetor.assert_called_once_with('energia solar em picarras')
 
     @patch(ALVO_LLM)
     @patch('chat.services.embedding_service.gerar_vetor')
@@ -254,7 +254,7 @@ class FallbackVetorTests(TestCase):
         mock_llm.side_effect = [self.SQL_SEM_FALLBACK, self.SQL_COM_FALLBACK]
         mock_vetor.return_value = '[0.1,0.2]'
 
-        r = gerar_sql('supermercados em picarras', max_tentativas=2)
+        r = gerar_sql('energia solar em picarras', max_tentativas=2)
 
         self.assertTrue(r['ok'])
         self.assertEqual(r['tentativas'], 2)
@@ -269,7 +269,7 @@ class FallbackVetorTests(TestCase):
     def test_sql_sem_fallback_falha_apos_tentativas(self, mock_vetor, mock_llm):
         mock_llm.return_value = self.SQL_SEM_FALLBACK
 
-        r = gerar_sql('supermercados em picarras', max_tentativas=2)
+        r = gerar_sql('energia solar em picarras', max_tentativas=2)
 
         self.assertFalse(r['ok'])
         self.assertEqual(r['tipo_erro'], 'validacao')
@@ -283,7 +283,7 @@ class FallbackVetorTests(TestCase):
     def test_vetor_puro_falha_apos_tentativas(self, mock_vetor, mock_llm):
         mock_llm.return_value = self.SQL_VETOR_PURO
 
-        r = gerar_sql('supermercados', max_tentativas=2)
+        r = gerar_sql('energia solar', max_tentativas=2)
 
         self.assertFalse(r['ok'])
         self.assertEqual(r['tipo_erro'], 'validacao')
@@ -566,3 +566,25 @@ class CategoriaCnaeKBTests(TestCase):
             user_prompt.index('CATEGORIA CNAE DETECTADA PELA KB'),
             user_prompt.index('Pergunta atual'),
         )
+
+
+class CorrecoesPosGeracaoTests(TestCase):
+    def test_remove_count_por_linha(self):
+        from chat.services.sql_generator import _remover_count_por_linha
+        sql = ("SELECT e.cnpj_basico, "
+               "(SELECT COUNT(*) FROM c_estabelecimentos x "
+               "WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos, "
+               "e.uf FROM c_estabelecimentos e")
+        limpo = _remover_count_por_linha(sql)
+        self.assertNotIn('qtd_estabelecimentos', limpo)
+        self.assertIn('e.uf', limpo)
+
+    def test_valida_cnaes_combinados_da_kb(self):
+        from chat.services.sql_generator import _validar_cnaes_da_kb
+        pergunta = 'supermercados e padarias em Joinville/SC'
+        erro = _validar_cnaes_da_kb(
+            'SELECT 1 WHERE e.cnae_principal = 1091102', pergunta)
+        self.assertIsNotNone(erro)
+        ok = ('SELECT 1 WHERE e.cnae_principal IN '
+              '(1091102, 4711302, 4721101, 4721102)')
+        self.assertIsNone(_validar_cnaes_da_kb(ok, pergunta))

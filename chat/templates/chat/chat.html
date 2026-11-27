@@ -4,7 +4,7 @@
 {% block title %}Chat IA — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261126i">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261127a">
 {% endblock %}
 
 {% block content %}
@@ -226,7 +226,6 @@
     function mostrarNoPainel(html, status) {
         if (!painelEl) return false;
         painelEl.innerHTML = html;
-        prepararAbas();
         rolarParaUltimoResultado();
         if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
         return true;
@@ -235,44 +234,30 @@
     function acrescentarNoPainel(html, status) {
         if (!painelEl) return false;
         painelEl.insertAdjacentHTML('beforeend', html);
-        prepararAbas();
         rolarParaUltimoResultado();
         if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
         return true;
     }
 
+    // Item do painel: sem abas (Resultado/SQL/Grafico). A tabela fica sempre
+    // visivel, o SQL abre pelo proprio <details> colapsavel e o grafico pelo
+    // botao que o renderTabela injeta.
     function blocoResultado(pergunta, html) {
         const titulo = escaparHtml(pergunta || 'Resultado');
-        return '<section class="chat-panel__item" data-aba="resultado">' +
+        return '<section class="chat-panel__item">' +
             '<div class="chat-panel__item-head"><i class="bi bi-chat-left-text" aria-hidden="true"></i> ' +
             titulo + '</div>' +
-            '<div class="chat-result-tabs" role="tablist">' +
-                '<button type="button" class="chat-result-tab is-active" data-result-aba="resultado" role="tab">Resultado</button>' +
-                '<button type="button" class="chat-result-tab" data-result-aba="sql" role="tab">SQL</button>' +
-                '<button type="button" class="chat-result-tab" data-result-aba="grafico" role="tab">Gráfico</button>' +
-            '</div>' +
             '<div class="chat-result-conteudo">' + html + '</div></section>';
     }
 
+    // Leva o painel para o FIM do ultimo resultado (o topo do item pode
+    // ficar cortado quando a tabela e maior que a area visivel do painel).
     function rolarParaUltimoResultado() {
         if (!painelEl) return;
         const itens = painelEl.querySelectorAll('.chat-panel__item');
         if (!itens.length) return;
-        const ultimo = itens[itens.length - 1];
-        const topo = ultimo.getBoundingClientRect().top
-            - painelEl.getBoundingClientRect().top + painelEl.scrollTop;
-        painelEl.scrollTop = Math.max(0, topo - 4);
-    }
-
-    function prepararAbas() {
-        document.querySelectorAll('.chat-panel__item').forEach(function (item) {
-            if (!item.hasAttribute('data-aba')) item.setAttribute('data-aba', 'resultado');
-            const sql = item.querySelector('.sql-detalhe');
-            const grafico = item.querySelector('button[onclick*="__toggleGrafico"]');
-            const bsql = item.querySelector('[data-result-aba="sql"]');
-            const bgraf = item.querySelector('[data-result-aba="grafico"]');
-            if (bsql) bsql.hidden = !sql;
-            if (bgraf) bgraf.hidden = !grafico;
+        window.requestAnimationFrame(function () {
+            painelEl.scrollTop = painelEl.scrollHeight;
         });
     }
 
@@ -328,22 +313,39 @@
         return String(v);
     }
 
-    // Depois de responder, leva o resultado para a area visivel. Antes o
-    // usuario precisava rolar a pagina E o thread (dois scrolls).
+    // Leva o thread para a ultima mensagem (o thread tem scroll proprio).
+    function rolarThreadParaFim() {
+        if (!threadEl) return;
+        window.requestAnimationFrame(function () {
+            threadEl.scrollTop = threadEl.scrollHeight;
+        });
+    }
+
+    // Depois de responder, leva a resposta/tabela mais recente para a area
+    // visivel: o thread rola ate a ultima mensagem e o painel rola ate o fim
+    // do ultimo item. Antes o painel alinhava o TOPO do item novo, entao a
+    // tabela aparecia cortada, e o thread ficava parado no layout amplo.
     function revelarResultado() {
+        rolarThreadParaFim();
         if (painelEl) {
+            rolarParaUltimoResultado();
             if (window.matchMedia('(max-width: 1199.98px)').matches) {
+                // Abaixo de 1200px o painel cai depois do thread: leva o fim
+                // do ultimo resultado para dentro da tela.
+                const itens = painelEl.querySelectorAll('.chat-panel__item');
+                const alvo = itens.length ? itens[itens.length - 1] : painelEl;
                 window.requestAnimationFrame(function () {
-                    painelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    alvo.scrollIntoView({ behavior: 'smooth', block: 'end' });
                 });
             }
             return;
         }
-        const alvo = threadEl.querySelector('.resultado-historico:last-child')
-            || threadEl.querySelector('.resposta-natural:last-child');
-        if (!alvo) return;
+        // Sem painel o resultado vive no thread: rola a pagina ate o fim do
+        // ultimo bloco ('nearest' evita pulo quando ja esta visivel).
+        const ultimo = threadEl ? threadEl.lastElementChild : null;
+        if (!ultimo) return;
         window.requestAnimationFrame(function () {
-            alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            ultimo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     }
 
@@ -360,7 +362,7 @@
     // Se vazio, devolve string vazia (nada e renderizado).
     // Rodape de procedencia do RAG: deixa explicito que o texto saiu das
     // linhas recuperadas pelo SQL, nao da memoria do modelo.
-    function renderRodapeRag(totalLinhas, truncado) {
+    function renderRodapeRag(totalLinhas, truncado, totalReal) {
         const total = Number(totalLinhas);
         // Sem linhas nao ha geracao ancorada (ex: pergunta recusada) -> sem rodape
         if (!isFinite(total) || total <= 0) return '';
@@ -368,13 +370,18 @@
         const fmt = function (n) { return n.toLocaleString('pt-BR'); };
         let txt = `RAG · ${fmt(total)} linha(s) recuperada(s) pelo SQL, `
             + `${fmt(enviadas)} enviada(s) ao modelo`;
-        if (truncado) txt += ' · resultado truncado pelo LIMIT';
+        if (totalReal && Number(totalReal) > total) {
+            txt += ` · total do filtro: ${fmt(Number(totalReal))} linha(s)`;
+        } else if (truncado) {
+            txt += ' · resultado truncado pelo LIMIT';
+        }
         return `<div class="rodape-rag"><i class="bi bi-diagram-3"></i>${escaparHtml(txt)}</div>`;
     }
 
     function renderRespostaTexto(texto, meta) {
         if (!texto || !String(texto).trim()) return '';
-        const rodape = meta ? renderRodapeRag(meta.linhas, meta.truncado) : '';
+        const rodape = meta ? renderRodapeRag(meta.linhas, meta.truncado,
+                                                     meta.totalReal) : '';
         return `<div class="resposta-natural">${escaparHtml(texto)}${rodape}</div>`;
     }
 
@@ -450,6 +457,7 @@
                     const textoNatural = renderRespostaTexto(a.resposta_texto, a.plano ? null : {
                         linhas: a.total_linhas,
                         truncado: a.truncado,
+                        totalReal: a.total_linhas_real,
                     });
                     if (textoNatural) {
                         html += textoNatural;
@@ -535,6 +543,59 @@
         return `<div class="sql-box"><span class="label">SQL executado</span>${escaparHtml(sql)}</div>`;
     }
 
+    // --------------------------------------------------------
+    // Tempo de abertura: coluna calculada no cliente (A1).
+    // O chat devolve dt_ini como 'aaaa-mm-dd' (SQL) ou 'dd/mm/aaaa'
+    // (proximidade). A coluna extra mostra "3A 5M" ao lado da data.
+    // --------------------------------------------------------
+    const COLUNAS_ABERTURA = ['dt_ini', 'data_abertura', 'dt_abertura', 'dt_inicio_atividade'];
+
+    function lerData(valor) {
+        if (valor === null || valor === undefined) return null;
+        const texto = String(valor).trim();
+        let m = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        m = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+        return null;
+    }
+
+    // Anos/meses completos desde hoje: 3 anos e 5 meses -> "3A 5M".
+    function tempoDeAbertura(valor) {
+        const data = lerData(valor);
+        if (!data || isNaN(data.getTime())) return null;
+        const hoje = new Date();
+        let anos = hoje.getFullYear() - data.getFullYear();
+        let meses = hoje.getMonth() - data.getMonth();
+        if (hoje.getDate() < data.getDate()) meses -= 1;
+        if (meses < 0) { anos -= 1; meses += 12; }
+        if (anos < 0) return null;  // data futura: nao inventa tempo
+        if (anos === 0 && meses === 0) return '0M';
+        if (anos === 0) return meses + 'M';
+        if (meses === 0) return anos + 'A';
+        return anos + 'A ' + meses + 'M';
+    }
+
+    // Devolve colunas/rows com "tempo_abertura" logo depois da coluna de
+    // data de abertura (quando existe). O store/export usa este resultado.
+    function prepararColunasTabela(colunas, rows) {
+        let colunaAbertura = null;
+        for (const c of colunas) {
+            if (COLUNAS_ABERTURA.indexOf(String(c).toLowerCase()) !== -1) {
+                colunaAbertura = c;
+                break;
+            }
+        }
+        if (!colunaAbertura) return { colunas: colunas, rows: rows, colunaAbertura: null };
+        const colunasNovas = colunas.slice();
+        colunasNovas.splice(colunas.indexOf(colunaAbertura) + 1, 0, 'tempo_abertura');
+        const rowsNovas = rows.map(function (linha) {
+            const copia = Object.assign({}, linha);
+            copia.tempo_abertura = tempoDeAbertura(linha[colunaAbertura]);
+            return copia;
+        });
+        return { colunas: colunasNovas, rows: rowsNovas, colunaAbertura: colunaAbertura };
+    }
 
     function renderTabela(colunas, rows) {
         if (!colunas || colunas.length === 0) {
@@ -544,12 +605,17 @@
             return '<div class="text-muted small">Nenhuma linha retornada.</div>';
         }
 
+        // Coluna calculada "Tempo de abertura" ao lado de dt_ini (A1).
+        const tabela = prepararColunasTabela(colunas, rows);
+        const colunasTabela = tabela.colunas;
+        const rowsTabela = tabela.rows;
+
         // Gera um id unico para esta tabela e guarda colunas/rows
         const idTabela = 'tabela-' + (++tabelaIdx);
-        tabelaStore[idTabela] = { colunas: colunas, rows: rows };
+        tabelaStore[idTabela] = { colunas: colunasTabela, rows: rowsTabela };
 
         // Verifica se a tabela tem a coluna cnpj_completo
-        const temCnpjCompleto = colunas.includes('cnpj_completo');
+        const temCnpjCompleto = colunasTabela.includes('cnpj_completo');
 
         let html = '';
         html += `<div class="tabela-controles">`;
@@ -571,19 +637,24 @@
             cnpj_completo: 'CNPJ',
             qtd_estabelecimentos: 'Estabelecimentos',
             dt_ini: 'Data Abertura',
+            tempo_abertura: 'Tempo de abertura',
         };
         // Nome da coluna como rotulo: tira o underscore (cnpj_basico -> cnpj basico)
         function labelColuna(c) {
             return TITULOS_COLUNAS[c] || String(c).replace(/_/g, ' ');
         }
-        for (const c of colunas) {
-            html += `<th>${escaparHtml(labelColuna(c))}</th>`;
+        for (const c of colunasTabela) {
+            if (c === 'tempo_abertura') {
+                html += `<th title="Tempo desde a data de abertura (anos e meses completos)">${escaparHtml(labelColuna(c))}</th>`;
+            } else {
+                html += `<th>${escaparHtml(labelColuna(c))}</th>`;
+            }
         }
         html += '</tr></thead><tbody>';
         
-        for (const row of rows) {
+        for (const row of rowsTabela) {
             html += '<tr>';
-            for (const c of colunas) {
+            for (const c of colunasTabela) {
                 const rotulo = ` data-label="${escaparHtml(labelColuna(c))}"`;
                 // Se for a coluna cnpj_completo e tiver valor, transforma em link
                 if (c === 'cnpj_completo' && row[c]) {
@@ -602,6 +673,14 @@
                     // Razao social tambem leva para a pagina da empresa
                     const cnpjLimpo = String(row['cnpj_completo']).replace(/\D/g, '');
                     html += `<td${rotulo}><a href="/empresa/${escaparHtml(cnpjLimpo)}/?next=/chat/" target="_blank" class="text-decoration-none">${escaparHtml(String(row[c]))}</a></td>`;
+                } else if (c === 'tempo_abertura') {
+                    // Coluna calculada: "3A 5M"; sem data valida fica "—".
+                    const tempo = row[c];
+                    const dataRef = tabela.colunaAbertura
+                        ? formatarValor(row[tabela.colunaAbertura]) : null;
+                    const titulo = dataRef
+                        ? ` title="Aberta desde ${escaparHtml(String(dataRef))}"` : '';
+                    html += `<td${rotulo} class="sis-num"${titulo}>${tempo ? escaparHtml(tempo) : '&mdash;'}</td>`;
                 } else {
                     const vFmt = formatarValor(row[c]);
                     html += `<td${rotulo}>${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
@@ -815,6 +894,7 @@
 
         // 1) Pergunta do usuario
         threadEl.insertAdjacentHTML('beforeend', renderTurno('user', pergunta));
+        rolarThreadParaFim();
 
         try {
             const resp = await fetch('/chat/api/', {
@@ -841,6 +921,7 @@
                     );
                 }
                 perguntaEl.value = '';
+                revelarResultado();
                 return;
             }
 
@@ -851,6 +932,7 @@
                 ehProximidade ? null : {
                     linhas: dados.total_linhas,
                     truncado: dados.truncado,
+                    totalReal: dados.total_linhas_real,
                 },
             );
             if (textoNatural) {
@@ -879,9 +961,13 @@
 
             // 3) SQL colapsavel + tabela + (grafico)
             atualizarContagemExport(dados.total_linhas);
-            const infoTxt = `${dados.total_linhas} linha(s) · ${dados.tempo_ms}ms`;
+            const totalRealTxt = (dados.total_linhas_real &&
+                Number(dados.total_linhas_real) > Number(dados.total_linhas))
+                ? ` de ${Number(dados.total_linhas_real).toLocaleString('pt-BR')}`
+                : '';
+            const infoTxt = `${dados.total_linhas}${totalRealTxt} linha(s) · ${dados.tempo_ms}ms`;
             const badgeOk = dados.truncado
-                ? `<span class="badge-aviso">truncado em ${dados.limit_valor}</span>`
+                ? `<span class="badge-aviso">lista parcial</span>`
                 : '<span class="badge-ok">ok</span>';
 
             const blocoSql = '<div class="resultado-historico">' +
@@ -901,6 +987,7 @@
         } catch (e) {
             threadEl.insertAdjacentHTML('beforeend',
                 renderTurno('assistant', String(e)));
+            revelarResultado();
         } finally {
             setLoading(false);
         }
@@ -940,28 +1027,6 @@
 
     // Controles Topo/Final: rolam a tabela (ou o painel) para o extremo.
     document.addEventListener('click', function (ev) {
-        const aba = ev.target.closest('[data-result-aba]');
-        if (aba) {
-            const item = aba.closest('.chat-panel__item');
-            if (!item) return;
-            const nome = aba.getAttribute('data-result-aba');
-            item.setAttribute('data-aba', nome);
-            item.querySelectorAll('[data-result-aba]').forEach(function (b) {
-                b.classList.toggle('is-active', b === aba);
-            });
-            if (nome === 'sql') {
-                const det = item.querySelector('.sql-detalhe');
-                if (det) det.open = true;
-            }
-            if (nome === 'grafico') {
-                const botaoGrafico = item.querySelector('button[onclick*="__toggleGrafico"]');
-                const canvasGrafico = item.querySelector('[id$="-canvas"]');
-                if (botaoGrafico && (!canvasGrafico || canvasGrafico.style.display === 'none')) {
-                    botaoGrafico.click();
-                }
-            }
-            return;
-        }
         const baixar = ev.target.closest('[data-baixar]');
         if (baixar) {
             ev.preventDefault();

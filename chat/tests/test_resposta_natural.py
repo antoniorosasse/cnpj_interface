@@ -211,7 +211,7 @@ class SystemPromptTests(TestCase):
         self.assertIn('estabelecimento em X', SYSTEM_PROMPT)
         self.assertIn('MATRIZ', SYSTEM_PROMPT)
 
-        
+
 class PromptNaoMencionaParcialTests(TestCase):
     """Garante que _montar_user_prompt nao sugere 'parcial' quando nao truncado."""
 
@@ -375,4 +375,13 @@ class FallbackComCidadeTests(TestCase):
         self.assertIn('estabelecimento em PICARRAS', r)
 
 
-                
+
+
+class TotalRealPromptTests(TestCase):
+    def test_prompt_usa_total_real_quando_existe(self):
+        from chat.services.resposta_natural import _montar_user_prompt
+        prompt = _montar_user_prompt(
+            'postos', ['razao_social'], [{'razao_social': 'X'}],
+            truncado=True, total_linhas_exibidas=1, total_real=219)
+        self.assertIn('Total real do filtro: 219', prompt)
+        self.assertIn('primeiras 1', prompt)

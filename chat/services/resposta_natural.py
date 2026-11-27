@@ -160,10 +160,11 @@ def _montar_user_prompt(
     truncado: bool = False,
     total_linhas_exibidas: int | None = None,
     cidade_semi_join: str | None = None,
+    total_real: int | None = None,
 ) -> str:
     """Monta o prompt do usuario com pergunta + dados limitados."""
     linhas = rows[:LIMITE_LINHAS]
-    total = len(rows)
+    total = total_real if total_real is not None else len(rows)
 
     dados_json = json.dumps(linhas, ensure_ascii=False, indent=2, default=str)
 
@@ -175,12 +176,20 @@ def _montar_user_prompt(
 
     aviso_truncado = ''
     if truncado:
-        aviso_truncado = (
-            "\n\nATENCAO: a consulta foi TRUNCADA pelo sistema. "
-            f"Exibindo apenas {total_linhas_exibidas or total} linhas "
-            "no total. Avise o usuario no final da resposta de que "
-            "esta e uma lista parcial (sem inventar numeros)."
-        )
+        if total_real is not None and total_real > (total_linhas_exibidas or 0):
+            aviso_truncado = (
+                "\n\nATENCAO: a consulta retornou mais linhas do que o exibido. "
+                f"Total real do filtro: {total_real}. "
+                f"Exibindo as primeiras {total_linhas_exibidas} linhas. "
+                "Diga o total real e avise que a lista e' parcial (sem inventar numeros)."
+            )
+        else:
+            aviso_truncado = (
+                "\n\nATENCAO: a consulta foi TRUNCADA pelo sistema. "
+                f"Exibindo apenas {total_linhas_exibidas or total} linhas "
+                "no total. Avise o usuario no final da resposta de que "
+                "esta e uma lista parcial (sem inventar numeros)."
+            )
 
     aviso_cidade = ''
     if cidade_semi_join:
@@ -219,6 +228,7 @@ def gerar_texto_resposta(
     total_linhas_exibidas: int | None = None,
     sql: str | None = None,
     cidade_semi_join: str | None = None,
+    total_real: int | None = None,
 ) -> str:
     """
     Gera 1-3 frases em PT-BR resumindo os dados.
@@ -259,11 +269,11 @@ def gerar_texto_resposta(
         return _fallback_texto(colunas, rows, cidade_semi_join)
     except Exception as exc:
         logger.exception('Erro inesperado ao gerar texto natural')
-        return _fallback_texto(colunas, rows, cidade_semi_join)
+        return _fallback_texto(colunas, rows, cidade_semi_join, total_real)
 
     texto = (texto or '').strip()
     if not texto:
-        return _fallback_texto(colunas, rows, cidade_semi_join)
+        return _fallback_texto(colunas, rows, cidade_semi_join, total_real)
 
     return texto
 
@@ -272,9 +282,10 @@ def _fallback_texto(
     colunas: list,
     rows: list,
     cidade_semi_join: str | None = None,
+    total_real: int | None = None,
 ) -> str:
     """Texto simples quando o LLM falha. Nao inventa nada."""
-    total = len(rows)
+    total = total_real if total_real is not None else len(rows)
     plural = 'linha' if total == 1 else 'linhas'
     if cidade_semi_join:
         return (

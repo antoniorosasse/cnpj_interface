@@ -55,6 +55,15 @@ class SQLValidatorTestCase(TestCase):
         """)
         self.assertTrue('JOIN' in r.sql.upper())
 
+    def test_limit_interno_nao_conta_como_limit_externo(self):
+        sql = ('SELECT * FROM c_cnaes WHERE cnae IN ('
+               'SELECT cnae FROM c_cnaes ORDER BY embedding <=> %s::halfvec(768) '
+               'LIMIT 2) LIMIT 100')
+        r = validar_sql(sql)
+        self.assertEqual(r.limit_valor, 100)
+        self.assertFalse(r.teve_limit)
+        self.assertTrue(r.sql.rstrip().upper().endswith('LIMIT 100'))
+
     def test_select_com_agregacao(self):
         """SELECT com GROUP BY deve passar."""
         r = validar_sql("""

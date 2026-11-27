@@ -216,6 +216,43 @@ def _limpar_subqueries(trecho: str) -> str:
     return ''.join(saida)
 
 
+def _limite_topo(sql):
+    """Devolve (inicio, fim, valor) do LIMIT de nivel zero, ou None.
+
+    Ignora LIMIT dentro de subqueries/strings (ex.: LIMIT 2 do fallback
+    vetorial). Sem isso o validador lia o LIMIT 2 interno e marcava a
+    listagem como truncada em 2 linhas.
+    """
+    i = 0
+    profundidade = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    break
+                i += 1
+        elif ch == '(':
+            profundidade += 1
+        elif ch == ')':
+            profundidade = max(0, profundidade - 1)
+        elif profundidade == 0 and sql[i:i + 5].upper() == 'LIMIT':
+            antes = sql[i - 1] if i > 0 else ' '
+            depois = sql[i + 5] if i + 5 < n else ' '
+            if not (antes.isalnum() or antes == '_') and not (
+                    depois.isalnum() or depois == '_'):
+                m = re.match(r'LIMIT\s+(\d+)', sql[i:], re.IGNORECASE)
+                if m:
+                    return i, i + m.end(), int(m.group(1))
+        i += 1
+    return None
+
+
 def _tem_agregacao(sql: str) -> bool:
     """
     Retorna True se o SQL tem GROUP BY ou funcao de agregacao
@@ -250,16 +287,16 @@ def _aplicar_limit(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> tuple:
     teve_limit = True significa que o validador PRECISOU adicionar/ajustar LIMIT.
     limit_valor = 0 significa "nenhum LIMIT aplicado".
     """
-    match = REGEX_LIMIT.search(sql)
+    limite = _limite_topo(sql)
 
-    if match:
-        limit_atual = int(match.group(1))
+    if limite:
+        inicio, fim, limit_atual = limite
         if limit_atual <= max_rows:
-            # LIMIT ja existe e e valido: nao precisou mexer
+            # LIMIT de nivel zero ja existe e e valido.
             return sql, False, limit_atual
 
-        # LIMIT maior que o permitido: reduz para max_rows
-        sql_novo = REGEX_LIMIT.sub(f'LIMIT {max_rows}', sql, count=1)
+        # LIMIT maior que o permitido: reduz para max_rows.
+        sql_novo = sql[:inicio] + f'LIMIT {max_rows}' + sql[fim:]
         return sql_novo, True, max_rows
 
     # Sem LIMIT no SQL. Se for agregacao, respeita (nao adiciona).

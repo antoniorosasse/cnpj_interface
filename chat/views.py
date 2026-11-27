@@ -26,7 +26,7 @@ from django.views.decorators.http import require_POST
 
 
 from .services.sql_generator import gerar_sql
-from .services.sql_executor import executar_sql
+from .services.sql_executor import contar_linhas, executar_sql
 from .services.planner import parece_proximidade, planejar
 from .services.proximidade_service import consultar_proximidade
 from .services.resposta_natural import (
@@ -454,6 +454,7 @@ def chat_api_view(request):
         teve_limit=validation.teve_limit,
         limit_valor=validation.limit_valor,
     )
+    sql_executado = validation_com_vetor.sql
     execucao = executar_sql(validation_com_vetor)
 
     # --- 2b) Se o Postgres rejeitou por coluna/tabela inexistente,
@@ -483,6 +484,7 @@ def chat_api_view(request):
                 limit_valor=geracao2['validation'].limit_valor,
             )
             validation = geracao2['validation']  # mantém o original para os metadados
+            sql_executado = validation2_com_vetor.sql
             execucao = executar_sql(validation2_com_vetor)
 
     # --- 3) gera texto natural (so se houve dados) ---
@@ -501,6 +503,12 @@ def chat_api_view(request):
         and len(execucao.get('rows') or []) >= validation.limit_valor
     ):
         truncado_efetivo = True
+
+    total_real = None
+    if truncado_efetivo and execucao.get('ok'):
+        # COUNT companheiro, com timeout curto; se nao der, segue sem total.
+        total_real = contar_linhas(sql_executado, timeout_ms=8000)
+
     if execucao['ok'] and execucao.get('rows'):
         resposta_texto = gerar_texto_resposta(
             pergunta=pergunta,
@@ -508,6 +516,7 @@ def chat_api_view(request):
             rows=execucao['rows'],
             truncado=truncado_efetivo,
             total_linhas_exibidas=execucao['total_linhas'],
+            total_real=total_real,
             # Se o SQL filtra a cidade por semi-join (cnpj_basico IN (...)),
             # o texto precisa dizer "empresas com estabelecimento em X":
             # a coluna municipio mostra o municipio da matriz.
@@ -529,6 +538,14 @@ def chat_api_view(request):
                 '(ex: PICARRAS em vez de Balneario Picarras).'
             )
 
+
+    # O texto natural pode ignorar o total real; reforca deterministicamente.
+    if (total_real is not None and execucao.get('ok')
+            and total_real > execucao['total_linhas']):
+        sufixo = (f' Total real no filtro: {total_real:,}'.replace(',', '.')
+                  + f'; exibindo as primeiras {execucao["total_linhas"]} linhas.')
+        if sufixo.strip() not in (resposta_texto or ''):
+            resposta_texto = (resposta_texto or '').rstrip() + sufixo
 
     # --- 4) salva as duas mensagens ---
     repo.adicionar_mensagem(cid, 'user', pergunta)
@@ -581,6 +598,7 @@ def chat_api_view(request):
         'rows': execucao['rows'],
         'total_linhas': execucao['total_linhas'],
         'truncado': truncado_efetivo,
+        'total_linhas_real': total_real,
         'tempo_ms': execucao['tempo_ms'],
         'erro': execucao['erro'],
     }

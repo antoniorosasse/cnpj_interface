@@ -171,12 +171,26 @@ REGRAS DE OURO:
      ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas
      e' arbitrario e a empresa procurada pode nao aparecer.
    - EXCECAO DE PERFORMANCE: quando a listagem tiver filtro seletivo
-     (categoria da KB, capital social ou dt_ini), NAO ordene por
-     emp.razao_social: a ordenacao obriga o Postgres a varrer TODOS os
-     candidatos antes do LIMIT. Use ORDER BY e.id_estabelecimento
-     (barato e deterministico) ou nenhum ORDER BY.
-     Medido: 17-30 s com ORDER BY razao_social x 0,5-4 s com
-     ORDER BY e.id_estabelecimento (2026-11).
+     (categoria da KB, cidade/UF, capital social ou dt_ini), NAO use
+     ORDER BY. Qualquer ordenacao (inclusive ORDER BY
+     e.id_estabelecimento) obriga o Postgres a varrer TODOS os
+     candidatos antes do LIMIT e pode estourar 30 s.
+     Medido em 27/11/2026: a mesma consulta de clinicas em SP levou
+     ~49 s com ORDER BY e.id_estabelecimento e ~0,2 s sem ORDER BY.
+     Use LIMIT sem ORDER BY. Se o usuario pedir explicitamente uma
+     ordem (ex: "por capital social", "os maiores"), use a ordem pedida
+     e reduza o limite; nao invente ORDER BY.
+
+9.2 NUNCA INCLUA COUNT POR LINHA EM LISTAGEM - CRITICO:
+   - NAO adicione a coluna
+     (SELECT COUNT(*) FROM c_estabelecimentos x
+      WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos
+     em listagens normais: ela executa uma subconsulta por linha e
+     estoura 30 s (medido: postos em Joinville caiu para timeout).
+   - So' traga essa contagem se o usuario pedir explicitamente
+     "quantos estabelecimentos tem a empresa".
+   - Se o usuario pedir a lista, entregue a lista; o sistema calcula o
+     total de linhas do filtro separadamente.
 
 9.1 SEMPRE QUE A SAIDA MOSTRAR CNAE, traga CODIGO e DESCRICAO juntos:
    selecione e.cnae_principal AS cnae_codigo e c.nm_cnae AS cnae_nome
@@ -472,9 +486,10 @@ REGRAS DE OURO:
      WHERE x.cnpj_basico = e.cnpj_basico) AS qtd_estabelecimentos:
      ela custa uma consulta por linha e nao e' necessaria quando o
      filtro e' capital.
-   - Se precisar de ordem deterministica, use ORDER BY
-     e.id_estabelecimento (barato); NUNCA ORDER BY emp.razao_social
-     (ver a excecao de performance da regra 9).
+   - NAO adicione ORDER BY em listagem com filtro seletivo; o LIMIT
+     sem ordenacao usa o indice e para cedo. NUNCA ORDER BY
+     emp.razao_social. Se o usuario pedir ordem explicita, use a ordem
+     pedida (ver a excecao de performance da regra 9).
    - Mantenha o JOIN com c_empresas (obrigatorio para o capital).
 
 20. CAMPOS DA RESPOSTA RELACIONADOS A PERGUNTA (OBRIGATORIO):
@@ -490,6 +505,47 @@ REGRAS DE OURO:
      -> SELECT ... e.municipio, e.uf, e.dt_ini, e.cnae_principal ...
    - Nunca omita dt_ini ou capital_social quando a pergunta usar esse
      criterio: a resposta ficaria sem o dado que o usuario pediu.
+
+21. TOTAIS PRE-AGREGADOS (`c_estatisticas_totais`) - CRITICO:
+   - Para totais globais de UMA dimensao (situacao, porte, UF, ano, MEI,
+     Simples, top CNAE, total geral), use `c_estatisticas_totais` em vez
+     de COUNT(*) nas tabelas gigantes.
+   - Exemplos:
+     * "quantas empresas ativas no Brasil" ->
+       SELECT valor FROM c_estatisticas_totais
+       WHERE categoria='situacao' AND chave='ATIVA'
+     * "quantas empresas foram abertas em 2025" ->
+       SELECT valor FROM c_estatisticas_totais
+       WHERE categoria='ano' AND chave='2025'
+     * "quantas empresas por porte" ->
+       SELECT chave AS porte, descricao, valor
+       FROM c_estatisticas_totais WHERE categoria='porte'
+       ORDER BY valor DESC
+     * "top 10 CNAEs com mais empresas ativas" ->
+       SELECT e.chave AS cnae_codigo, c.nm_cnae AS cnae_nome, e.valor
+       FROM c_estatisticas_totais e
+       LEFT JOIN c_cnaes c ON c.cnae = e.chave::integer
+       WHERE e.categoria='cnae' ORDER BY e.valor DESC LIMIT 10
+   - Se a pergunta pedir uma COMBINACAO nao pre-agregada
+     (ex: "ativas por UF", "ativas por ano em SC", "por municipio em SC"),
+     NAO tente COUNT em 74M: responda
+       RECUSAR: essa combinacao nao esta pre-agregada e cruzaria duas
+       tabelas gigantes. Use c_estatisticas_totais para totais globais
+       (situacao sozinha, porte sozinho, UF sozinha, ano sozinho) ou
+       filtre por cidade.
+   - NUNCA responda "nenhuma empresa encontrada" quando na verdade a
+     combinacao nao e' suportada; use RECUSAR com o texto acima.
+
+22. PERGUNTA SEM DADO NA BASE - CRITICO:
+   - Se a pergunta citar um lugar fora do Brasil (ex: "Marte") ou uma
+     atividade que nao existe na base da Receita (ex: "naves espaciais"),
+     NAO invente CNAE nem retorne lista vazia como se fosse resultado:
+     responda
+       RECUSAR: nao existe CNAE nem dado de <atividade> em <lugar> na
+       base publica de CNPJ da Receita Federal.
+   - Se a atividade for apenas desconhecida, use o fallback ILIKE/vetor;
+     so' recuse quando o conceito/atividade claramente nao existir na
+     classificacao CNAE.
 
 FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
 - Quando a pergunta tiver CNAE (ou busca semantica) E cidade/UF,
@@ -720,6 +776,30 @@ def montar_bloco_categorias(pergunta: str) -> str:
     return '\n'.join(linhas)
 
 
+def _remover_count_por_linha(sql):
+    """Remove a subquery COUNT por linha que estoura timeout em listagens."""
+    padrao = re.compile(
+        r",\s*\(\s*SELECT\s+COUNT\(\*\)\s+FROM\s+c_estabelecimentos\s+\w+"
+        r"\s+WHERE\s+\w+\.cnpj_basico\s*=\s*e\.cnpj_basico\s*\)"
+        r"\s+AS\s+qtd_estabelecimentos",
+        re.IGNORECASE | re.DOTALL,
+    )
+    return padrao.sub('', sql or '')
+
+
+def _validar_cnaes_da_kb(sql, pergunta):
+    """Garante que o LLM nao omitiu CNAEs de uma categoria combinada da KB."""
+    from core.cnae_categorias import resolver_filtro_cnae
+    filtro = resolver_filtro_cnae(pergunta) or {}
+    if filtro.get('faixas') or not filtro.get('cnaes'):
+        return None
+    faltando = [c for c in filtro['cnaes'] if str(c) not in (sql or '')]
+    if faltando:
+        return ('o filtro da KB exige os CNAEs ' + ', '.join(map(str, faltando))
+                + '; copie o bloco CATEGORIA CNAE DETECTADA PELA KB literalmente')
+    return None
+
+
 def _montar_user_prompt(pergunta: str, historico=None) -> str:
     """Monta o prompt do usuario combinando historico + pergunta atual."""
     partes = []
@@ -810,7 +890,7 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
             }
 
         ultima_bruta = bruto or ''
-        sql = _limpar_sql(ultima_bruta)
+        sql = _remover_count_por_linha(_limpar_sql(ultima_bruta))
 
         # --- detecta RECUSAR ANTES de tentar validar como SQL ---
         if sql.upper().startswith('RECUSAR'):
@@ -846,6 +926,18 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
                 f'{user_prompt}\n\n'
                 f'O SQL anterior foi rejeitado pelo validador: {exc}\n'
                 'Corrija e responda APENAS com o SQL, sem markdown.'
+            )
+            continue
+
+        erro_kb = _validar_cnaes_da_kb(validation.sql, pergunta)
+        if erro_kb:
+            ultimo_erro = erro_kb
+            logger.warning('SQL sem CNAEs da KB na tentativa %s: %s',
+                           tentativa, erro_kb)
+            user_prompt = (
+                f'{user_prompt}\n\n'
+                f'O SQL anterior foi rejeitado: {erro_kb}\n'
+                'Responda APENAS com o SQL corrigido, sem markdown.'
             )
             continue
 

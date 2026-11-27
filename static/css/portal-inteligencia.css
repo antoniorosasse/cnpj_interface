@@ -121,6 +121,8 @@
     padding: .85rem .95rem 1rem;
     overflow-y: auto;
     min-height: 0;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
 }
 .chat-page .chat-panel__item + .chat-panel__item {
     margin-top: 1rem;
@@ -138,29 +140,6 @@
     line-height: 1.35;
 }
 .chat-page .chat-panel__item-head .bi { color: var(--p-accent); margin-top: .1rem; flex: none; }
-.chat-page .chat-result-tabs {
-    display: flex;
-    gap: .2rem;
-    margin: 0 0 .55rem;
-    padding-bottom: .35rem;
-    border-bottom: 1px solid var(--p-line);
-}
-.chat-page .chat-result-tab {
-    padding: .24rem .55rem;
-    border: 0;
-    border-radius: var(--p-r-xs);
-    background: transparent;
-    color: var(--p-muted);
-    font-size: .72rem;
-    font-weight: 650;
-    cursor: pointer;
-}
-.chat-page .chat-result-tab:hover { background: var(--p-surface-3); color: var(--p-ink); }
-.chat-page .chat-result-tab.is-active { background: var(--p-accent-soft); color: var(--p-accent); }
-.chat-page .chat-result-tab[hidden] { display: none; }
-.chat-page .chat-panel__item[data-aba="sql"] .card { display: none; }
-.chat-page .chat-panel__item[data-aba="sql"] .sql-detalhe > summary { display: none; }
-.chat-page .chat-panel__item[data-aba="grafico"] .tabela-wrapper { display: none; }
 .chat-page .chat-panel__vazio {
     display: flex;
     flex-direction: column;
@@ -180,6 +159,9 @@
     max-height: calc(100vh - 360px);
     max-width: 100%;
     overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
 }
 .chat-page .chat-panel .tabela-wrapper table {
     width: max-content;
@@ -266,9 +248,43 @@
 .chat-page .resultado-historico { clear: both; margin: 0; }
 .chat-page .resultado-historico .card { margin-top: 0; }
 .chat-page .resultado-historico .card .card-body { padding: .9rem 1rem; }
-.chat-page .tabela-wrapper { max-height: 460px; overflow: auto; border: 1px solid var(--p-line); border-radius: var(--p-r-sm); }
-.chat-page .tabela-wrapper table { margin-top: 0; }
+
+/* Wrapper da tabela: rolagem horizontal E vertical explicitas.
+   A barra horizontal padrao do sistema (8px, cinza) quase desaparecia e a
+   tabela parecia so cortada na direita; aqui ela fica grossa e colorida,
+   com o cabecalho sticky preservado. */
+.chat-page .tabela-wrapper {
+    max-height: 460px;
+    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
+    border: 1px solid var(--p-line);
+    border-radius: var(--p-r-sm);
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;                    /* Firefox: barra cheia */
+    scrollbar-color: var(--p-accent) var(--p-surface-2);
+    overscroll-behavior: contain;
+}
+.chat-page .tabela-wrapper table {
+    width: max-content;
+    min-width: 100%;
+    margin-top: 0;
+}
 .chat-page .tabela-wrapper--larga table { min-width: 980px; }
+.chat-page .tabela-wrapper::-webkit-scrollbar { width: 12px; height: 14px; }
+.chat-page .tabela-wrapper::-webkit-scrollbar-track {
+    background: var(--p-surface-2);
+    border-radius: var(--p-r-pill);
+}
+.chat-page .tabela-wrapper::-webkit-scrollbar-thumb {
+    border: 2px solid var(--p-surface-2);
+    border-radius: var(--p-r-pill);
+    background-color: rgba(var(--p-accent-rgb), .55);
+}
+.chat-page .tabela-wrapper::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(var(--p-accent-rgb), .85);
+}
+.chat-page .tabela-wrapper::-webkit-scrollbar-corner { background: var(--p-surface-2); }
 .chat-page .tabela-wrapper thead th {
     position: sticky;
     top: 0;

@@ -35,6 +35,27 @@ TABELAS E TAMANHOS (use para decidir se vale JOIN)
   c_motivos             ~63 linhas           LOOKUP
 
 =====================================================================
+c_estatisticas_totais  (~100 linhas) -- AGREGADOS PRONTOS (use antes de COUNT em gigantes)
+=====================================================================
+
+  id, tabelas_origem, categoria varchar, chave varchar, descricao varchar,
+  valor bigint, atualizado_em timestamptz
+
+  CATEGORIAS DISPONIVEIS (chave -> significado):
+    geral:    total_matrizes = total de matrizes
+    situacao: ATIVA, BAIXADA, INAPTA, NULA, SUSPENSA
+    uf:       AC..TO (matrizes na UF)
+    porte:    ME, EPP, DEMAIS, NAO_INFORMADO
+    ano:      2010..2026 (aberturas no ano)
+    cnae:     top CNAEs (chave = codigo; descricao = nome)
+    municipio/natureza: top 15 (nao serve para filtro arbitrario)
+    mei:      S (total MEI); simples: S (total Simples)
+    socios:   empresas_com_socios, total_socios
+
+  REGRA: para totais globais de UMA dimensao, use esta tabela.
+  NAO existe combinacao pre-agregada (UF+ATIVA, UF+ANO, MUNICIPIO+ATIVA).
+  Para combinacao nao pre-agregada, RECUSE explicando a limitacao.
+
 c_empresas  (~71.1M linhas) -- dados cadastrais da empresa
 =====================================================================
 

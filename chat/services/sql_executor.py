@@ -202,4 +202,81 @@ def executar_sql(validation: Optional[ValidationResult],
                 conn.close()
             except Exception:
                 pass
-               
+
+
+def _pos_top_level(sql, palavra):
+    """Posicao do primeiro keyword no nivel zero (fora de strings/parenteses)."""
+    alvo = palavra.upper()
+    i = 0
+    profundidade = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'":
+            i += 1
+            while i < len(sql):
+                if sql[i] == "'":
+                    if i + 1 < len(sql) and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    break
+                i += 1
+        elif ch == '(':
+            profundidade += 1
+        elif ch == ')':
+            profundidade = max(0, profundidade - 1)
+        elif profundidade == 0 and sql[i:i + len(alvo)].upper() == alvo:
+            antes = sql[i - 1] if i > 0 else ' '
+            depois = sql[i + len(alvo)] if i + len(alvo) < len(sql) else ' '
+            if not (antes.isalnum() or antes == '_') and not (
+                    depois.isalnum() or depois == '_'):
+                return i
+        i += 1
+    return -1
+
+
+def _limpar_para_contagem(sql):
+    """Transforma um SELECT de listagem em SELECT COUNT(*), sem ORDER/LIMIT."""
+    if not sql or not sql.lstrip().upper().startswith('SELECT'):
+        return None
+    upper = sql.upper()
+    if ' GROUP BY ' in upper or ' DISTINCT ' in upper or ' UNION ' in upper:
+        return None
+    pos_from = _pos_top_level(sql, 'FROM')
+    if pos_from < 0:
+        return None
+    pos_order = _pos_top_level(sql, 'ORDER BY')
+    pos_limit = _pos_top_level(sql, 'LIMIT')
+    fim = len(sql)
+    for pos in (pos_order, pos_limit):
+        if pos >= 0:
+            fim = min(fim, pos)
+    corpo = sql[pos_from:fim].strip()
+    if not corpo:
+        return None
+    return 'SELECT COUNT(*) AS total ' + corpo
+
+
+def contar_linhas(sql, timeout_ms=5000):
+    """Conta as linhas de um SELECT de listagem; None se nao der para contar."""
+    count_sql = _limpar_para_contagem(sql)
+    if not count_sql:
+        return None
+    cfg = _get_config()
+    if not cfg['password']:
+        return None
+    conn = None
+    try:
+        conn = psycopg2.connect(**cfg)
+        conn.set_session(readonly=True, autocommit=False)
+        cur = conn.cursor()
+        cur.execute(f'SET LOCAL statement_timeout = {int(timeout_ms)}')
+        cur.execute(count_sql)
+        valor = cur.fetchone()[0]
+        conn.rollback()
+        return int(valor) if valor is not None else None
+    except Exception:
+        logger.exception('Falha ao contar o total real da listagem')
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
