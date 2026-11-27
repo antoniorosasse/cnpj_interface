@@ -265,3 +265,37 @@ class FechamentoConexaoTests(TestCase):
         executar_sql(_vr())
 
         conn.close.assert_called_once()
+
+class ContagemSqlTests(TestCase):
+    """Testes do COUNT companheiro usado para mostrar o total real."""
+
+    def test_remove_joins_de_exibicao_quando_where_so_usa_base(self):
+        from chat.services.sql_executor import _limpar_para_contagem
+        sql = (
+            'SELECT e.cnpj_basico, emp.razao_social, m.municipio '
+            'FROM c_estabelecimentos e '
+            'JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico '
+            'LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio '
+            "WHERE e.cd_matriz_filial = 1 AND e.uf = 'PR' LIMIT 100"
+        )
+        count = _limpar_para_contagem(sql)
+        self.assertIn('COUNT(*)', count)
+        self.assertNotIn('c_empresas', count)
+        self.assertNotIn('c_municipios', count)
+        self.assertIn("e.uf = 'PR'", count)
+
+    def test_mantem_join_quando_where_usa_tabela_joinada(self):
+        from chat.services.sql_executor import _limpar_para_contagem
+        sql = (
+            'SELECT e.cnpj_basico FROM c_estabelecimentos e '
+            'JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico '
+            'WHERE emp.capital_social > 500000 LIMIT 100'
+        )
+        count = _limpar_para_contagem(sql)
+        self.assertIn('c_empresas', count)
+        self.assertIn('capital_social', count)
+
+    def test_nao_conta_agregacao(self):
+        from chat.services.sql_executor import _limpar_para_contagem
+        self.assertIsNone(_limpar_para_contagem(
+            'SELECT uf, COUNT(*) FROM c_estabelecimentos GROUP BY uf'))

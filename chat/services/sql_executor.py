@@ -17,6 +17,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 import os
 import time
 import logging
+import re
 
 import psycopg2
 import psycopg2.extras
@@ -253,6 +254,21 @@ def _limpar_para_contagem(sql):
     corpo = sql[pos_from:fim].strip()
     if not corpo:
         return None
+
+    # Se o WHERE so' usa a tabela base, remove JOINs de exibicao do COUNT.
+    # Ex.: listagem de Curitiba faz JOIN em c_empresas/c_cnaes/c_municipios
+    # apenas para as colunas; o COUNT fica 0,2 s em vez de 40 s.
+    pos_where = _pos_top_level(corpo, 'WHERE')
+    pos_join = _pos_top_level(corpo, 'JOIN')
+    if pos_where > 0 and pos_join > pos_where:
+        pass
+    if pos_where > 0 and pos_join > 0 and pos_join < pos_where:
+        where_sql = corpo[pos_where:]
+        aliases = re.findall(r'\bJOIN\s+[\w.]+\s+(\w+)\b', corpo[pos_join:pos_where],
+                             re.IGNORECASE)
+        if aliases and not any(re.search(r'\b' + re.escape(a) + r'\.',
+                                         where_sql) for a in aliases):
+            corpo = corpo[:pos_join] + where_sql
     return 'SELECT COUNT(*) AS total ' + corpo
 
 

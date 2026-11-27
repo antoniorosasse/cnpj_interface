@@ -1,6 +1,6 @@
 # Índice UF + CNAE para listagens com capital social
 
-**Criado em:** 27/11/2026 · **Status:** criado no banco local; produção pendente
+**Criado em:** 27/11/2026 · **Status:** índices criados no banco local; produção pendente
 
 ## Motivo
 
@@ -23,6 +23,25 @@ CREATE INDEX idx_estab_uf_cnae_matriz
 - O filtro de `capital_social` continua em `c_empresas` (join por
   `cnpj_basico`), por isso a consulta ainda faz um `Index Scan` em
   `c_empresas`; o ganho vem de não varrer 2,3M de estabelecimentos.
+
+## Índices complementares (idade + município)
+
+Para "abertas há mais de 10 anos em Curitiba/PR" o COUNT ainda varria muito.
+Foram criados no local:
+
+```sql
+CREATE INDEX idx_estab_mun_dt_matriz
+  ON c_estabelecimentos (municipio, dt_ini)
+  WHERE cd_matriz_filial = 1;                    -- ~71 s
+
+CREATE INDEX idx_estab_mun_uf_dt_matriz
+  ON c_estabelecimentos (municipio, uf, dt_ini)
+  WHERE cd_matriz_filial = 1;                    -- ~121 s
+```
+
+- COUNT de Curitiba (>10 anos): **43,9 s → 0,53 s**;
+- o chat passou a exibir `100 de 476.017`;
+- a consulta de listagem fica em ~6 s.
 
 ## Produção
 
