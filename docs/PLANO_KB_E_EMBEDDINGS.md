@@ -38,7 +38,7 @@ em produção.
 
 **Status 27/11:** modelos `AtividadeLog`/`CnaeAliasCandidato` (migrações
 `chat.0008` e `0010`), log em chat/página com **score**, admin e comando
-`propor_aliases_cnae`; testes cobrindo score/fila. Falta deploy.
+`propor_aliases_cnae`; testes cobrindo score/fila. Suíte: 823 testes OK. Falta deploy.
 
 **Objetivo:** descobrir o que os usuários realmente perguntam e medir a qualidade
 do resolvedor.
@@ -104,7 +104,12 @@ ignora instruções embutidas.
 
 ---
 
-## Fase 3 — Autoaprovação controlada
+## Fase 3 — Autoaprovação controlada (base pronta, flag desligada)
+
+**Status 27/11:** flag `KB_AUTO_APPROVE` (padrão `0`), ação de admin com
+critérios estritos (confiança ≥ 90%, recorrência ≥ 3, evidência lexical, termo
+não genérico) e registro em histórico. Falta monitoramento semanal e amostra
+humana para ligar a flag em produção.
 
 **Objetivo:** reduzir trabalho manual só nos casos de altíssima confiança.
 
@@ -128,8 +133,8 @@ ignora instruções embutidas.
 **Objetivo:** melhorar a qualidade dos candidatos que alimentam a KB e o chat.
 
 **Ordem de experimentos**
-1. **BrazEmbed-PT-BR** (768d, 110M, MIT): candidato de menor custo.
-2. **Híbrido lexical (`pg_trgm`) + denso + fusão de ranks.**
+1. **BrazEmbed-PT-BR** (768d, 110M, MIT): melhor resultado inicial (top-1 53,5%, top-3 73,3%).
+2. **Híbrido lexical (`pg_trgm`) + denso + fusão de ranks** — BGE-M3 ficou em 52,3%/65,1%; não justifica o custo sozinho.
 3. **Reranking com IA** sobre top 20–30 CNAEs.
 4. Só depois: BGE-M3/Qwen3-0.6B em **serviço de embedding dedicado** (uma cópia,
    não uma por worker do gunicorn).
@@ -148,7 +153,11 @@ ignora instruções embutidas.
 
 ---
 
-## Fase 5 — Canário e produção
+## Fase 5 — Canário e produção (flag criada)
+
+**Status 27/11:** `ATIVIDADE_RESOLVER` existe com padrão `v1` em produção
+(`v2` em DEBUG). O v2 consulta `CnaeAlias`; ainda não há rollout percentual nem
+canário real.
 
 1. Feature flag `ATIVIDADE_RESOLVER=v2` por percentual de usuários.
 2. Comparar:

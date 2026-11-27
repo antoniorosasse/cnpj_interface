@@ -334,6 +334,14 @@ MONGO_CONFIG = {
 #   'ipapi'   = https://ipapi.co/{ip}/json/ (HTTPS, 1 IP por requisicao)
 GEOIP_FONTE = os.getenv('GEOIP_FONTE', 'maxmind')
 
+# ==================== KB DINAMICA / CANARIO ====================
+# v1 = comportamento historico (sem aliases publicados); v2 = consulta
+# CnaeAlias aprovado no admin. Em producao o padrao e' v1 ate o canario.
+ATIVIDADE_RESOLVER = os.getenv(
+    'ATIVIDADE_RESOLVER', 'v2' if DEBUG else 'v1').lower()
+# Autoaprovacao de alias pela IA so' com a flag ligada e criterios estritos.
+KB_AUTO_APPROVE = os.getenv('KB_AUTO_APPROVE', '0') == '1'
+
 # Banco local do MaxMind (cidade/UF/pais). Nao entra no git (.gitignore).
 GEOIP_CIDADE_MMDB = os.getenv(
     'GEOIP_CIDADE_MMDB', str(BASE_DIR / 'geoip' / 'GeoLite2-City.mmdb'),

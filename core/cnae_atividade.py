@@ -16,6 +16,8 @@ import logging
 import re
 import unicodedata
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
 
 STOPWORDS = {
@@ -133,11 +135,13 @@ def _consultar_vetor(cur, texto, embedder):
 
 
 def _alias_publicado(texto):
-    """Alias aprovado no admin (KB dinamica), se existir.
+    """Alias aprovado no admin (KB dinamica), se o canario v2 estiver ligado.
 
     Tenta a expressao inteira e, se ela tiver " e ", cada termo individual
     (o chat pode juntar varias atividades).
     """
+    if str(getattr(settings, 'ATIVIDADE_RESOLVER', 'v1')).lower() != 'v2':
+        return None
     try:
         from chat.models import CnaeAlias
     except Exception:

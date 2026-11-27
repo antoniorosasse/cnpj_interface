@@ -615,7 +615,13 @@ class CnaeAliasCandidatoAdmin(admin.ModelAdmin):
 
     @admin.action(description='Autoaprovar (alta confianca + evidencia)')
     def autoaprovar(self, request, queryset):
+        from django.conf import settings
         from chat.services.kb_judge import pode_autoaprovar, publicar_alias
+        if not getattr(settings, 'KB_AUTO_APPROVE', False):
+            self.message_user(
+                request, 'Autoaprovacao desligada (KB_AUTO_APPROVE=0).',
+                level=messages.WARNING)
+            return
         for cand in queryset.filter(status=CnaeAliasCandidato.STATUS_PENDENTE):
             if not pode_autoaprovar(cand):
                 self.message_user(

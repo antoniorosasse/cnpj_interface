@@ -2,7 +2,7 @@
 """Testes da Fase 2: juiz de IA, publicacao versionada e alias no resolvedor."""
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from chat.models import (CnaeAlias, CnaeAliasCandidato, CnaeAliasHistorico)
 from chat.services import kb_judge
@@ -90,6 +90,7 @@ class PublicacaoAliasTests(TestCase):
         self.assertEqual(CnaeAliasHistorico.objects.filter(
             acao='desativado').count(), 1)
 
+    @override_settings(ATIVIDADE_RESOLVER='v2')
     def test_resolvedor_usa_alias_publicado(self):
         from core.cnae_atividade import resolver_atividade
         _candidato()

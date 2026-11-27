@@ -12,13 +12,14 @@
 - **Negativos** (`naves espaciais`, `xpto inexistente`, `serviços gerais`) ficam
   fora das métricas de ranking; eles serão usados na avaliação do juiz de KB.
 
-## Resultados
+## Resultados (gold atual, 86 atividades)
 
 | Método | Top-1 | Top-3 | MRR |
 |---|---:|---:|---:|
 | Lexical (`SequenceMatcher` + bônus de frase) | **26,7%** | 38,4% | 0,348 |
 | Braza atual (384d) | **23,3%** | 41,9% | 0,352 |
 | **BrazEmbed-PT-BR (768d)** | **53,5%** | **73,3%** | **0,649** |
+| BGE-M3 (1024d) | 52,3% | 65,1% | 0,622 |
 
 ### BrazEmbed por grupo
 
@@ -57,7 +58,8 @@
 
 ## Próximos benchmarks
 
-- BGE-M3 e Qwen3-Embedding-0.6B (com o mesmo gold set).
+- Qwen3-Embedding-0.6B (mesmo gold set).
+- Reexecutar todos os modelos quando o gold mudar; números só são comparáveis na mesma versão do gold.
 - Híbrido `pg_trgm` + BrazEmbed, com fusão de ranks.
 - Reranking IA sobre top 20–30.
 - Latência de consulta e RSS por worker na VPS real.

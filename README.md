@@ -1330,6 +1330,8 @@ Ver `.env.example` para a lista completa. As principais:
 - `DEEPSEEK_API_KEY` - chave de fallback do chat (o ideal é cadastrar no admin; ver `docs/CONFIGURACAO_IA_ADMIN.md`)
 - `CHAT_DEEPSEEK_MODEL` - modelo (padrão: `deepseek-chat`)
 - `CHAT_DEEPSEEK_BASE_URL` - endpoint compatível OpenAI (padrão: `https://api.deepseek.com`)
+- `ATIVIDADE_RESOLVER` - `v1` (histórico) ou `v2` (usa aliases publicados); em dev padrão `v2`
+- `KB_AUTO_APPROVE` - `1` liga a autoaprovação estrita da Fase 3; padrão `0`
 - `AS400_*` - **removidos**: o `cnpj_interface` não fala mais com o IBM i
   (a classe `ConexaoAS400` e o `testar_simple.py` saíram; o `lib/jt400.jar`
   fica só no `as400_interface`)
