@@ -52,9 +52,17 @@ c_estatisticas_totais  (~100 linhas) -- AGREGADOS PRONTOS (use antes de COUNT em
     mei:      S (total MEI); simples: S (total Simples)
     socios:   empresas_com_socios, total_socios
 
-  REGRA: para totais globais de UMA dimensao, use esta tabela.
-  NAO existe combinacao pre-agregada (UF+ATIVA, UF+ANO, MUNICIPIO+ATIVA).
-  Para combinacao nao pre-agregada, RECUSE explicando a limitacao.
+  CATEGORIAS DE COMBINACAO (recalculadas em 28/11/2026):
+    uf_ativa:            ativas por UF (chave = UF)
+    uf_ano_ativa:        ativas por UF+ano (chave = 'SC|2025')
+    municipio_ativa:     ativas por UF+municipio (chave = 'SC|8105',
+                         descricao = 'JOINVILLE|SC')
+    capital_ativa:       ativas por UF+capital (chave = UF)
+
+  REGRA: para totais globais de UMA dimensao, use esta tabela. Para as
+  combinacoes acima, use as categorias prontas - NUNCA COUNT/GROUP BY em
+  74 M. As categorias *_ativa cobrem somente matrizes ATIVAS. Para outra
+  situacao, use a categoria global 'situacao' ou o GROUP BY por cidade.
 
 c_empresas  (~71.1M linhas) -- dados cadastrais da empresa
 =====================================================================
@@ -408,7 +416,6 @@ EXEMPLO COMPLETO para "liste os mercados KOCH":
         WHERE sub.cnpj_basico = e.cnpj_basico
           AND sub.nm_fantasia ILIKE '%KOCH%'
     )
-  ORDER BY emp.razao_social
   LIMIT 100
 
 "mercado" casa com "mercadorias" no nm_cnae, entao o ILIKE ja traz
@@ -519,6 +526,22 @@ Por isso:
 Quando o semi-join e' usado, o texto da resposta deve dizer "empresas com
 estabelecimento em <cidade>", porque a coluna municipio exibe o municipio
 da matriz.
+
+ORDENAR POR CAPITAL SOCIAL (medido em 28/11/2026):
+  JOIN c_empresas + ORDER BY capital = 27 s em 42 mil metalurgicas de SC.
+  Use subquery com OFFSET 0 para filtrar os cnpj_basico antes de juntar:
+    SELECT a.cnpj_basico, emp.razao_social, emp.capital_social, ...
+    FROM (SELECT e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv, e.municipio,
+                 e.uf, e.cnae_principal
+          FROM c_estabelecimentos e
+          WHERE e.cd_matriz_filial = 1 AND e.uf = 'SC'
+            AND e.cnae_principal BETWEEN 2400000 AND 2599999
+          OFFSET 0) a
+    JOIN c_empresas emp ON emp.cnpj_basico = a.cnpj_basico
+    LEFT JOIN c_municipios m ON m.cd_municipio = a.municipio
+    ORDER BY emp.capital_social DESC LIMIT 100
+  => 1,3 s. Nao crie indice em c_empresas(capital_social): 71M linhas,
+  alto custo de build e baixa seletividade; a forma da consulta resolve.
 
 INDICES ENVOLVIDOS:
   idx_estab_municipio_cnpj (municipio, cnpj_basico)    -- lado da cidade

@@ -299,3 +299,34 @@ class ContagemSqlTests(TestCase):
         from chat.services.sql_executor import _limpar_para_contagem
         self.assertIsNone(_limpar_para_contagem(
             'SELECT uf, COUNT(*) FROM c_estabelecimentos GROUP BY uf'))
+
+    def test_envolve_union_para_contar_total(self):
+        """Busca de CNAE com ILIKE+vetor usa UNION; o total precisa sair."""
+        from chat.services.sql_executor import _limpar_para_contagem
+        sql = (
+            'SELECT e.cnpj_basico FROM c_estabelecimentos e '
+            'WHERE e.cd_matriz_filial = 1 AND e.cnae_principal IN ('
+            "SELECT cnae FROM c_cnaes WHERE nm_cnae ILIKE '%restaurante%' "
+            'UNION SELECT cnae FROM (SELECT cnae FROM c_cnaes '
+            'ORDER BY embedding <=> %s::halfvec(768) LIMIT 2) sub) LIMIT 100'
+        )
+        count = _limpar_para_contagem(sql)
+        self.assertTrue(count.startswith('SELECT COUNT(*) AS total FROM ('))
+        self.assertIn('UNION', count)
+        self.assertNotIn('LIMIT 100', count)
+
+
+class TimeoutPorTipoSqlTests(TestCase):
+    def test_agregacao_tem_timeout_maior(self):
+        import os
+        from unittest import mock
+        from chat.services.sql_executor import _timeout_para_sql
+        with mock.patch.dict(os.environ, {'CHAT_SQL_TIMEOUT': '30'}):
+            self.assertEqual(_timeout_para_sql(
+                'SELECT e.uf, COUNT(*) FROM c_estabelecimentos e '
+                'GROUP BY e.uf'), 45000)
+            self.assertEqual(_timeout_para_sql(
+                'SELECT e.uf FROM c_estabelecimentos e LIMIT 100'), 30000)
+            self.assertEqual(_timeout_para_sql(
+                'SELECT e.uf, COUNT(*) FROM c_estabelecimentos e '
+                'GROUP BY e.uf LIMIT 100'), 30000)

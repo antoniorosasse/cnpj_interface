@@ -11,6 +11,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 import os
 import re
 import logging
+import unicodedata
 
 from core.cnae_categorias import resolver_filtro_cnae
 
@@ -100,6 +101,21 @@ REGRAS DE OURO:
        WHERE s.op_mei = 'S'
        GROUP BY e.porte_empresa
    Se nao tiver certeza, comece por (a).
+   (c) LISTAGEM de MEIs numa cidade ("MEIs ativos em Joinville/SC") NAO
+       e' contagem: se a pergunta nao tem "quantos", gere lista com
+       LIMIT 100 usando EXISTS em c_simples. So' use COUNT quando o
+       usuario pedir "quantos MEIs". Exemplo de listagem:
+       SELECT e.cnpj_basico, e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj_completo,
+              emp.razao_social, e.nm_fantasia, m.municipio, e.uf
+       FROM c_estabelecimentos e
+       JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+       LEFT JOIN c_municipios m ON m.cd_municipio = e.municipio
+       WHERE e.cd_matriz_filial = 1 AND e.cd_sit_cadastro = 2
+         AND e.municipio IN (SELECT cd_municipio FROM c_municipios
+                             WHERE municipio ILIKE '%JOINVILLE%')
+         AND EXISTS (SELECT 1 FROM c_simples s
+                     WHERE s.cnpj_basico = e.cnpj_basico AND s.op_mei = 'S')
+       LIMIT 100
 5. JOINs legitimos e baratos (lookups):
      c_estabelecimentos x c_cnaes       (cnae_principal = cnae)
      c_estabelecimentos x c_municipios  (municipio = cd_municipio)
@@ -165,21 +181,17 @@ REGRAS DE OURO:
            WHERE sub.cnpj_basico = e.cnpj_basico
              AND sub.nm_fantasia ILIKE '%KOCH%'
          )
-       ORDER BY emp.razao_social
        LIMIT 100
-   - Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
-     ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas
-     e' arbitrario e a empresa procurada pode nao aparecer.
-   - EXCECAO DE PERFORMANCE: quando a listagem tiver filtro seletivo
-     (categoria da KB, cidade/UF, capital social ou dt_ini), NAO use
-     ORDER BY. Qualquer ordenacao (inclusive ORDER BY
-     e.id_estabelecimento) obriga o Postgres a varrer TODOS os
-     candidatos antes do LIMIT e pode estourar 30 s.
-     Medido em 27/11/2026: a mesma consulta de clinicas em SP levou
-     ~49 s com ORDER BY e.id_estabelecimento e ~0,2 s sem ORDER BY.
-     Use LIMIT sem ORDER BY. Se o usuario pedir explicitamente uma
-     ordem (ex: "por capital social", "os maiores"), use a ordem pedida
-     e reduza o limite; nao invente ORDER BY.
+   - LISTAGEM COM LIMIT: NAO INVENTE ORDER BY. Sem ORDER BY o Postgres
+     para no LIMIT e a consulta fica rapida; a amostra de 100 linhas nao
+     precisa estar em ordem alfabetica (o total real e a exportacao
+     mostram a lista completa). NUNCA use ORDER BY emp.razao_social nem
+     ORDER BY e.id_estabelecimento por conta propria: os dois obrigam a
+     avaliar todos os candidatos e ja' causaram timeout de 30 s.
+   - Use ORDER BY SOMENTE quando o usuario pedir uma ordem explicita
+     ("ordene", "maiores", "menores", "ranking", "top", "por capital",
+     "mais antigas", "mais recentes"): ai use a coluna pedida e reduza
+     o LIMIT se necessario.
 
 9.2 NUNCA INCLUA COUNT POR LINHA EM LISTAGEM - CRITICO:
    - NAO adicione a coluna
@@ -412,7 +424,6 @@ REGRAS DE OURO:
                WHERE municipio ILIKE '%PICARRAS%'
            )
        )
-     ORDER BY emp.razao_social
      LIMIT 100
    - O semi-join NAO substitui o filtro de CNAE: os dois vao sempre
      juntos, ligados por AND.
@@ -526,13 +537,40 @@ REGRAS DE OURO:
        FROM c_estatisticas_totais e
        LEFT JOIN c_cnaes c ON c.cnae = e.chave::integer
        WHERE e.categoria='cnae' ORDER BY e.valor DESC LIMIT 10
-   - Se a pergunta pedir uma COMBINACAO nao pre-agregada
-     (ex: "ativas por UF", "ativas por ano em SC", "por municipio em SC"),
-     NAO tente COUNT em 74M: responda
-       RECUSAR: essa combinacao nao esta pre-agregada e cruzaria duas
-       tabelas gigantes. Use c_estatisticas_totais para totais globais
-       (situacao sozinha, porte sozinho, UF sozinha, ano sozinho) ou
-       filtre por cidade.
+   - COMBINACOES PRE-AGREGADAS (recalculadas em 28/11/2026) - USE ESTAS:
+     * "empresas ativas por UF":
+       SELECT chave AS uf, valor AS total
+       FROM c_estatisticas_totais
+       WHERE categoria = 'uf_ativa' ORDER BY valor DESC
+     * "empresas ativas por ano em SC":
+       SELECT split_part(chave, '|', 2) AS ano, valor AS total
+       FROM c_estatisticas_totais
+       WHERE categoria = 'uf_ano_ativa' AND chave LIKE 'SC|%'
+       ORDER BY ano
+     * "empresas ativas por UF e cidade" / "por municipio em SC":
+       SELECT chave AS municipio_codigo, descricao AS municipio,
+              valor AS total
+       FROM c_estatisticas_totais
+       WHERE categoria = 'municipio_ativa' AND chave LIKE 'SC|%'
+       ORDER BY valor DESC LIMIT 500
+     * "empresas ativas por UF e capitais":
+       SELECT chave AS uf, descricao AS capital, valor AS total
+       FROM c_estatisticas_totais
+       WHERE categoria = 'capital_ativa' ORDER BY valor DESC
+   - Essas categorias cobrem somente matrizes ATIVAS. Para outra situacao
+     (baixadas, inaptas etc.), use a categoria global 'situacao' ou filtre
+     por cidade.
+   - "empresas por municipio em SC" (todas as situacoes) ainda pode usar o
+     GROUP BY rapido (agrupe pelo codigo e so' depois troque o nome):
+       SELECT m.municipio, t.total
+       FROM (
+           SELECT e.municipio, COUNT(*) AS total
+           FROM c_estabelecimentos e
+           WHERE e.cd_matriz_filial = 1 AND e.uf = 'SC'
+           GROUP BY e.municipio ORDER BY total DESC LIMIT 500
+       ) t
+       JOIN c_municipios m ON m.cd_municipio = t.municipio
+       ORDER BY t.total DESC
    - NUNCA responda "nenhuma empresa encontrada" quando na verdade a
      combinacao nao e' suportada; use RECUSAR com o texto acima.
 
@@ -579,6 +617,26 @@ REGRAS DE OURO:
    - NAO adicione ORDER BY automaticamente so' porque a pergunta filtra
      capital ou idade: isso estoura o timeout em listas grandes.
    - Fora de ordenacao explicita, mantenha a regra 9 (sem ORDER BY).
+   - ORDENAR POR CAPITAL SOCIAL (ex.: "ordene as metalurgicas de SC por
+     capital"): NAO faca JOIN c_empresas + ORDER BY direto - medido
+     27 s. Filtre primeiro os cnpj_basico numa subquery com OFFSET 0
+     (impede o planner de juntar tudo) e so' depois junte c_empresas:
+       SELECT a.cnpj_basico,
+              a.cnpj_basico || a.cnpj_ordem || a.cnpj_dv AS cnpj_completo,
+              emp.razao_social, emp.capital_social, m.municipio, a.uf,
+              a.cnae_principal
+       FROM (
+           SELECT e.cnpj_basico, e.cnpj_ordem, e.cnpj_dv, e.municipio,
+                  e.uf, e.cnae_principal
+           FROM c_estabelecimentos e
+           WHERE e.cd_matriz_filial = 1 AND e.uf = 'SC'
+             AND e.cnae_principal BETWEEN 2400000 AND 2599999
+           OFFSET 0
+       ) a
+       JOIN c_empresas emp ON emp.cnpj_basico = a.cnpj_basico
+       LEFT JOIN c_municipios m ON m.cd_municipio = a.municipio
+       ORDER BY emp.capital_social DESC LIMIT 100
+     Medido em 28/11/2026: 27 s (JOIN direto) x 1,3 s (subquery OFFSET 0).
 
 FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
 - Quando a pergunta tiver CNAE (ou busca semantica) E cidade/UF,
@@ -692,15 +750,22 @@ QUANDO RECUSAR:
   "empresas por bairro"), responda:
     RECUSAR: essa consulta exige varrer 74M de linhas por bairro;
     filtre por cidade ou UF antes.
-- Se a pergunta pedir uma combinacao de situacao com porte,
-  natureza, CNAE ou UF que NAO esteja pre-agregada em
-  c_estatisticas_totais (ex: "empresas ativas por porte",
-  "empresas ativas por natureza juridica", "MEI por UF"),
-  responda:
+- COMBINACOES JA PRE-AGREGADAS (use estas, NAO recuse):
+  "ativas por UF" (categoria uf_ativa), "ativas por ano em SC"
+  (uf_ano_ativa), "ativas por UF e cidade" (municipio_ativa) e
+  "ativas por UF e capitais" (capital_ativa). Para "empresas
+  ativas por porte" some a categoria filtro_uf_sit_porte:
+    SELECT split_part(chave, '|', 3) AS porte, SUM(valor) AS total
+    FROM c_estatisticas_totais
+    WHERE categoria = 'filtro_uf_sit_porte'
+      AND split_part(chave, '|', 2) = '2'
+    GROUP BY 1 ORDER BY total DESC
+- Para uma combinacao que realmente NAO existe pre-agregada
+  (ex: "MEI por UF", "ativas por natureza juridica", "empresas
+  por bairro sem filtro de cidade"), responda:
     RECUSAR: essa combinacao nao esta pre-agregada e cruzaria
-    duas tabelas gigantes. Use c_estatisticas_totais para totais
-    globais (situacao sozinha, porte sozinho, UF sozinha) ou
-    filtre por cidade.
+    duas tabelas gigantes. Filtre por cidade/UF ou use os totais
+    globais de c_estatisticas_totais.
 - EXCECAO: se a pergunta pedir uma combinacao que JA esta em
   c_estatisticas_totais (situacao sozinha, porte sozinho, UF
   sozinha, Simples sozinho, MEI sozinho, top CNAE, top natureza,
@@ -714,7 +779,8 @@ QUANDO RECUSAR:
     "Qual o faturamento medio das empresas de SP?"
     -> RECUSAR: o banco nao tem coluna de faturamento
     "Quantas empresas existem por UF?"
-    -> (pergunta respondivel; gere o SQL normalmente, NAO recuse)
+    -> SELECT chave AS uf, valor AS total FROM c_estatisticas_totais
+       WHERE categoria = 'uf' ORDER BY valor DESC
 - NUNCA use RECUSAR para perguntas dificeis. Use APENAS quando a
   informacao pedida realmente nao existe no schema.
 
@@ -820,6 +886,80 @@ def _remover_count_por_linha(sql):
     return padrao.sub('', sql or '')
 
 
+_TERMOS_ORDEM = (
+    'ordene', 'ordenar', 'ordenad', 'ordenacao', 'ordem', 'ranking',
+    'maior', 'maiores', 'menor', 'menores', 'top', 'mais antig',
+    'mais recent', 'mais velh', 'mais nova', 'mais novo', 'mais cara',
+    'mais caro', 'mais barat', 'decrescente', 'crescente', 'alfabetic',
+    'primeiros', 'ultimos', 'recentes', 'antigas', 'antigos', 'velhas',
+    'velhos', 'novas', 'novos', 'por capital', 'por data', 'por nome',
+    'por tempo', 'por idade', 'por ano', 'por uf', 'por municipio',
+    'por situacao', 'por porte', 'por cnae',
+)
+
+
+def _pergunta_pediu_ordem(pergunta):
+    """True quando a pergunta pede explicitamente uma ordenacao."""
+    if not pergunta:
+        return False
+    texto = unicodedata.normalize('NFKD', str(pergunta).lower())
+    texto = ''.join(c for c in texto if not unicodedata.combining(c))
+    return any(termo in texto for termo in _TERMOS_ORDEM)
+
+
+def _pos_topo(sql, palavra):
+    """Posicao do primeiro keyword no nivel zero (fora de strings/parenteses)."""
+    alvo = palavra.upper()
+    i = 0
+    profundidade = 0
+    while i < len(sql):
+        ch = sql[i]
+        if ch == "'":
+            i += 1
+            while i < len(sql):
+                if sql[i] == "'":
+                    if i + 1 < len(sql) and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    break
+                i += 1
+        elif ch == '(':
+            profundidade += 1
+        elif ch == ')':
+            profundidade = max(0, profundidade - 1)
+        elif profundidade == 0 and sql[i:i + len(alvo)].upper() == alvo:
+            antes = sql[i - 1] if i > 0 else ' '
+            depois = sql[i + len(alvo)] if i + len(alvo) < len(sql) else ' '
+            if not (antes.isalnum() or antes == '_') and not (
+                    depois.isalnum() or depois == '_'):
+                return i
+        i += 1
+    return -1
+
+
+def _remover_order_by_nao_pedido(sql, pergunta):
+    """Tira o ORDER BY que o LLM inventou em listagem sem pedido de ordem.
+
+    Sem ORDER BY o Postgres para no LIMIT e a amostra nao fica viesada para
+    o inicio do alfabeto (foi o que escondeu os supermercados no caso A14).
+    Consultas agregadas (GROUP BY) preservam a ordenacao escolhida.
+    """
+    if not sql or _pergunta_pediu_ordem(pergunta):
+        return sql
+    # Ranking de agregados prontos depende do ORDER BY (top CNAE, top UF...).
+    if 'c_estatisticas_totais' in sql.lower():
+        return sql
+    if _pos_topo(sql, 'GROUP BY') >= 0:
+        return sql
+    pos = _pos_topo(sql, 'ORDER BY')
+    if pos < 0:
+        return sql
+    pos_limit = _pos_topo(sql[pos:], 'LIMIT')
+    if pos_limit >= 0:
+        return (sql[:pos].rstrip() + ' ' + sql[pos + pos_limit:].lstrip()).strip()
+    return sql[:pos].rstrip()
+
+
 def _validar_cnaes_da_kb(sql, pergunta):
     """Garante que o LLM nao omitiu CNAEs de uma categoria combinada da KB."""
     from core.cnae_categorias import resolver_filtro_cnae
@@ -854,6 +994,82 @@ def _montar_user_prompt(pergunta: str, historico=None) -> str:
 # ============================================================
 # FUNCAO PRINCIPAL
 # ============================================================
+
+def _alias_tabela(sql, tabela):
+    """Alias usado para a tabela no FROM (ex: c_estabelecimentos -> e)."""
+    padrao = (
+        r'\b(?:FROM|JOIN)\s+' + re.escape(tabela) + r'\s+(?:AS\s+)?'
+        r'(?!(?:WHERE|JOIN|LEFT|RIGHT|INNER|FULL|GROUP|ORDER|LIMIT|HAVING|ON)\b)'
+        r'([A-Za-z_]\w*)\s*'
+        r'(?=JOIN\b|WHERE\b|LEFT\b|RIGHT\b|INNER\b|FULL\b|GROUP\b|ORDER\b'
+        r'|LIMIT\b|HAVING\b|ON\b|\)|$)')
+    m = re.search(padrao, sql or '', re.IGNORECASE)
+    return m.group(1) if m else None
+
+
+def _garantir_ordem_pedida(sql, pergunta):
+    """Se o usuario pediu ordem por capital/data e o LLM esqueceu o ORDER BY,
+    acrescenta a ordenacao deterministica (caso C8)."""
+    if not sql or not pergunta:
+        return sql
+    if _pos_topo(sql, 'ORDER BY') >= 0:
+        return sql
+    texto = unicodedata.normalize('NFKD', str(pergunta).lower())
+    texto = ''.join(c for c in texto if not unicodedata.combining(c))
+    ordem = None
+    if 'capital' in texto and 'capital_social' in sql.lower():
+        alias_emp = _alias_tabela(sql, 'c_empresas')
+        coluna = (f'{alias_emp}.capital_social' if alias_emp
+                  else 'capital_social')
+        sentido = 'ASC' if any(t in texto for t in
+                               ('menor', 'menores', 'crescente')) else 'DESC'
+        ordem = f'{coluna} {sentido}'
+    elif ('dt_ini' in sql.lower()
+            and any(t in texto for t in ('antig', 'velh', 'mais nova', 'mais novo',
+                                         'recent', 'abertura', 'idade'))):
+        sentido = 'DESC' if any(t in texto for t in
+                                ('recent', 'nova', 'novo')) else 'ASC'
+        alias_estab = _alias_tabela(sql, 'c_estabelecimentos')
+        coluna = f'{alias_estab}.dt_ini' if alias_estab else 'dt_ini'
+        ordem = f'{coluna} {sentido}'
+    if not ordem:
+        return sql
+    pos_limit = _pos_topo(sql, 'LIMIT')
+    if pos_limit >= 0:
+        return (sql[:pos_limit].rstrip() + f' ORDER BY {ordem} '
+                + sql[pos_limit:].lstrip())
+    return sql.rstrip().rstrip(';').rstrip() + f' ORDER BY {ordem}'
+
+
+def _amostra_multi_categoria(sql, pergunta):
+    """Em pergunta com DUAS categorias (ex: supermercados e padarias), mistura
+    a amostra de 100 linhas para as duas aparecerem na tabela.
+
+    Sem isso o LIMIT pega as primeiras linhas do indice, que ficam todas na
+    categoria mais numerosa (caso A14: 2.868 padarias x 183 supermercados em
+    Joinville - os supermercados sumiam da amostra). O md5 e' deterministico
+    e barato no conjunto ja' filtrado.
+    """
+    if not sql or not pergunta:
+        return sql
+    from core.cnae_categorias import resolver_filtro_cnae
+    filtro = resolver_filtro_cnae(pergunta) or {}
+    if len(filtro.get('categorias') or []) < 2:
+        return sql
+    if not filtro.get('cnaes'):
+        return sql
+    alias = _alias_tabela(sql, 'c_estabelecimentos')
+    if not alias:
+        return sql
+    if _pos_topo(sql, 'ORDER BY') >= 0:
+        return sql
+    ordem = f'ORDER BY md5({alias}.cnpj_basico)'
+    pos_limit = _pos_topo(sql, 'LIMIT')
+    if pos_limit >= 0:
+        return (sql[:pos_limit].rstrip() + f' {ordem} '
+                + sql[pos_limit:].lstrip())
+    return sql.rstrip().rstrip(';').rstrip() + f' {ordem}'
+
 
 def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
     """
@@ -923,7 +1139,12 @@ def gerar_sql(pergunta: str, historico=None, max_tentativas: int = 2) -> dict:
             }
 
         ultima_bruta = bruto or ''
-        sql = _remover_count_por_linha(_limpar_sql(ultima_bruta))
+        sql = _amostra_multi_categoria(
+            _garantir_ordem_pedida(
+                _remover_order_by_nao_pedido(
+                    _remover_count_por_linha(_limpar_sql(ultima_bruta)), pergunta),
+                pergunta),
+            pergunta)
 
         # --- detecta RECUSAR ANTES de tentar validar como SQL ---
         if sql.upper().startswith('RECUSAR'):

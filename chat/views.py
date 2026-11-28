@@ -512,8 +512,10 @@ def chat_api_view(request):
 
     total_real = None
     if truncado_efetivo and execucao.get('ok'):
-        # COUNT companheiro, com timeout curto; se nao der, segue sem total.
-        total_real = contar_linhas(sql_executado, timeout_ms=15000)
+        # COUNT companheiro; se nao der, segue sem total. 20 s porque a
+        # busca de CNAE com ILIKE+UNION pode contar 12 mil linhas em ~6 s
+        # (e a base fria demora mais) - com 15 s o total sumia da resposta.
+        total_real = contar_linhas(sql_executado, timeout_ms=20000)
 
     if execucao['ok'] and execucao.get('rows'):
         resposta_texto = gerar_texto_resposta(

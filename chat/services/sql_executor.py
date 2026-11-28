@@ -50,6 +50,20 @@ def _get_timeout() -> int:
     return int(os.getenv('CHAT_SQL_TIMEOUT', '10'))
 
 
+def _timeout_para_sql(sql: str) -> int:
+    """Timeout em ms: agregacao (GROUP BY) pode varrer a base inteira.
+
+    Ex.: "empresas ativas por UF" leva ~25 s e devolve 28 linhas; o timeout
+    de listagem (30 s) e' apertado e derrubava a resposta. Agregacoes sem
+    LIMIT ganham um teto maior; listagens continuam com o timeout normal.
+    """
+    timeout_ms = _get_timeout() * 1000
+    upper = (sql or '').upper()
+    if ' GROUP BY ' in upper and ' LIMIT ' not in upper:
+        timeout_ms = max(timeout_ms, 45000)
+    return timeout_ms
+
+
 def _get_max_rows() -> int:
     return int(os.getenv('CHAT_SQL_MAX_ROWS', '1000'))
 
@@ -99,7 +113,7 @@ def executar_sql(validation: Optional[ValidationResult],
 
     sql = validation.sql
     max_rows = max_rows or _get_max_rows()
-    timeout_ms = _get_timeout() * 1000
+    timeout_ms = _timeout_para_sql(sql)
     cfg = _get_config()
 
     if not cfg['password']:
@@ -275,18 +289,30 @@ def _limpar_para_contagem(sql):
     """Transforma um SELECT de listagem em SELECT COUNT(*), sem ORDER/LIMIT."""
     if not sql or not sql.lstrip().upper().startswith('SELECT'):
         return None
+    sql = sql.strip().rstrip(';')
     upper = sql.upper()
-    if ' GROUP BY ' in upper or ' DISTINCT ' in upper or ' UNION ' in upper:
-        return None
-    pos_from = _pos_top_level(sql, 'FROM')
-    if pos_from < 0:
-        return None
     pos_order = _pos_top_level(sql, 'ORDER BY')
     pos_limit = _pos_top_level(sql, 'LIMIT')
     fim = len(sql)
     for pos in (pos_order, pos_limit):
         if pos >= 0:
             fim = min(fim, pos)
+    if fim <= 0:
+        return None
+    # Agregacao nao tem "total de linhas da listagem" para contar.
+    if ' GROUP BY ' in upper:
+        return None
+    # UNION/DISTINCT impedem o COUNT(*) direto no corpo: envolve a consulta
+    # original e conta as linhas que ela devolveria. Sem isso a busca de
+    # CNAE com ILIKE+vetor (UNION) ficava sem total real.
+    if ' UNION ' in upper or ' DISTINCT ' in upper:
+        interna = sql[:fim].strip()
+        if not interna:
+            return None
+        return 'SELECT COUNT(*) AS total FROM (' + interna + ') AS sub'
+    pos_from = _pos_top_level(sql, 'FROM')
+    if pos_from < 0:
+        return None
     corpo = sql[pos_from:fim].strip()
     if not corpo:
         return None

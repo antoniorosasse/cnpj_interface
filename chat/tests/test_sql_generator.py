@@ -588,3 +588,68 @@ class CorrecoesPosGeracaoTests(TestCase):
         ok = ('SELECT 1 WHERE e.cnae_principal IN '
               '(1091102, 4711302, 4721101, 4721102)')
         self.assertIsNone(_validar_cnaes_da_kb(ok, pergunta))
+
+    def test_remove_order_by_inventado(self):
+        from chat.services.sql_generator import _remover_order_by_nao_pedido
+        sql = ('SELECT e.cnpj_basico FROM c_estabelecimentos e '
+               'ORDER BY emp.razao_social LIMIT 100')
+        limpo = _remover_order_by_nao_pedido(
+            sql, 'Postos de gasolina em Joinville/SC')
+        self.assertNotIn('ORDER BY', limpo)
+        self.assertIn('LIMIT 100', limpo)
+
+    def test_mantem_order_by_pedido(self):
+        from chat.services.sql_generator import _remover_order_by_nao_pedido
+        sql = ('SELECT e.cnpj_basico FROM c_estabelecimentos e '
+               'ORDER BY emp.capital_social DESC LIMIT 100')
+        limpo = _remover_order_by_nao_pedido(
+            sql, 'Ordene as metalurgicas de SC por capital social')
+        self.assertIn('ORDER BY emp.capital_social DESC', limpo)
+
+    def test_mantem_order_by_em_agregacao(self):
+        from chat.services.sql_generator import _remover_order_by_nao_pedido
+        sql = ('SELECT e.uf, COUNT(*) AS total FROM c_estabelecimentos e '
+               'GROUP BY e.uf ORDER BY total DESC')
+        limpo = _remover_order_by_nao_pedido(
+            sql, 'Quantas empresas ativas existem por UF?')
+        self.assertIn('ORDER BY total DESC', limpo)
+
+    def test_amostra_multi_categoria_usa_md5(self):
+        from chat.services.sql_generator import _amostra_multi_categoria
+        sql = ('SELECT e.cnpj_basico FROM c_estabelecimentos e '
+               'WHERE e.cd_matriz_filial = 1 LIMIT 100')
+        novo = _amostra_multi_categoria(
+            sql, 'supermercados e padarias em Joinville/SC')
+        self.assertIn('ORDER BY md5(e.cnpj_basico) LIMIT 100', novo)
+
+    def test_amostra_uma_categoria_nao_muda(self):
+        from chat.services.sql_generator import _amostra_multi_categoria
+        sql = ('SELECT e.cnpj_basico FROM c_estabelecimentos e '
+               'WHERE e.cd_matriz_filial = 1 LIMIT 100')
+        self.assertEqual(_amostra_multi_categoria(
+            sql, 'supermercados em Blumenau/SC'), sql)
+
+    def test_garante_ordem_por_capital_pedida(self):
+        from chat.services.sql_generator import _garantir_ordem_pedida
+        sql = ('SELECT e.cnpj_basico, emp.capital_social FROM c_estabelecimentos e '
+               'JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico '
+               "WHERE e.uf = 'SC' LIMIT 100")
+        novo = _garantir_ordem_pedida(
+            sql, 'Ordene as metalurgicas de SC por capital social')
+        self.assertIn('ORDER BY emp.capital_social DESC', novo)
+
+    def test_garante_ordem_por_data_de_abertura(self):
+        from chat.services.sql_generator import _garantir_ordem_pedida
+        sql = ('SELECT e.cnpj_basico, e.dt_ini FROM c_estabelecimentos e '
+               'LIMIT 100')
+        novo = _garantir_ordem_pedida(
+            sql, 'MEIs ativos em Joinville ordenados por tempo de abertura')
+        self.assertIn('ORDER BY e.dt_ini ASC', novo)
+
+    def test_mantem_order_by_de_agregado_pronto(self):
+        from chat.services.sql_generator import _remover_order_by_nao_pedido
+        sql = ('SELECT chave, valor FROM c_estatisticas_totais '
+               "WHERE categoria = 'cnae' ORDER BY valor DESC LIMIT 10")
+        limpo = _remover_order_by_nao_pedido(
+            sql, 'Quais os 10 CNAEs com mais empresas ativas?')
+        self.assertIn('ORDER BY valor DESC', limpo)

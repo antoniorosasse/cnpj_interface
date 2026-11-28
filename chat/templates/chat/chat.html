@@ -4,7 +4,7 @@
 {% block title %}Chat IA — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261128a">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261128d">
 {% endblock %}
 
 {% block content %}
@@ -121,7 +121,9 @@
                     <button id="enviar" type="button" class="btn btn-primary">
                         <i class="bi bi-search" aria-hidden="true"></i> Consultar
                     </button>
-                    <div class="spinner" id="spinner" role="status" aria-label="Consultando"></div>
+                    <div class="spinner" id="spinner" role="status" aria-label="Consultando" aria-hidden="true">
+                        <span class="spinner__bar"></span>
+                    </div>
                     <span class="ui-muted intel-info" id="info" role="status"></span>
                 </div>
                 <p class="composer-hint ui-muted">Ctrl + Enter envia a pergunta.</p>
@@ -297,7 +299,9 @@
     function setLoading(ativo) {
         botaoEl.disabled = ativo;
         spinnerEl.classList.toggle('ativo', ativo);
-        infoEl.textContent = ativo ? 'Consultando...' : '';
+        spinnerEl.setAttribute('aria-hidden', ativo ? 'false' : 'true');
+        // O indicador horizontal (barra) substitui o texto "Consultando...".
+        infoEl.textContent = '';
     }
 
     function escaparHtml(s) {
@@ -323,6 +327,19 @@
         return String(v);
     }
 
+    // Capital social sempre com duas casas: antes a coluna misturava
+    // "1.433.653.000" com "659.871.225,89".
+    function formatarValorColuna(v, coluna) {
+        const c = String(coluna || '').toLowerCase();
+        if (typeof v === 'number' && Number.isFinite(v) && c.includes('capital')) {
+            return v.toLocaleString('pt-BR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+        }
+        return formatarValor(v);
+    }
+
     // Leva o thread para a ultima mensagem (o thread tem scroll proprio).
     function rolarThreadParaFim() {
         if (!threadEl) return;
@@ -331,31 +348,61 @@
         });
     }
 
-    // Depois de responder, leva a resposta/tabela mais recente para a area
-    // visivel: o thread rola ate a ultima mensagem e o painel rola ate o fim
-    // do ultimo item. Antes o painel alinhava o TOPO do item novo, entao a
-    // tabela aparecia cortada, e o thread ficava parado no layout amplo.
-    function revelarResultado() {
-        rolarThreadParaFim();
-        if (painelEl) {
-            rolarParaUltimoResultado();
-            if (window.matchMedia('(max-width: 1199.98px)').matches) {
-                // Abaixo de 1200px o painel cai depois do thread: leva o fim
-                // do ultimo resultado para dentro da tela.
-                const itens = painelEl.querySelectorAll('.chat-panel__item');
-                const alvo = itens.length ? itens[itens.length - 1] : painelEl;
-                window.requestAnimationFrame(function () {
-                    alvo.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                });
+    // Layout amplo: coloca a ultima pergunta no topo da conversa e alinha o
+    // resultado dela no painel na MESMA altura (o cliente acha a pergunta
+    // pelo titulo em negrito e ve a resposta ao lado).
+    function alinharPerguntaResultado() {
+        if (!painelEl || !threadEl) return;
+        const perguntas = threadEl.querySelectorAll('.turno.user');
+        const itens = painelEl.querySelectorAll('.chat-panel__item');
+        if (!perguntas.length || !itens.length) { rolarThreadParaFim(); return; }
+        const pergunta = perguntas[perguntas.length - 1];
+        const item = itens[itens.length - 1];
+        window.requestAnimationFrame(function () {
+            // Se a coluna da conversa ficou atras da topbar, traz de volta.
+            const topbarH = parseFloat(getComputedStyle(document.documentElement)
+                .getPropertyValue('--p-topbar-h')) || 66;
+            const rectInicial = threadEl.getBoundingClientRect();
+            if (rectInicial.top < topbarH) {
+                window.scrollBy(0, rectInicial.top - topbarH);
             }
+            // 1) o resultado novo comeca no topo do painel (o titulo da
+            //    pergunta nao fica escondido atras do cabecalho).
+            const rectPainel = painelEl.getBoundingClientRect();
+            painelEl.scrollTop += item.getBoundingClientRect().top
+                - rectPainel.top - 4;
+            // 2) desloca a conversa (nao o painel) para a pergunta ficar na
+            //    mesma altura do bloco de resultado; se nao houver historico
+            //    suficiente acima, o navegador limita no topo.
+            threadEl.scrollTop += pergunta.getBoundingClientRect().top
+                - item.getBoundingClientRect().top;
+        });
+    }
+
+    // Depois de responder, mostra o resultado mais recente e termina com a
+    // pagina no fim, para a caixa de pergunta ficar acessivel.
+    function revelarResultado() {
+        if (painelEl && !window.matchMedia('(max-width: 1199.98px)').matches) {
+            alinharPerguntaResultado();
             return;
         }
-        // Sem painel o resultado vive no thread: rola a pagina ate o fim do
-        // ultimo bloco ('nearest' evita pulo quando ja esta visivel).
-        const ultimo = threadEl ? threadEl.lastElementChild : null;
-        if (!ultimo) return;
+        rolarThreadParaFim();
+        if (painelEl) {
+            const itens = painelEl.querySelectorAll('.chat-panel__item');
+            const alvo = itens.length ? itens[itens.length - 1] : painelEl;
+            window.requestAnimationFrame(function () {
+                alvo.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            });
+        } else {
+            const ultimo = threadEl ? threadEl.lastElementChild : null;
+            if (ultimo) {
+                window.requestAnimationFrame(function () {
+                    ultimo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                });
+            }
+        }
         window.requestAnimationFrame(function () {
-            ultimo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
         });
     }
 
@@ -372,7 +419,15 @@
     // Se vazio, devolve string vazia (nada e renderizado).
     // Rodape de procedencia do RAG: deixa explicito que o texto saiu das
     // linhas recuperadas pelo SQL, nao da memoria do modelo.
-    function renderRodapeRag(totalLinhas, truncado, totalReal) {
+    // A exportacao completa so' faz sentido quando a resposta e' uma lista de
+    // empresas (tem coluna de CNPJ). Para contagens/agregacoes nao ha lista.
+    function temColunaCnpj(colunas) {
+        return Array.isArray(colunas) && colunas.some(function (c) {
+            return /cnpj/i.test(String(c));
+        });
+    }
+
+    function renderRodapeRag(totalLinhas, truncado, totalReal, exportavel) {
         const total = Number(totalLinhas);
         // Sem linhas nao ha geracao ancorada (ex: pergunta recusada) -> sem rodape
         if (!isFinite(total) || total <= 0) return '';
@@ -385,13 +440,17 @@
         } else if (truncado) {
             txt += ' · resultado truncado pelo LIMIT';
         }
+        if (exportavel) {
+            txt += ' · a lista completa pode ser gerada em arquivo pelo botão '
+                + '“Exportar tudo”.';
+        }
         return `<div class="rodape-rag"><i class="bi bi-diagram-3"></i>${escaparHtml(txt)}</div>`;
     }
 
     function renderRespostaTexto(texto, meta) {
         if (!texto || !String(texto).trim()) return '';
         const rodape = meta ? renderRodapeRag(meta.linhas, meta.truncado,
-                                                     meta.totalReal) : '';
+                                                     meta.totalReal, meta.exportavel) : '';
         return `<div class="resposta-natural">${escaparHtml(texto)}${rodape}</div>`;
     }
 
@@ -468,6 +527,7 @@
                         linhas: a.total_linhas,
                         truncado: a.truncado,
                         totalReal: a.total_linhas_real,
+                        exportavel: temColunaCnpj(a.colunas),
                     });
                     if (textoNatural) {
                         html += textoNatural;
@@ -623,9 +683,24 @@
             const d = lerData(texto);
             if (d) return String(d.getTime());
         }
-        // Numeros formatados (R$, milhar, virgula decimal) e datas dd/mm/aaaa.
-        const limpo = texto.replace(/[R$\s.]/g, '').replace(',', '.');
-        if (/^-?\d+(\.\d+)?$/.test(limpo)) return limpo;
+        // Numero cru (ex.: capital_social 659871225.89): usa como esta.
+        // Antes o ponto decimal era removido e 659.871.225,89 virava
+        // 65.987.122.589 na ordenacao - por isso a tabela saia fora de
+        // ordem quando o cliente clicava em "Capital social".
+        if (typeof valor === 'number' && Number.isFinite(valor)) {
+            return String(valor);
+        }
+        // Formatos pt-BR: "1.433.653.000", "659.871.225,89", "R$ 1.433,50".
+        let limpo = texto.replace(/[R$\s]/g, '');
+        if (limpo.includes(',')) {
+            limpo = limpo.replace(/\./g, '').replace(',', '.');
+        } else if (/^-?\d{1,3}(\.\d{3})+$/.test(limpo)) {
+            limpo = limpo.replace(/\./g, '');
+        }
+        if (/^-?\d+(\.\d+)?$/.test(limpo)) {
+            const n = Number(limpo);
+            if (Number.isFinite(n)) return String(n);
+        }
         return texto.toLocaleLowerCase('pt-BR');
     }
 
@@ -759,7 +834,7 @@
                         ? ` title="Aberta desde ${escaparHtml(String(dataRef))}"` : '';
                     html += `<td${rotulo} class="sis-num" data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}"${titulo}>${tempo ? escaparHtml(tempo) : '&mdash;'}</td>`;
                 } else {
-                    const vFmt = formatarValor(row[c]);
+                    const vFmt = formatarValorColuna(row[c], c);
                     html += `<td${rotulo} data-row-idx="${rowIdx}" data-valor="${escaparHtml(chaveOrdenacao(row[c], c))}">${vFmt === null ? '<em>null</em>' : escaparHtml(vFmt)}</td>`;
                 }
             }
@@ -1010,6 +1085,7 @@
                     linhas: dados.total_linhas,
                     truncado: dados.truncado,
                     totalReal: dados.total_linhas_real,
+                    exportavel: temColunaCnpj(dados.colunas),
                 },
             );
             if (textoNatural) {
