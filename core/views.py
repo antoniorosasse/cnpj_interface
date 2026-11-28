@@ -4,7 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from django.conf import settings
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -1855,21 +1855,76 @@ def dossie_empresa(request, cnpj):
 
 
 
+def _resumo_filtros(filtros, opcoes):
+    """Texto curto do recorte para o cabecalho e o PDF."""
+    partes = []
+    if filtros.get('uf'):
+        partes.append(f"UF: {filtros['uf']}")
+    if filtros.get('cidade'):
+        nome = next((c['nome'] for c in opcoes.get('cidades', [])
+                     if str(c['codigo']) == str(filtros['cidade'])), None)
+        partes.append(f"Cidade: {nome or filtros['cidade']}")
+    if filtros.get('cnaes'):
+        nomes = {str(c['cnae']): c['nm_cnae'] for c in opcoes.get('cnaes', [])}
+        escolhidos = []
+        for codigo in filtros['cnaes']:
+            nome = nomes.get(str(codigo))
+            escolhidos.append(f"{codigo} - {nome}" if nome else str(codigo))
+        partes.append('CNAE: ' + '; '.join(escolhidos))
+    if filtros.get('situacao'):
+        from core.estatisticas_filtros import SIT_ROTULO
+        partes.append(f"Situação: {SIT_ROTULO.get(filtros['situacao'], '')}")
+    if filtros.get('porte'):
+        from core.estatisticas_filtros import PORTE_NOME
+        partes.append(f"Porte: {PORTE_NOME.get(filtros['porte'], '')}")
+    return ' | '.join(partes)
+
+
+def _url_pdf_estatisticas(filtros):
+    from urllib.parse import urlencode
+    pares = []
+    for k, v in filtros.items():
+        if v in (None, '', []):
+            continue
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                pares.append((k if k != 'cnaes' else 'cnae', item))
+        else:
+            pares.append((k, v))
+    query = urlencode(pares)
+    return reverse('core:estatisticas_pdf') + (('?' + query) if query else '')
+
+
 def estatisticas(request):
     """
     Exibe estatísticas lendo diretamente da tabela c_estatisticas_totais (em < 5ms).
+
+    Com filtros (UF, cidade, CNAE, situação, porte), lê as categorias
+    pré-agregadas `filtro_uf_*`; cidade+CNAE juntos usam consulta estreita
+    (as duas dimensões recortam muito).
     """
+    from core import estatisticas_filtros as estat_filtros
+
     conn = None
     context = {}
+    filtros = estat_filtros.filtros_do_request(request)
+    context['filtros'] = filtros
     try:
         conn = get_postgres_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
+            cur.execute(r"""
                 SELECT categoria, chave, descricao, valor, atualizado_em
                 FROM c_estatisticas_totais
+                WHERE categoria NOT LIKE 'filtro\_%'
                 ORDER BY categoria, valor DESC
             """)
             linhas = cur.fetchall()
+            context['opcoes'] = estat_filtros.carregar_opcoes(conn, filtros.get('uf'))
+            context['situacoes_opcoes'] = estat_filtros.SITUACOES
+            context['portes_opcoes'] = estat_filtros.PORTES
+            selecionados = [c for c in context['opcoes']['cnaes']
+                            if c['cnae'] in (filtros.get('cnaes') or [])]
+            context['cnaes_selecionados'] = selecionados
             recalculo = status_recalculo(conn)
 
             if not linhas and recalculo is not None and not recalculo['ativo']:
@@ -1969,6 +2024,28 @@ def estatisticas(request):
             if ultima_data:
                 context['ultima_atualizacao'] = ultima_data.strftime('%d/%m/%Y %H:%M:%S')
 
+        # Recorte escolhido pelo usuario: substitui os numeros globais.
+        filtros_ativos = any(filtros.values())
+        context['filtros_ativos'] = filtros_ativos
+        if filtros_ativos and conn is not None:
+            try:
+                context.update(estat_filtros.consultar(conn, filtros))
+                # Sem agregados por natureza/socios/Simples dentro do recorte.
+                context['top_naturezas'] = []
+                context['socios'] = None
+                context['simples_mei'] = None
+                context['filtros_resumo'] = _resumo_filtros(
+                    filtros, context.get('opcoes') or {})
+            except Exception as exc:
+                logger.exception('Falha ao aplicar filtros de estatisticas: %s', exc)
+                context['filtros_erro'] = (
+                    'Nao foi possivel aplicar o recorte agora. '
+                    'Tente novamente ou remova os filtros.'
+                )
+                context['filtros_ativos'] = False
+
+        context['pdf_url'] = _url_pdf_estatisticas(filtros)
+
     except Exception as e:
         logger.exception("Erro ao carregar estatísticas: %s", e)
     finally:
@@ -1981,6 +2058,33 @@ def estatisticas(request):
     context['carga_admin_url'] = getattr(settings, 'CARGA_ADMIN_URL', '') or ''
 
     return render(request, 'core/estatisticas.html', context)
+
+def estatisticas_pdf(request):
+    """PDF da pagina de estatisticas, respeitando os filtros da querystring."""
+    from core import estatisticas_filtros as estat_filtros
+    from core.estatisticas_pdf import gerar_pdf_estatisticas
+
+    filtros = estat_filtros.filtros_do_request(request)
+    conn = None
+    try:
+        conn = get_postgres_connection()
+        opcoes = estat_filtros.carregar_opcoes(conn, filtros.get('uf'))
+        dados = estat_filtros.consultar(conn, filtros)
+        resumo = _resumo_filtros(filtros, opcoes)
+        pdf = gerar_pdf_estatisticas(dados, resumo=resumo)
+    except Exception as exc:
+        logger.exception('Falha ao gerar PDF de estatisticas: %s', exc)
+        return HttpResponse('Nao foi possivel gerar o PDF agora.',
+                            content_type='text/plain; charset=utf-8', status=500)
+    finally:
+        if conn:
+            conn.close()
+
+    resposta = HttpResponse(pdf, content_type='application/pdf')
+    resposta['Content-Disposition'] = (
+        'attachment; filename="estatisticas-busquecnpj.pdf"')
+    return resposta
+
 
 def health_deep(request):
     """

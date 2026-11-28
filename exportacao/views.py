@@ -224,6 +224,16 @@ def _valor(linha, chave):
     return valor
 
 
+def _valor_csv(chave, valor):
+    """Valor para CSV: capital social sempre com duas casas."""
+    if chave == 'capital_social' and valor != '':
+        try:
+            return f'{float(valor):.2f}'
+        except (TypeError, ValueError):
+            pass
+    return valor
+
+
 def _linhas_csv(linhas, colunas):
     total = 0
     buffer = io.StringIO()
@@ -244,7 +254,7 @@ def _linhas_csv(linhas, colunas):
                 valor = formatar_cep(valor)
             elif chave == 'km' and valor != '':
                 valor = f'{float(valor):.2f}'
-            valores.append(_celula_csv(valor))
+            valores.append(_celula_csv(_valor_csv(chave, valor)))
         escritor.writerow(valores)
         total += 1
         if total % 500 == 0:
@@ -685,7 +695,8 @@ def _exportar_chat_proximidade(request, alvo, formato, maximo):
             escritor = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
             escritor.writerow([PROX_ROTULOS_CHAT.get(c, c) for c in colunas])
             for linha in linhas:
-                escritor.writerow([_valor(linha, c) for c in colunas])
+                escritor.writerow([_valor_csv(c, _valor(linha, c))
+                                   for c in colunas])
             conteudo = buffer.getvalue()
             tipo = 'text/csv'
     except Exception:
@@ -1022,7 +1033,8 @@ def exportar_chat(request):
             escritor = csv.writer(buffer, delimiter=';', quoting=csv.QUOTE_MINIMAL)
             escritor.writerow(colunas)
             for linha in linhas:
-                escritor.writerow([_valor(linha, c) for c in colunas])
+                escritor.writerow([_valor_csv(c, _valor(linha, c))
+                                   for c in colunas])
             conteudo = buffer.getvalue()
             tipo = 'text/csv'
     except Exception:

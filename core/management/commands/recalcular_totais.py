@@ -3,7 +3,7 @@
 Recalcula c_estatisticas_totais fora do request.
 
 A stored procedure troca as tabelas por RENAME (a pagina nunca fica sem
-dados), mas o calculo leva ~11 min na base de 74,4 M de estabelecimentos -
+dados), mas o calculo leva ~24 min na base de 74,4 M de estabelecimentos -
 acima do timeout de 300 s do gunicorn/nginx. A view /estatisticas/ dispara
 este comando em background e acompanha o status em c_estatisticas_recalculo.
 
@@ -51,7 +51,7 @@ ERRO_SQL = """
 
 class Command(BaseCommand):
     help = ('Recalcula c_estatisticas_totais com troca de tabela '
-            '(~11 min na base de 74,4 M; rodar fora do request).')
+            '(~24 min na base de 74,4 M; rodar fora do request).')
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -77,7 +77,7 @@ class Command(BaseCommand):
                     raise CommandError(
                         'Ja existe um recalculo em andamento (advisory lock ocupado).'
                     )
-                # A SP leva ~11 min: sem statement_timeout. O swap pega
+                # A SP leva ~24 min: sem statement_timeout. O swap pega
                 # ACCESS EXCLUSIVE por milissegundos - se algum leitor segurar
                 # a tabela, aborta em 10 s e a versao anterior continua valendo.
                 cur.execute('SET statement_timeout = 0')

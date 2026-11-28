@@ -118,7 +118,18 @@ def _gravar(job, cursor, colunas, arq, primeiro_lote=None):
                 primeiro = False
                 arq.write(json.dumps(linha, ensure_ascii=False, default=str))
             else:
-                escritor.writerow([_valor(linha, c) for c in colunas])
+                valores = []
+                for c in colunas:
+                    valor = _valor(linha, c)
+                    if c == 'capital_social' and valor != '':
+                        # Duas casas fixas (CSV): evita 1433653000.0 e
+                        # 659871225.89 na mesma coluna.
+                        try:
+                            valor = f'{float(valor):.2f}'
+                        except (TypeError, ValueError):
+                            pass
+                    valores.append(valor)
+                escritor.writerow(valores)
             total += 1
     if job.formato == 'json':
         arq.write(']')

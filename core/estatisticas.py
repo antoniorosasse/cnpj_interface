@@ -5,7 +5,7 @@ Apoio ao recalculo de c_estatisticas_totais.
 A procedure sp_recalcular_estatisticas_totais() calcula tudo em
 c_estatisticas_calc e troca as tabelas por RENAME (lock exclusivo de
 milissegundos, a pagina continua servindo o resultado anterior), mas o
-calculo ainda leva ~11 minutos na base de 74,4 M de estabelecimentos - acima
+calculo ainda leva ~24 minutos na base de 74,4 M de estabelecimentos - acima
 do timeout de 300 s do gunicorn e do proxy_read_timeout 300s do nginx.
 
 Por isso o recalculo roda em outro processo (manage.py recalcular_totais) e
@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 LOCK_KEY = 'c_estatisticas_totais'
 
 # Um status 'rodando' mais velho que isso esta travado (processo morto,
-# kill -9, reboot no meio). A SP leva ~11 min; 30 min e folga.
-LIMITE_RODANDO = '30 minutes'
+# kill -9, reboot no meio). A SP leva ~24 min; 45 min e folga.
+LIMITE_RODANDO = '45 minutes'
 
 STATUS_SQL = f"""
     SELECT status,

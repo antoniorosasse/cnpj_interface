@@ -44,5 +44,6 @@ urlpatterns = [
 
     # Estatísticas
     path('estatisticas/', views.estatisticas, name='estatisticas'),
+    path('estatisticas/pdf/', views.estatisticas_pdf, name='estatisticas_pdf'),
     path('estatisticas/recalcular/', views.recalcular_totais, name='recalcular_totais'),
 ]

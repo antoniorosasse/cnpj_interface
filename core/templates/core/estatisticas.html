@@ -4,7 +4,7 @@
 {% block title %}Estatísticas — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261126i">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261128f">
 {% endblock %}
 
 {% block content %}
@@ -20,8 +20,8 @@
             <p>
                 Panorama agregado da base de CNPJs: situação cadastral, porte,
                 atividades (CNAE), municípios e ano de abertura. Os números vêm
-                da tabela de totais pré-calculados, sem consultar as tabelas
-                gigantes da Receita.
+                da tabela de totais pré-calculados; só combinações muito
+                específicas (cidade + CNAE) usam uma consulta estreita.
             </p>
             {% if ultima_atualizacao %}
             <p class="intel-updated">
@@ -40,7 +40,7 @@
                 <i class="bi bi-speedometer2" aria-hidden="true"></i> Estatísticas de Carga
             </a>
             {% endif %}
-            <form method="post" action="{% url 'core:recalcular_totais' %}" class="intel-recalc" onsubmit="return confirm('Deseja recalcular todos os totais do banco? O calculo leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos) e roda em segundo plano: os numeros atuais continuam no ar ate a troca das tabelas, no fim.');">
+            <form method="post" action="{% url 'core:recalcular_totais' %}" class="intel-recalc" onsubmit="return confirm('Deseja recalcular todos os totais do banco? O calculo leva cerca de 24 minutos nesta base (74,4 M de estabelecimentos) e roda em segundo plano: os numeros atuais continuam no ar ate a troca das tabelas, no fim.');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-warning"{% if recalculo.ativo %} disabled title="Recalculo em andamento"{% endif %}>
                     {% if recalculo.ativo %}
@@ -74,7 +74,7 @@
             <strong>Recalculando os totais em segundo plano.</strong>
             Os numeros abaixo sao os do ultimo recalculo concluido e continuam no ar
             ate a troca das tabelas, no fim do calculo. A pagina se atualiza sozinha.
-            <span class="ui-muted">Leva cerca de 11 minutos nesta base (74,4 M de estabelecimentos).</span>
+            <span class="ui-muted">Leva cerca de 24 minutos nesta base (74,4 M de estabelecimentos).</span>
         </div>
     </div>
     {% elif recalculo.status == 'erro' and user.is_superuser %}
@@ -89,6 +89,128 @@
         {{ recalculo.iniciado_em|date:"d/m/Y H:i" }}, mas o processo nao esta mais ativo.
         Clique em "Recalcular Totais do Banco" para rodar de novo.
     </div>
+    {% endif %}
+
+    {# ============================================================ #}
+    {# FILTROS DO RECORTE #}
+    {# ============================================================ #}
+    {% if opcoes %}
+    <section class="ui-section intel-filtros" aria-labelledby="titulo-filtros">
+        <div class="ui-section__head">
+            <div>
+                <h2 id="titulo-filtros">Filtrar o panorama</h2>
+                <p>Escolha estado, cidade, atividade (CNAE), situação e porte.
+                   Os números abaixo passam a refletir o recorte.</p>
+            </div>
+            {% if pdf_url %}
+            <a href="{{ pdf_url }}" class="btn btn-outline-primary" rel="nofollow"
+               title="Baixar este panorama em PDF, com os filtros aplicados">
+                <i class="bi bi-filetype-pdf" aria-hidden="true"></i> Baixar PDF
+            </a>
+            {% endif %}
+        </div>
+
+        <form method="get" action="{% url 'core:estatisticas' %}" class="intel-filtros__form">
+            <div class="intel-filtros__campos">
+                <label class="intel-filtros__campo">
+                    <span>Estado</span>
+                    <select name="uf" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        {% for u in opcoes.ufs %}
+                        <option value="{{ u.uf }}"{% if filtros.uf == u.uf %} selected{% endif %}>{{ u.uf }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="intel-filtros__campo">
+                    <span>Cidade</span>
+                    <select name="cidade" class="form-select form-select-sm"{% if not filtros.uf %} disabled{% endif %}>
+                        {% if filtros.uf %}
+                        <option value="">Todas</option>
+                        {% for c in opcoes.cidades %}
+                        <option value="{{ c.codigo }}"{% if filtros.cidade|stringformat:"s" == c.codigo|stringformat:"s" %} selected{% endif %}>{{ c.nome }}</option>
+                        {% endfor %}
+                        {% else %}
+                        <option value="">Escolha o estado primeiro</option>
+                        {% endif %}
+                    </select>
+                </label>
+
+                <div class="intel-filtros__campo intel-filtros__campo--cnae">
+                    <label for="cnae-busca">Atividade (CNAE)</label>
+                    <div class="intel-cnae" id="cnae-picker">
+                        <div class="intel-cnae__chips" id="cnae-chips">
+                            {% for c in cnaes_selecionados %}
+                            <span class="intel-cnae__chip">
+                                {{ c.cnae }} - {{ c.nm_cnae }}
+                                <button type="button" class="intel-cnae__chip-remover"
+                                        data-cnae-remover="{{ c.cnae }}"
+                                        aria-label="Remover atividade {{ c.nm_cnae }}">×</button>
+                            </span>
+                            <input type="hidden" name="cnae" value="{{ c.cnae }}">
+                            {% endfor %}
+                        </div>
+                        <input type="text" id="cnae-busca" class="form-control form-select-sm"
+                               placeholder="Digite código ou nome (ex.: 4711, padaria)"
+                               autocomplete="off" role="combobox" aria-expanded="false"
+                               aria-controls="cnae-lista" aria-autocomplete="list">
+                        <ul id="cnae-lista" class="intel-cnae__lista" role="listbox" hidden></ul>
+                    </div>
+                    <p class="intel-cnae__dica ui-muted">
+                        Aceita vários: escolha um, digite outro e escolha de novo.
+                        Também aceita vários códigos separados por vírgula.
+                    </p>
+                </div>
+
+                <label class="intel-filtros__campo">
+                    <span>Situação</span>
+                    <select name="situacao" class="form-select form-select-sm">
+                        <option value="">Todas</option>
+                        {% for cod, rotulo, nome in situacoes_opcoes %}
+                        <option value="{{ cod }}"{% if filtros.situacao == cod %} selected{% endif %}>{{ nome }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="intel-filtros__campo">
+                    <span>Porte</span>
+                    <select name="porte" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        {% for cod, rotulo, nome in portes_opcoes %}
+                        <option value="{{ cod }}"{% if filtros.porte == cod %} selected{% endif %}>{{ nome }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="intel-filtros__acoes">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-funnel" aria-hidden="true"></i> Aplicar filtros
+                </button>
+                <a href="{% url 'core:estatisticas' %}" class="btn btn-outline-secondary">
+                    Limpar
+                </a>
+                {% if filtros_ativos %}
+                <span class="intel-filtros__resumo ui-muted">
+                    <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                    {{ filtros_resumo }}
+                </span>
+                {% if rankings_indisponiveis %}
+                <span class="ui-muted" style="font-size:.8rem">
+                    Rankings por CNAE e ano não estão pré-agregados para cidade + porte;
+                    os demais números do recorte estão completos.
+                </span>
+                {% endif %}
+                {% endif %}
+            </div>
+        </form>
+
+        {{ opcoes.cnaes|json_script:"cnaes-data" }}
+
+        {% if filtros_erro %}
+        <div class="alert alert-warning mt-3" role="alert">{{ filtros_erro }}</div>
+        {% endif %}
+    </section>
     {% endif %}
 
     {# ============================================================ #}
@@ -135,6 +257,7 @@
                     <p class="ui-kpi__foot">situação BAIXADA</p>
                 </div>
             </div>
+            {% if not filtros_ativos %}
             <div class="ui-kpi">
                 <span class="ui-kpi__icon" aria-hidden="true"><i class="bi bi-receipt"></i></span>
                 <div>
@@ -151,6 +274,7 @@
                     <p class="ui-kpi__foot">optantes pelo MEI</p>
                 </div>
             </div>
+            {% endif %}
             <div class="ui-kpi">
                 <span class="ui-kpi__icon ui-kpi__icon--warn" aria-hidden="true"><i class="bi bi-pause-circle"></i></span>
                 <div>
@@ -386,6 +510,7 @@
                 </div>
             </div>
 
+            {% if not filtros_ativos %}
             <div class="ui-card intel-card">
                 <div class="ui-card__head">
                     <h3 class="ui-card__title"><i class="bi bi-list-ol" aria-hidden="true"></i> Top 10 naturezas jurídicas</h3>
@@ -415,6 +540,8 @@
                     </div>
                 </div>
             </div>
+
+            {% endif %}
 
             <div class="ui-card intel-card">
                 <div class="ui-card__head">
@@ -516,6 +643,7 @@
                 </div>
             </div>
 
+            {% if not filtros_ativos %}
             <div class="ui-card intel-card">
                 <div class="ui-card__head">
                     <h3 class="ui-card__title"><i class="bi bi-people" aria-hidden="true"></i> Sócios</h3>
@@ -533,6 +661,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
         </div>
     </section>
 
@@ -546,9 +675,197 @@
 
 {% block extra_js %}
 <script src="{% static 'js/portal-inteligencia.js' %}?v=20261121" defer></script>
+{% if opcoes %}
+<script>
+(function () {
+    'use strict';
+    var dataEl = document.getElementById('cnaes-data');
+    if (!dataEl) return;
+    var CNAES = JSON.parse(dataEl.textContent || '[]');
+    var picker = document.getElementById('cnae-picker');
+    var busca = document.getElementById('cnae-busca');
+    var lista = document.getElementById('cnae-lista');
+    var chips = document.getElementById('cnae-chips');
+    if (!picker || !busca || !lista || !chips) return;
+
+    var mapa = {};
+    CNAES.forEach(function (c) { mapa[String(c.cnae)] = c; });
+    var selecionados = {};
+    Array.prototype.forEach.call(
+        picker.querySelectorAll('input[name="cnae"]'),
+        function (inp) { selecionados[String(inp.value)] = true; }
+    );
+
+    function normalizar(texto) {
+        return String(texto || '').normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
+    function atualizarHidden() {
+        Array.prototype.forEach.call(
+            picker.querySelectorAll('input[name="cnae"]'),
+            function (inp) { inp.parentNode.removeChild(inp); }
+        );
+        Object.keys(selecionados).sort().forEach(function (codigo) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'cnae';
+            input.value = codigo;
+            picker.appendChild(input);
+        });
+    }
+
+    function renderChips() {
+        chips.innerHTML = '';
+        Object.keys(selecionados).sort().forEach(function (codigo) {
+            var item = mapa[codigo] || { nm_cnae: '' };
+            var chip = document.createElement('span');
+            chip.className = 'intel-cnae__chip';
+            chip.appendChild(document.createTextNode(
+                codigo + ' - ' + (item.nm_cnae || '')));
+            var remover = document.createElement('button');
+            remover.type = 'button';
+            remover.className = 'intel-cnae__chip-remover';
+            remover.setAttribute('aria-label',
+                'Remover atividade ' + (item.nm_cnae || codigo));
+            remover.textContent = '\u00d7';
+            remover.addEventListener('click', function () {
+                delete selecionados[codigo];
+                atualizarHidden();
+                renderChips();
+                renderLista();
+                busca.focus();
+            });
+            chip.appendChild(remover);
+            chips.appendChild(chip);
+        });
+    }
+
+    function abrirLista() {
+        lista.hidden = false;
+        busca.setAttribute('aria-expanded', 'true');
+    }
+
+    function fecharLista() {
+        lista.hidden = true;
+        busca.setAttribute('aria-expanded', 'false');
+    }
+
+    function renderLista() {
+        var termo = normalizar(busca.value).trim();
+        var itens = CNAES.filter(function (c) {
+            if (!termo) return true;
+            return String(c.cnae).indexOf(termo) >= 0
+                || normalizar(c.nm_cnae).indexOf(termo) >= 0;
+        }).slice(0, 80);
+
+        lista.innerHTML = '';
+        if (!itens.length) {
+            var vazio = document.createElement('li');
+            vazio.className = 'intel-cnae__vazio';
+            vazio.textContent = 'Nenhuma atividade encontrada';
+            lista.appendChild(vazio);
+            abrirLista();
+            return;
+        }
+        itens.forEach(function (c) {
+            var codigo = String(c.cnae);
+            var li = document.createElement('li');
+            li.className = 'intel-cnae__opcao';
+            li.setAttribute('role', 'option');
+            li.setAttribute('aria-selected',
+                selecionados[codigo] ? 'true' : 'false');
+            li.tabIndex = 0;
+            li.dataset.cnae = codigo;
+            li.textContent = codigo + ' - ' + c.nm_cnae;
+            if (selecionados[codigo]) li.classList.add('is-selecionado');
+            lista.appendChild(li);
+        });
+        abrirLista();
+    }
+
+    function adicionarPorTexto() {
+        var bruto = busca.value.trim();
+        if (!bruto) return false;
+        var partes = bruto.split(/[,;]+/);
+        var adicionou = false;
+        partes.forEach(function (parte) {
+            var codigo = parte.trim();
+            if (/^\d+$/.test(codigo) && mapa[codigo]) {
+                selecionados[codigo] = true;
+                adicionou = true;
+            }
+        });
+        if (adicionou) {
+            atualizarHidden();
+            renderChips();
+            busca.value = '';
+            renderLista();
+        }
+        return adicionou;
+    }
+
+    function alternar(codigo) {
+        if (selecionados[codigo]) delete selecionados[codigo];
+        else selecionados[codigo] = true;
+        atualizarHidden();
+        renderChips();
+        renderLista();
+        busca.focus();
+    }
+
+    busca.addEventListener('input', renderLista);
+    busca.addEventListener('focus', renderLista);
+    busca.addEventListener('keydown', function (ev) {
+        var primeira = lista.querySelector('.intel-cnae__opcao');
+        if (ev.key === 'ArrowDown' && primeira) {
+            ev.preventDefault();
+            primeira.focus();
+        } else if (ev.key === 'Escape') {
+            fecharLista();
+        } else if (ev.key === 'Enter') {
+            ev.preventDefault();
+            if (adicionarPorTexto()) return;
+            if (!lista.hidden && primeira) alternar(primeira.dataset.cnae);
+        }
+    });
+
+    lista.addEventListener('click', function (ev) {
+        var alvo = ev.target.closest('.intel-cnae__opcao');
+        if (alvo) alternar(alvo.dataset.cnae);
+    });
+
+    lista.addEventListener('keydown', function (ev) {
+        var alvo = ev.target.closest('.intel-cnae__opcao');
+        if (!alvo) return;
+        if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            alternar(alvo.dataset.cnae);
+        } else if (ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            if (alvo.nextElementSibling) alvo.nextElementSibling.focus();
+        } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            if (alvo.previousElementSibling) alvo.previousElementSibling.focus();
+            else busca.focus();
+        } else if (ev.key === 'Escape') {
+            fecharLista();
+            busca.focus();
+        }
+    });
+
+    document.addEventListener('click', function (ev) {
+        if (!picker.contains(ev.target)) fecharLista();
+    });
+
+    renderChips();
+    atualizarHidden();
+})();
+</script>
+{% endif %}
 {% if recalculo.ativo %}
 <script>
-    // O recalculo roda em outro processo (~11 min): recarrega a cada 15 s
+    // O recalculo roda em outro processo (~24 min): recarrega a cada 15 s
     // para trocar o aviso pelo resultado quando ele terminar.
     setTimeout(function () { window.location.reload(); }, 15000);
 </script>

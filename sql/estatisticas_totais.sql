@@ -116,6 +116,208 @@ BEGIN
     WHERE cd_matriz_filial = 1 AND uf IS NOT NULL AND TRIM(uf) <> ''
     GROUP BY UPPER(uf);
 
+    -- 3b. UF + situacao ATIVA (responde "quantas empresas ativas por UF").
+    -- Medido em 28/11/2026: ~25 s nesta varredura; o chat respondia em ~26 s
+    -- ou recusava. A categoria deixa a leitura em milissegundos.
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    SELECT
+        'c_estabelecimentos',
+        'uf_ativa',
+        UPPER(uf),
+        'Matrizes ativas na UF ' || UPPER(uf),
+        COUNT(*)
+    FROM c_estabelecimentos
+    WHERE cd_matriz_filial = 1 AND cd_sit_cadastro = 2
+      AND uf IS NOT NULL AND TRIM(uf) <> ''
+    GROUP BY UPPER(uf);
+
+    -- 3c. Municipio + situacao ATIVA (responde "ativas por UF e cidade").
+    -- A chave leva a UF: 'SC|8105'. Custo medido: ~30 s para o Brasil todo.
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    WITH t AS (
+        -- Agrupa pelo codigo antes de juntar o nome: juntar c_municipios
+        -- antes do GROUP BY levava > 5 min no Brasil todo.
+        SELECT UPPER(uf) AS uf, municipio, COUNT(*) AS valor
+        FROM c_estabelecimentos
+        WHERE cd_matriz_filial = 1 AND cd_sit_cadastro = 2
+          AND uf IS NOT NULL AND municipio IS NOT NULL
+        GROUP BY UPPER(uf), municipio
+    )
+    SELECT
+        'c_estabelecimentos + c_municipios',
+        'municipio_ativa',
+        t.uf || '|' || t.municipio::text,
+        COALESCE(m.municipio, 'NAO INFORMADO') || '|' || t.uf,
+        t.valor
+    FROM t
+    LEFT JOIN c_municipios m ON m.cd_municipio = t.municipio;
+
+    -- 3d. UF + ano de abertura + situacao ATIVA (responde "ativas por ano
+    -- em SC"): a consulta direta levava ~68 s e era recusada. Chave
+    -- 'SC|2025'.
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    SELECT
+        'c_estabelecimentos',
+        'uf_ano_ativa',
+        UPPER(uf) || '|' || EXTRACT(YEAR FROM dt_ini)::integer::text,
+        'Ativas abertas em ' || EXTRACT(YEAR FROM dt_ini)::integer::text
+            || ' na UF ' || UPPER(uf),
+        COUNT(*)
+    FROM c_estabelecimentos
+    WHERE cd_matriz_filial = 1 AND cd_sit_cadastro = 2
+      AND uf IS NOT NULL AND TRIM(uf) <> '' AND dt_ini IS NOT NULL
+    GROUP BY UPPER(uf), EXTRACT(YEAR FROM dt_ini);
+
+    -- 3e. Capitais + situacao ATIVA (responde "ativas por UF e capitais").
+    -- Codigos TOM (c_municipios.cd_municipio), um por UF; nao depende de
+    -- c_municipios_geo, que ainda nao existe em producao.
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    SELECT
+        'c_estabelecimentos + c_municipios',
+        'capital_ativa',
+        split_part(chave, '|', 1),
+        'Matrizes ativas na capital ' || descricao,
+        valor
+    FROM c_estatisticas_calc
+    WHERE categoria = 'municipio_ativa'
+      AND chave IN (
+        'AC|139', 'AL|2785', 'AM|255', 'AP|605', 'BA|3849', 'CE|1389',
+        'DF|9701', 'ES|5705', 'GO|9373', 'MA|921', 'MG|4123', 'MS|9051',
+        'MT|9067', 'PA|427', 'PB|2051', 'PE|2531', 'PI|1219', 'PR|7535',
+        'RJ|6001', 'RN|1761', 'RO|3', 'RR|301', 'RS|8801', 'SC|8105',
+        'SE|3105', 'SP|7107', 'TO|9733'
+      );
+
+    -- 3f. Niveis de filtro da pagina de estatisticas (UF, cidade, CNAE,
+    -- situacao e porte). Sao lidos em milissegundos pela pagina; sem eles
+    -- qualquer filtro exigiria varrer os 74,4 M de estabelecimentos.
+    --
+    -- UF + situacao + porte (para os KPIs e distribuicoes de porte/situacao)
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    SELECT
+        'c_estabelecimentos + c_empresas',
+        'filtro_uf_sit_porte',
+        UPPER(e.uf) || '|' || e.cd_sit_cadastro::text || '|' ||
+        CASE
+            WHEN emp.porte_empresa = 1 THEN '1'
+            WHEN emp.porte_empresa = 3 THEN '3'
+            WHEN emp.porte_empresa = 5 THEN '5'
+            ELSE '0'
+        END,
+        'UF ' || UPPER(e.uf) || ' situacao ' || e.cd_sit_cadastro::text,
+        COUNT(*)
+    FROM c_estabelecimentos e
+    JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+    WHERE e.cd_matriz_filial = 1
+      AND e.uf IS NOT NULL AND TRIM(e.uf) <> ''
+    GROUP BY UPPER(e.uf), e.cd_sit_cadastro,
+        CASE
+            WHEN emp.porte_empresa = 1 THEN '1'
+            WHEN emp.porte_empresa = 3 THEN '3'
+            WHEN emp.porte_empresa = 5 THEN '5'
+            ELSE '0'
+        END;
+
+    -- UF + municipio + situacao + porte (filtro de cidade e porte)
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    WITH t AS (
+        SELECT UPPER(e.uf) AS uf, e.municipio, e.cd_sit_cadastro,
+               CASE
+                   WHEN emp.porte_empresa = 1 THEN '1'
+                   WHEN emp.porte_empresa = 3 THEN '3'
+                   WHEN emp.porte_empresa = 5 THEN '5'
+                   ELSE '0'
+               END AS porte,
+               COUNT(*) AS valor
+        FROM c_estabelecimentos e
+        JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+        WHERE e.cd_matriz_filial = 1
+          AND e.uf IS NOT NULL AND e.municipio IS NOT NULL
+        GROUP BY UPPER(e.uf), e.municipio, e.cd_sit_cadastro,
+                 CASE
+                     WHEN emp.porte_empresa = 1 THEN '1'
+                     WHEN emp.porte_empresa = 3 THEN '3'
+                     WHEN emp.porte_empresa = 5 THEN '5'
+                     ELSE '0'
+                 END
+    )
+    SELECT
+        'c_estabelecimentos + c_empresas + c_municipios',
+        'filtro_uf_mun_sit_porte',
+        t.uf || '|' || t.municipio::text || '|' || t.cd_sit_cadastro::text
+            || '|' || t.porte,
+        COALESCE(m.municipio, 'NAO INFORMADO') || '|' || t.uf,
+        t.valor
+    FROM t
+    LEFT JOIN c_municipios m ON m.cd_municipio = t.municipio;
+
+    -- UF + CNAE + situacao + porte (filtro de atividade e porte)
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    WITH t AS (
+        SELECT UPPER(e.uf) AS uf, e.cnae_principal AS cnae,
+               e.cd_sit_cadastro,
+               CASE
+                   WHEN emp.porte_empresa = 1 THEN '1'
+                   WHEN emp.porte_empresa = 3 THEN '3'
+                   WHEN emp.porte_empresa = 5 THEN '5'
+                   ELSE '0'
+               END AS porte,
+               COUNT(*) AS valor
+        FROM c_estabelecimentos e
+        JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+        WHERE e.cd_matriz_filial = 1
+          AND e.uf IS NOT NULL AND e.cnae_principal IS NOT NULL
+        GROUP BY UPPER(e.uf), e.cnae_principal, e.cd_sit_cadastro,
+                 CASE
+                     WHEN emp.porte_empresa = 1 THEN '1'
+                     WHEN emp.porte_empresa = 3 THEN '3'
+                     WHEN emp.porte_empresa = 5 THEN '5'
+                     ELSE '0'
+                 END
+    )
+    SELECT
+        'c_estabelecimentos + c_empresas + c_cnaes',
+        'filtro_uf_cnae_sit_porte',
+        t.uf || '|' || t.cnae::text || '|' || t.cd_sit_cadastro::text
+            || '|' || t.porte,
+        COALESCE(c.nm_cnae, 'NAO INFORMADO'),
+        t.valor
+    FROM t
+    LEFT JOIN c_cnaes c ON c.cnae = t.cnae;
+
+    -- UF + ano de abertura + situacao + porte (serie anual filtrada)
+    INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
+    WITH t AS (
+        SELECT UPPER(e.uf) AS uf, EXTRACT(YEAR FROM e.dt_ini)::integer AS ano,
+               e.cd_sit_cadastro,
+               CASE
+                   WHEN emp.porte_empresa = 1 THEN '1'
+                   WHEN emp.porte_empresa = 3 THEN '3'
+                   WHEN emp.porte_empresa = 5 THEN '5'
+                   ELSE '0'
+               END AS porte,
+               COUNT(*) AS valor
+        FROM c_estabelecimentos e
+        JOIN c_empresas emp ON emp.cnpj_basico = e.cnpj_basico
+        WHERE e.cd_matriz_filial = 1
+          AND e.uf IS NOT NULL AND e.dt_ini IS NOT NULL
+        GROUP BY UPPER(e.uf), EXTRACT(YEAR FROM e.dt_ini), e.cd_sit_cadastro,
+                 CASE
+                     WHEN emp.porte_empresa = 1 THEN '1'
+                     WHEN emp.porte_empresa = 3 THEN '3'
+                     WHEN emp.porte_empresa = 5 THEN '5'
+                     ELSE '0'
+                 END
+    )
+    SELECT
+        'c_estabelecimentos + c_empresas',
+        'filtro_uf_ano_sit_porte',
+        t.uf || '|' || t.ano::text || '|' || t.cd_sit_cadastro::text
+            || '|' || t.porte,
+        'Aberturas ' || t.ano::text || ' na UF ' || t.uf,
+        t.valor
+    FROM t;
+
     -- 4. Simples Nacional e MEI
     INSERT INTO c_estatisticas_calc (tabelas_origem, categoria, chave, descricao, valor)
     SELECT 'c_simples', 'simples', 'S', 'Optantes pelo Simples Nacional', COUNT(*)
