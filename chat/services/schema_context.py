@@ -415,16 +415,13 @@ EXEMPLO COMPLETO para "liste os mercados KOCH":
 4691500 (atacadista), 4711301 (hipermercados), 4711302
 (supermercados) e 4712100 (minimercados). O NOT EXISTS zera o vetor.
 
-Toda LISTAGEM com LIMIT deve ter ORDER BY (ex:
-ORDER BY emp.razao_social). Sem ORDER BY o corte das 100 linhas e'
-arbitrario e a empresa procurada pode ficar de fora.
-
-EXCECAO DE PERFORMANCE: listagem com filtro seletivo (categoria da KB,
-capital social ou dt_ini) NAO deve ordenar por emp.razao_social. A
-ordenacao obriga o Postgres a varrer todos os candidatos antes do LIMIT;
-use ORDER BY e.id_estabelecimento (barato e deterministico) ou nenhum
-ORDER BY. Medido em 2026-11: 17-30 s com razao_social x 0,5-4 s com
-id_estabelecimento.
+LISTAGEM com LIMIT: use ORDER BY somente quando o usuario pedir
+ordenacao explicita ("ordene", "maiores", "menores", "ranking", "top").
+Sem pedido de ordem, OMITA o ORDER BY: o Postgres para no LIMIT e a
+consulta fica muito mais rapida. NAO use ORDER BY emp.razao_social nem
+ORDER BY e.id_estabelecimento por conta propria em listas grandes; ambos
+obrigam a avaliar todos os candidatos e ja' causaram timeout (medido em
+2026-11: C1/C6 com ORDER BY = 10-35 s; sem ORDER BY = 0,1-6 s).
 
 
 c_municipios

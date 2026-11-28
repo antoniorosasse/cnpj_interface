@@ -235,6 +235,42 @@ def _pos_top_level(sql, palavra):
     return -1
 
 
+def _simples_in_para_exists(sql):
+    """Troca `cnpj_basico IN (SELECT ... c_simples op_mei='S')` por EXISTS."""
+    padrao = re.compile(
+        r'\b([\w.]+)\.cnpj_basico\s+IN\s*\(\s*SELECT\s+cnpj_basico\s+'
+        r'FROM\s+c_simples\s+WHERE\s+op_mei\s*=\s*\'S\'\s*\)',
+        re.IGNORECASE)
+    return padrao.sub(
+        lambda m: (f'EXISTS (SELECT 1 FROM c_simples s '
+                   f'WHERE s.cnpj_basico = {m.group(1)}.cnpj_basico '
+                   f'AND s.op_mei = \'S\')'),
+        sql)
+
+
+def _simples_join_para_exists(sql):
+    """No COUNT, troca JOIN c_simples por EXISTS (MEI).
+
+    O JOIN forca o COUNT a passar por 26M de linhas de simples; o EXISTS
+    permite nested-loop pelo indice de cnpj_basico e cai de ~34 s para ~3 s.
+    """
+    m = re.search(
+        r'\bJOIN\s+c_simples\s+(\w+)\s+ON\s+\1\.cnpj_basico\s*=\s*([\w.]+)\.cnpj_basico',
+        sql, re.IGNORECASE)
+    if not m:
+        return sql
+    alias, base = m.group(1), m.group(2)
+    sql = sql[:m.start()] + sql[m.end():]
+    exists = (f"EXISTS (SELECT 1 FROM c_simples {alias} "
+              f"WHERE {alias}.cnpj_basico = {base}.cnpj_basico "
+              f"AND {alias}.op_mei = 'S')")
+    # Substitui a condicao do alias removido pelo EXISTS.
+    sql = re.sub(
+        r"\bAND\s+" + re.escape(alias) + r"\.op_mei\s*=\s*'S'",
+        'AND ' + exists, sql, count=1, flags=re.IGNORECASE)
+    return sql
+
+
 def _limpar_para_contagem(sql):
     """Transforma um SELECT de listagem em SELECT COUNT(*), sem ORDER/LIMIT."""
     if not sql or not sql.lstrip().upper().startswith('SELECT'):
@@ -269,6 +305,13 @@ def _limpar_para_contagem(sql):
         if aliases and not any(re.search(r'\b' + re.escape(a) + r'\.',
                                          where_sql) for a in aliases):
             corpo = corpo[:pos_join] + where_sql
+    # Cidade por codigo IBGE: o UF e' redundante no COUNT e atrapalha o
+    # indice (municipio, sit, dt_ini). Remove so' no COUNT.
+    if re.search(r'\.municipio\s*=\s*\(\s*SELECT', corpo, re.IGNORECASE):
+        corpo = re.sub(r"\bAND\s+\w+\.uf\s*=\s*'[A-Z]{2}'",
+                       '', corpo, count=1, flags=re.IGNORECASE)
+    corpo = _simples_in_para_exists(corpo)
+    corpo = _simples_join_para_exists(corpo)
     return 'SELECT COUNT(*) AS total ' + corpo
 
 
