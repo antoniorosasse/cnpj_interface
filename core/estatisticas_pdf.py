@@ -8,7 +8,9 @@ proposta/relatorio.
 """
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 
+from django.conf import settings
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -20,6 +22,36 @@ AZUL = colors.HexColor('#0f5132')
 CINZA = colors.HexColor('#5c6b73')
 LINHA = colors.HexColor('#d9e2e8')
 FUNDO = colors.HexColor('#f4f7f9')
+LARANJA = colors.HexColor('#b45309')
+LOGO_PDF = Path(settings.BASE_DIR) / 'static' / 'img' / 'logo-busquecnpj.png'
+
+
+def _cabecalho_rodape(canvas, doc):
+    """Marca no topo de todas as paginas + rodape institucional."""
+    largura, altura = A4
+    canvas.saveState()
+    if LOGO_PDF.exists():
+        canvas.drawImage(str(LOGO_PDF), 16 * mm, altura - 19 * mm,
+                         width=58 * mm, height=15 * mm,
+                         preserveAspectRatio=True, mask='auto')
+    else:
+        canvas.setFillColor(AZUL)
+        canvas.setFont('Helvetica-Bold', 16)
+        canvas.drawString(16 * mm, altura - 15 * mm, 'BusqueCNPJ')
+    canvas.setStrokeColor(AZUL)
+    canvas.setLineWidth(1.1)
+    canvas.line(16 * mm, altura - 22 * mm, largura - 16 * mm, altura - 22 * mm)
+    canvas.setStrokeColor(LARANJA)
+    canvas.setLineWidth(0.9)
+    canvas.line(16 * mm, altura - 22.8 * mm, 46 * mm, altura - 22.8 * mm)
+
+    canvas.setFillColor(CINZA)
+    canvas.setFont('Helvetica', 7)
+    canvas.drawString(16 * mm, 9 * mm,
+                      'BusqueCNPJ · inteligência comercial de CNPJ · busquecnpj.com.br')
+    canvas.drawRightString(largura - 16 * mm, 9 * mm,
+                           f'Página {doc.page}')
+    canvas.restoreState()
 
 
 def _num(valor):
@@ -58,13 +90,15 @@ def gerar_pdf_estatisticas(dados, resumo=None, agora=None):
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
         leftMargin=16 * mm, rightMargin=16 * mm,
-        topMargin=14 * mm, bottomMargin=14 * mm,
+        topMargin=30 * mm, bottomMargin=16 * mm,
         title='Estatisticas - BusqueCNPJ',
         author='BusqueCNPJ',
+        subject='Panorama estatistico da base de CNPJ',
+        creator='BusqueCNPJ',
     )
     base = getSampleStyleSheet()
-    titulo = ParagraphStyle('titulo', parent=base['Title'], fontSize=18,
-                            leading=22, textColor=AZUL, spaceAfter=2)
+    titulo = ParagraphStyle('titulo', parent=base['Title'], fontSize=16,
+                            leading=19, textColor=AZUL, spaceAfter=2)
     sub = ParagraphStyle('sub', parent=base['Normal'], fontSize=8.5,
                          leading=11, textColor=CINZA, spaceAfter=8)
     h2 = ParagraphStyle('h2', parent=base['Heading2'], fontSize=11.5,
@@ -134,7 +168,8 @@ def gerar_pdf_estatisticas(dados, resumo=None, agora=None):
         'Os números são de matrizes (estabelecimento principal).',
         ParagraphStyle('fonte', parent=corpo, fontSize=7.5, textColor=CINZA)))
 
-    doc.build(elementos)
+    doc.build(elementos, onFirstPage=_cabecalho_rodape,
+              onLaterPages=_cabecalho_rodape)
     pdf = buffer.getvalue()
     buffer.close()
     return pdf
