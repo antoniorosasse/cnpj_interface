@@ -40,6 +40,10 @@ class ConfiguracaoUsoAdmin(admin.ModelAdmin):
             'description': ('Só funciona com TURNSTILE_SITE_KEY e TURNSTILE_SECRET_KEY '
                             'no .env. Contas logadas nunca passam pelo desafio.'),
         }),
+        ('Conteúdo do chat', {
+            'fields': ('chat_dicas_titulo', 'chat_dicas_texto'),
+            'description': 'Texto exibido no bloco “Dicas” da página do chat.',
+        }),
         ('Teto por IP (todas as identidades do mesmo IP, por dia)', {
             'fields': ('ip_dia_lista', 'ip_dia_proximidade', 'ip_dia_chat',
                        'ip_dia_exportacao'),

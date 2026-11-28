@@ -17,6 +17,7 @@ Sem acentos no codigo. Comentarios em PT-BR sem acento.
 """
 
 import json
+import re
 import logging
 
 from django.contrib.auth.decorators import login_required
@@ -313,7 +314,8 @@ def chat_view(request):
                 d['plano'] = m.plano
             return d
 
-    from exportacao.servicos import uso_atual
+    from exportacao.servicos import configuracao, uso_atual
+    cfg_chat = configuracao()
 
     mensagens_json = [_serializar_msg(m) for m in mensagens]
 
@@ -324,6 +326,10 @@ def chat_view(request):
         'mensagens_json': json.dumps(mensagens_json, default=str),
         'ultima_lista_linhas': ultima_lista_linhas,
         'chat_uso': uso_atual(request, 'chat'),
+        'chat_dicas': {
+            'titulo': cfg_chat.chat_dicas_titulo or 'Dicas',
+            'texto': cfg_chat.chat_dicas_texto or '',
+        },
         # Layout amplo e' fixo desde 23/11; ?layout=padrao e' backup manual.
         'layout_padrao': layout_padrao,
         # Quantas linhas do resultado o resposta_natural manda pro prompt.
@@ -507,7 +513,7 @@ def chat_api_view(request):
     total_real = None
     if truncado_efetivo and execucao.get('ok'):
         # COUNT companheiro, com timeout curto; se nao der, segue sem total.
-        total_real = contar_linhas(sql_executado, timeout_ms=3000)
+        total_real = contar_linhas(sql_executado, timeout_ms=8000)
 
     if execucao['ok'] and execucao.get('rows'):
         resposta_texto = gerar_texto_resposta(
@@ -542,10 +548,42 @@ def chat_api_view(request):
     # O texto natural pode ignorar o total real; reforca deterministicamente.
     if (total_real is not None and execucao.get('ok')
             and total_real > execucao['total_linhas']):
-        sufixo = (f' Total real no filtro: {total_real:,}'.replace(',', '.')
-                  + f'; exibindo as primeiras {execucao["total_linhas"]} linhas.')
-        if sufixo.strip() not in (resposta_texto or ''):
-            resposta_texto = (resposta_texto or '').rstrip() + sufixo
+        exibidas = execucao['total_linhas']
+        total_txt = f'{total_real:,}'.replace(',', '.')
+        texto = (resposta_texto or '').strip()
+        # Troca "Foram encontradas 100..." pelo total real, para o cliente ver
+        # o numero correto ja no inicio da resposta.
+        padrao = re.compile(
+            r'(?i)(foram encontrad[oa]s?|a consulta retornou|encontrei|retornou)'
+            r'\s+(?:cerca de\s+)?' + str(exibidas) + r'\b')
+        if padrao.search(texto):
+            texto = padrao.sub(r'\1 ' + total_txt, texto, count=1)
+        else:
+            texto = f'Total encontrado: {total_txt}. ' + texto
+        aviso = (f' Exibindo as primeiras {exibidas} linhas; '
+                 f'lista parcial de {total_txt}.')
+        if 'lista parcial' not in texto.lower():
+            texto += aviso
+        resposta_texto = texto
+
+        # Amostra concentrada num unico CNAE: nao deixar o texto dar a
+        # entender que a categoria inteira so' tem aquele CNAE.
+        colunas = list(execucao.get('colunas') or [])
+        linhas = list(execucao.get('rows') or [])
+        codigos = set()
+        for linha in linhas:
+            for chave in ('cnae_codigo', 'cnae_principal', 'cnae'):
+                if chave in colunas:
+                    valor = linha.get(chave)
+                    if valor not in (None, ''):
+                        codigos.add(str(valor))
+                    break
+        if len(codigos) == 1 and total_real > len(linhas):
+            unico = next(iter(codigos))
+            aviso_cnae = (f' A amostra de {len(linhas)} linhas ficou concentrada '
+                          f'no CNAE {unico}; o total real inclui outros CNAEs.')
+            if 'concentrada no CNAE' not in resposta_texto:
+                resposta_texto = resposta_texto.rstrip() + aviso_cnae
 
     # --- 4) salva as duas mensagens ---
     repo.adicionar_mensagem(cid, 'user', pergunta)
@@ -556,7 +594,6 @@ def chat_api_view(request):
     # resposta = {...} la embaixo (fix do UnboundLocalError).
     sql_exibicao = geracao['sql']
     if execucao['ok'] and '<vetor>' not in sql_exibicao:
-        import re
         sql_exibicao = re.sub(
             r"'\[[^\]]+\]'::halfvec\(768\)",
             "'[VETOR]'::halfvec(768)",

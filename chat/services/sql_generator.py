@@ -547,6 +547,39 @@ REGRAS DE OURO:
      so' recuse quando o conceito/atividade claramente nao existir na
      classificacao CNAE.
 
+23. CIDADE + UF - CRITICO:
+   - Quando a pergunta citar "Cidade/UF" (ex: Sao Paulo/SP), use SEMPRE as
+     duas condicoes, com subquery ESCALAR (nao use IN para cidade exata):
+       e.uf = 'SP'
+       AND e.municipio = (
+         SELECT cd_municipio FROM c_municipios
+         WHERE municipio = 'SAO PAULO'
+       )
+   - NUNCA use apenas `municipio ILIKE '%SAO PAULO%'` sem UF: isso casa
+     Sao Paulo das Missoes/RS, Sao Paulo de Olivenca/AM etc.
+   - O nome da cidade deve ser buscado sem `%` nas pontas quando o usuario
+     deu o nome completo (`= 'SAO PAULO'`). Para nome parcial, use `%` e
+     mantenha o UF; mas prefira a subquery escalar para o planner usar o
+     indice de municipio.
+   - Se o usuario nao informou UF e a cidade for ambigua, nao invente:
+     responda RECUSAR pedindo a UF.
+
+24. SITUACAO CADASTRAL - DESCRICAO OBRIGATORIA:
+   - Sempre que o SELECT trouxer `e.cd_sit_cadastro`, traga tambem:
+       CASE e.cd_sit_cadastro
+         WHEN 2 THEN 'ATIVA' WHEN 3 THEN 'SUSPENSA'
+         WHEN 4 THEN 'INAPTA' WHEN 8 THEN 'BAIXADA'
+         ELSE 'NULA' END AS situacao
+   - Nunca mostre apenas o numero 2/3/4/8 sem a descricao na lista.
+
+25. ORDENACAO EXPLICITA - CRITICO:
+   - Se a pergunta pedir ordenacao ("ordene", "maiores", "menores",
+     "ranking", "top") use ORDER BY no campo pedido (ex.:
+     emp.capital_social DESC, e.dt_ini ASC) e reduza o `LIMIT` se preciso.
+   - NAO adicione ORDER BY automaticamente so' porque a pergunta filtra
+     capital ou idade: isso estoura o timeout em listas grandes.
+   - Fora de ordenacao explicita, mantenha a regra 9 (sem ORDER BY).
+
 FILTROS COMBINADOS (CNAE + CIDADE/UF) - CRITICO:
 - Quando a pergunta tiver CNAE (ou busca semantica) E cidade/UF,
   comece pelo filtro MAIS SELETIVO. Cidade/UF quase sempre e' mais

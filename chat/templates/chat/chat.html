@@ -4,7 +4,7 @@
 {% block title %}Chat IA — BusqueCNPJ{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261127b">
+<link rel="stylesheet" href="{% static 'css/portal-inteligencia.css' %}?v=20261128a">
 {% endblock %}
 
 {% block content %}
@@ -35,11 +35,12 @@
     </p>
     {% endif %}
 
-    <div class="alert alert-info" role="note">
-        <i class="bi bi-info-circle" aria-hidden="true"></i>
-        <strong>Dica:</strong> seja específico sobre "matriz" (só a sede) ou "estabelecimentos"
-        (sede + filiais) — a diferença nos totais pode ser grande.
-    </div>
+    {% if chat_dicas.texto %}
+    <details class="chat-dicas">
+        <summary><i class="bi bi-lightbulb" aria-hidden="true"></i> {{ chat_dicas.titulo }}</summary>
+        <div class="chat-dicas__texto">{{ chat_dicas.texto|linebreaksbr }}</div>
+    </details>
+    {% endif %}
 
     <div class="layout-chat">
 
@@ -92,18 +93,6 @@
             </button>
 
             {% if mensagens_json == '[]' %}
-            <div class="chat-boas-vindas">
-                <div class="ui-bubble ui-bubble--bot">
-                    <div class="ui-bubble__meta"><i class="bi bi-stars" aria-hidden="true"></i> Assistente</div>
-                    <p>
-                        Pergunte em português sobre a base de CNPJs: encontre empresas
-                        por perfil, tempo de abertura, capital ou proximidade. Cada
-                        resposta vem de uma consulta real, executada em modo
-                        somente-leitura.
-                    </p>
-                </div>
-            </div>
-
             <div class="chat-sugestoes" id="chat-sugestoes">
                 <p class="chat-sugestoes__titulo">Experimente perguntar</p>
                 <div class="chat-sugestoes__lista">
@@ -233,9 +222,19 @@
     const painelEl   = document.getElementById('chat-resultado');
     const painelStatusEl = document.getElementById('chat-panel-status');
 
+    // Destaque do resultado ativo: o cliente acha facil a ultima lista.
+    function marcarItemAtivo() {
+        if (!painelEl) return;
+        const itens = painelEl.querySelectorAll('.chat-panel__item');
+        itens.forEach(function (item, i) {
+            item.classList.toggle('is-ativo', i === itens.length - 1);
+        });
+    }
+
     function mostrarNoPainel(html, status) {
         if (!painelEl) return false;
         painelEl.innerHTML = html;
+        marcarItemAtivo();
         rolarParaUltimoResultado();
         if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
         return true;
@@ -244,6 +243,7 @@
     function acrescentarNoPainel(html, status) {
         if (!painelEl) return false;
         painelEl.insertAdjacentHTML('beforeend', html);
+        marcarItemAtivo();
         rolarParaUltimoResultado();
         if (painelStatusEl) painelStatusEl.textContent = status || 'resultado';
         return true;
@@ -540,6 +540,7 @@
         threadEl.innerHTML = html;
         if (painelEl && resultadosHtml) {
             mostrarNoPainel(resultadosHtml, resultadosCount + ' resultado(s)');
+            marcarItemAtivo();
         }
         // Abre a conversa no fim (mensagem/resultado mais recente), nao no topo.
         window.requestAnimationFrame(function () {

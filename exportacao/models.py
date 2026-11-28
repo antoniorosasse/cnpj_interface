@@ -143,6 +143,19 @@ class ConfiguracaoUso(models.Model):
     desafio_validade_min = models.PositiveIntegerField('validade do ticket (min)', default=15)
     desafio_tickets_ip_hora = models.PositiveIntegerField('tickets por IP por hora', default=20)
 
+    chat_dicas_titulo = models.CharField(
+        'titulo das dicas do chat', max_length=80, default='Dicas')
+    chat_dicas_texto = models.TextField(
+        'texto das dicas do chat', blank=True,
+        default=('Diga o ramo de atividade, a cidade/UF e o que quer ver '
+                 '(data de abertura, capital, situação).\n'
+                 'Seja específico sobre "matriz" (só a sede) ou '
+                 '"estabelecimentos" (sede + filiais).\n'
+                 'Você pode pedir ordenação: "por capital", "mais antigas", '
+                 '"maiores".\n'
+                 'A lista mostra 100 linhas; use "Exportar tudo" para gerar o '
+                 'arquivo completo.'))
+
     ip_dia_lista = models.PositiveIntegerField('empresas/dia por IP', default=300)
     ip_dia_proximidade = models.PositiveIntegerField('proximidade/dia por IP', default=300)
     ip_dia_chat = models.PositiveIntegerField('chat/dia por IP', default=60)

@@ -441,3 +441,49 @@
     font-size: .72em;
 }
 .chat-page .tabela-wrapper thead th[aria-sort] .sorter { color: var(--p-accent); }
+
+/* Dicas configuráveis + composer mais alto */
+.chat-page .chat-dicas {
+    margin: 0 0 1rem;
+    border: 1px solid var(--p-line);
+    border-radius: var(--p-r-md);
+    background: var(--p-surface);
+    padding: .55rem .8rem;
+}
+.chat-page .chat-dicas summary {
+    cursor: pointer;
+    color: var(--p-ink);
+    font-size: .84rem;
+    font-weight: 650;
+    list-style: none;
+}
+.chat-page .chat-dicas summary::-webkit-details-marker { display: none; }
+.chat-page .chat-dicas summary .bi { color: var(--p-brand-cnpj); margin-right: .3rem; }
+.chat-page .chat-dicas[open] summary { margin-bottom: .45rem; }
+.chat-page .chat-dicas__texto {
+    color: var(--p-ink-soft);
+    font-size: .82rem;
+    line-height: 1.45;
+    padding-left: 1.25rem;
+}
+.chat-page .chat-col > .chat-drawer-toggle,
+.chat-page .chat-col > .chat-panel-abrir { order: -3; }
+.chat-page .chat-col > .composer { order: -2; }
+
+/* Resultado ativo: destaca a ultima consulta no painel */
+.chat-page .chat-panel__item.is-ativo {
+    background: var(--p-surface-2);
+    border-left: 4px solid var(--p-brand-cnpj);
+    border-radius: var(--p-r-md);
+    padding: .7rem .75rem .8rem;
+}
+.chat-page .chat-panel__item.is-ativo .chat-panel__item-head {
+    color: var(--p-ink);
+    font-size: .94rem;
+    font-weight: 800;
+}
+.chat-page .chat-panel__item.is-ativo .chat-panel__item-head .bi { color: var(--p-brand-cnpj); }
+.chat-page .chat-panel__item.is-ativo .tabela-wrapper {
+    border-color: var(--p-brand-cnpj);
+    box-shadow: 0 0 0 1px var(--p-brand-cnpj) inset;
+}
